@@ -46,8 +46,11 @@
 
 #include "plruby.h"
 
+#ifdef PLRUBY_TIMEOUT
 static int pl_in_progress = 0;
 static int pl_interrupted = 0;
+#endif
+
 static ID id_to_s, id_raise, id_kill, id_alive, id_value, id_call, id_thr;
 
 static int	pl_firstcall = 1;
@@ -142,6 +145,7 @@ struct pl_tuple {
     pl_proc_desc *pro;
     TupleDesc dsc;
     Tuplestorestate *out;
+    PG_FUNCTION_ARGS;
 };
 
 extern int SortMem;
@@ -289,7 +293,6 @@ pl_args_type(VALUE obj)
 {
     struct pl_tuple *tpl;
     VALUE res, tmp;
-    char * attname;
     HeapTuple typeTup;
     Form_pg_type fpgt;
     int i;
@@ -319,6 +322,83 @@ pl_args_type(VALUE obj)
 	ReleaseSysCache(typeTup);
     }
     return res;
+}
+
+static VALUE PLcontext;
+
+struct PL_node
+{
+    NodeTag type;
+    VALUE value;
+};
+
+static VALUE
+pl_context_get(VALUE obj)
+{
+    struct pl_tuple *tpl;
+    VALUE tmp;
+
+    tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
+    if (NIL_P(tmp)) {
+	return Qnil;
+    }
+    if (TYPE(tmp) != T_DATA || 
+	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
+    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    if (!tpl->fcinfo || !tpl->fcinfo->context || 
+	!IsA(tpl->fcinfo->context, Invalid)) {
+	return Qnil;
+    }
+    return ((struct PL_node *)tpl->fcinfo->context)->value;
+}
+
+static VALUE
+pl_context_set(VALUE obj, VALUE a)
+{
+    struct pl_tuple *tpl;
+    VALUE tmp;
+
+    tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
+    if (TYPE(tmp) != T_DATA || 
+	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
+    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    if (tpl->fcinfo && tpl->fcinfo->context) {
+	if (!IsA(tpl->fcinfo->context, Invalid)) {
+	    rb_raise(pl_ePLruby, "trying to change a valid context");
+	}  
+	rb_hash_delete(PLcontext, ((struct PL_node *)tpl->fcinfo->context)->value);
+    }
+    else {
+	if (!tpl->fcinfo) {
+	    rb_raise(pl_ePLruby, "no function info");
+	}
+	tpl->fcinfo->context = newNode(sizeof(struct PL_node), T_Invalid);
+    }
+    ((struct PL_node *)tpl->fcinfo->context)->value = a;
+    rb_hash_aset(PLcontext, a, Qnil);
+    return a;
+}
+
+static void
+pl_context_remove()
+{
+    struct pl_tuple *tpl;
+    VALUE tmp;
+
+    tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
+    if (TYPE(tmp) != T_DATA || 
+	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
+    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    if (tpl->fcinfo && tpl->fcinfo->context) {
+	rb_hash_delete(PLcontext, ((struct PL_node *)tpl->fcinfo->context)->value);
+	pfree(tpl->fcinfo->context);
+    }
 }
 
 static VALUE
@@ -361,6 +441,10 @@ pl_tuple_heap(VALUE c, VALUE tuple)
     char **slots;
     int i;
 
+    if (TYPE(tuple) != T_DATA || 
+	RDATA(tuple)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
     Data_Get_Struct(tuple, struct pl_tuple, tpl);
     if (tpl->pro->result_type == 'b' &&	TYPE(c) != T_ARRAY) {
 	VALUE tmp;
@@ -399,6 +483,10 @@ pl_tuple_put(VALUE c, VALUE tuple)
     MemoryContext oldcxt;
     struct pl_tuple *tpl;
 
+    if (TYPE(tuple) != T_DATA || 
+	RDATA(tuple)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
     Data_Get_Struct(tuple, struct pl_tuple, tpl);
     retval = pl_tuple_heap(c, tuple);
     PLRUBY_BEGIN(1);
@@ -423,6 +511,10 @@ pl_tuple_datum(VALUE c, VALUE tuple)
     HeapTuple tmp;
     struct pl_tuple *tpl;
 
+    if (TYPE(tuple) != T_DATA || 
+	RDATA(tuple)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
     Data_Get_Struct(tuple, struct pl_tuple, tpl);
     tmp = pl_tuple_heap(c, tuple);
     PLRUBY_BEGIN(1);
@@ -887,7 +979,7 @@ pl_func_handler(proinfo, proargs, isNull)
     VALUE ary, c;
     static char *argf = "args";
     Oid result_oid, arg_type[RUBY_ARGS_MAXFMGR];
-    int nargs;
+    int nargs, expr_multiple;
     
 #ifdef NEW_STYLE_FUNCTION
     sprintf(internal_proname, "proc_%u", fcinfo->flinfo->fn_oid);
@@ -1034,10 +1126,8 @@ pl_func_handler(proinfo, proargs, isNull)
 	    functypeid = get_func_rettype(funcid);
 	    functyptype = get_typtype(functypeid);
 	    PLRUBY_END;
-	    if (functyptype == 'c' || functyptype == 'b') {
-		prodesc->result_type = functyptype;
-	    }
-	    else if (functyptype == 'p' && functypeid == RECORDOID) {
+	    if (functyptype == 'c' || functyptype == 'b' ||
+		(functyptype == 'p' && functypeid == RECORDOID)) {
 		prodesc->result_type = functyptype;
 	    }
 	    else {
@@ -1047,11 +1137,8 @@ pl_func_handler(proinfo, proargs, isNull)
 	else {
 	    switch (result_oid) {
 	    case REFCURSOROID:
-		prodesc->result_type = 'x';
-		break;
 	    case RECORDOID:
 		prodesc->result_type = 'x';
-		/* #ts: todo */
 		break;
 	    }
 	}
@@ -1070,19 +1157,19 @@ pl_func_handler(proinfo, proargs, isNull)
 		(TYPEOID,
 		 ObjectIdGetDatum(prodesc->result_elem), 0, 0, 0);
 			
-		if (!HeapTupleIsValid(typeTuple)) {
-		    rb_raise(pl_ePLruby, "cache lookup failed for type %u",
-			     prodesc->result_elem);
-		}
-		typeStruct = (Form_pg_type) GETSTRUCT(typeTuple);
-		fmgr_info(typeStruct->typinput, &inputproc);
-		prodesc->result_is_array = 1;
-		prodesc->result_func = inputproc;
-		prodesc->result_val = typeStruct->typbyval;
-		prodesc->result_len = typeStruct->typlen;
-		prodesc->result_align = typeStruct->typalign;
-		ReleaseSysCache(typeTuple);
-		PLRUBY_END;
+	    if (!HeapTupleIsValid(typeTuple)) {
+		rb_raise(pl_ePLruby, "cache lookup failed for type %u",
+			 prodesc->result_elem);
+	    }
+	    typeStruct = (Form_pg_type) GETSTRUCT(typeTuple);
+	    fmgr_info(typeStruct->typinput, &inputproc);
+	    prodesc->result_is_array = 1;
+	    prodesc->result_func = inputproc;
+	    prodesc->result_val = typeStruct->typbyval;
+	    prodesc->result_len = typeStruct->typlen;
+	    prodesc->result_align = typeStruct->typalign;
+	    ReleaseSysCache(typeTuple);
+	    PLRUBY_END;
 	}
 	else
 #endif
@@ -1210,7 +1297,12 @@ pl_func_handler(proinfo, proargs, isNull)
 	res = rb_thread_local_aref(rb_thread_current(), id_thr);
 	if (NIL_P(res)) {
 	    res = Data_Make_Struct(rb_cData, struct pl_tuple, pl_thr_mark, free, tpl);
+	} else if (TYPE(res) != T_DATA || 
+		   RDATA(res)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	    rb_raise(pl_ePLruby, "invalid thread local variable");
 	}
+	Data_Get_Struct(res, struct pl_tuple, tpl);
+	tpl->fcinfo = fcinfo;
 	tpl->pro = prodesc;
 	rb_thread_local_aset(rb_thread_current(), id_thr, res);
     }
@@ -1272,43 +1364,75 @@ pl_func_handler(proinfo, proargs, isNull)
 	    PLRUBY_END;
 	}
     }
+
+    expr_multiple = 0;
+
 #if PG_PL_VERSION >= 73
     if (prodesc->result_type && prodesc->result_type != 'x') {
-	VALUE tuple, res, arg;
-	struct pl_arg *args;
-	struct pl_tuple *tpl;
-	VALUE (*pl_call)(VALUE);
+	ReturnSetInfo *rsi;
 
-	tuple = pl_tuple_s_new(fcinfo, prodesc);
-	arg = Data_Make_Struct(rb_cObject, struct pl_arg, pl_arg_mark, free, args);
-	args->id = rb_intern(RSTRING(value_proname)->ptr);
-	args->ary = ary;
-	pl_call = pl_func;
-	while (1) {
-	    res = rb_iterate(pl_call, arg, pl_tuple_put, tuple);
-	    Data_Get_Struct(tuple, struct pl_tuple, tpl);
-	    if (tpl->out) {
-		MemoryContext oldcxt;
-		
-		PLRUBY_BEGIN(1);
-		oldcxt = MemoryContextSwitchTo(tpl->cxt);
-		tuplestore_donestoring(tpl->out);
-		MemoryContextSwitchTo(oldcxt);
-		PLRUBY_END;
-		((ReturnSetInfo *)fcinfo->resultinfo)->setResult = tpl->out;
-		((ReturnSetInfo *)fcinfo->resultinfo)->returnMode = SFRM_Materialize;
-		break;
-	    }
-	    if (NIL_P(res)) {
-		break;
-	    }
-	    if (TYPE(res) != T_STRING || RSTRING(res)->ptr == 0) {
-		rb_raise(pl_ePLruby, "invalid return type for a SET");
-	    }
-	    args->ary = res;
-	    pl_call = pl_string;
+	if (!fcinfo || !fcinfo->resultinfo) {
+	    rb_raise(pl_ePLruby, "no description given");
 	}
-	c = Qnil;
+	rsi = (ReturnSetInfo *)fcinfo->resultinfo;
+	if ((rsi->allowedModes & SFRM_Materialize) && rsi->expectedDesc) {
+	    VALUE tuple, res, arg;
+	    struct pl_arg *args;
+	    struct pl_tuple *tpl;
+	    VALUE (*pl_call)(VALUE);
+
+	    tuple = pl_tuple_s_new(fcinfo, prodesc);
+	    arg = Data_Make_Struct(rb_cObject, struct pl_arg, pl_arg_mark, free, args);
+	    args->id = rb_intern(RSTRING(value_proname)->ptr);
+	    args->ary = ary;
+	    pl_call = pl_func;
+	    while (1) {
+		res = rb_iterate(pl_call, arg, pl_tuple_put, tuple);
+		Data_Get_Struct(tuple, struct pl_tuple, tpl);
+		if (NIL_P(res) && !tpl->out) {
+		    MemoryContext oldcxt;
+		    
+		    PLRUBY_BEGIN(1);
+		    oldcxt = MemoryContextSwitchTo(tpl->cxt);
+#if PG_PL_VERSION >= 74
+		    tpl->out = tuplestore_begin_heap(true, false, SortMem);
+#else
+		    tpl->out = tuplestore_begin_heap(true, SortMem);
+#endif
+		    MemoryContextSwitchTo(oldcxt);
+		    PLRUBY_END;
+		}
+		if (tpl->out) {
+		    MemoryContext oldcxt;
+		    
+		    PLRUBY_BEGIN(1);
+		    oldcxt = MemoryContextSwitchTo(tpl->cxt);
+		    tuplestore_donestoring(tpl->out);
+		    MemoryContextSwitchTo(oldcxt);
+		    PLRUBY_END;
+		    ((ReturnSetInfo *)fcinfo->resultinfo)->setResult = tpl->out;
+		    ((ReturnSetInfo *)fcinfo->resultinfo)->returnMode = SFRM_Materialize;
+		    break;
+		}
+		if (NIL_P(res)) {
+		    break;
+		}
+		if (TYPE(res) != T_STRING || RSTRING(res)->ptr == 0) {
+		    rb_raise(pl_ePLruby, "invalid return type for a SET");
+		}
+		args->ary = res;
+		pl_call = pl_string;
+	    }
+	    c = Qnil;
+	}
+	else if (IsA(rsi, ReturnSetInfo)) {
+	    expr_multiple = 1;
+	    c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+			   1, ary);
+	}
+	else {
+	    rb_raise(pl_ePLruby, "context don't accept set");
+	}
     }
     else
 #endif
@@ -1329,6 +1453,13 @@ pl_func_handler(proinfo, proargs, isNull)
     if (c == Qnil) {
 #ifdef NEW_STYLE_FUNCTION
 	{
+#if PG_PL_VERSION >= 73
+	    if (expr_multiple) {
+		pl_context_remove();
+		fcinfo->context = NULL;
+		((ReturnSetInfo *)fcinfo->resultinfo)->isDone = ExprEndResult;
+	    }
+#endif
 	    PG_RETURN_NULL();
 	}
 #else
@@ -1339,7 +1470,8 @@ pl_func_handler(proinfo, proargs, isNull)
 #if PG_PL_VERSION >= 73
     if (fcinfo->resultinfo) {
 	if (fcinfo->flinfo->fn_retset) {
-	    rb_raise(pl_ePLruby, "unknown error : set");
+	    ((ReturnSetInfo *)fcinfo->resultinfo)->isDone = ExprMultipleResult;
+	    return return_base_type(c, prodesc);
 	}
 	if (!prodesc->result_type) {
 	    return return_base_type(c, prodesc);
@@ -1386,6 +1518,9 @@ pl_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
     }
     else if (type_ret & RET_HASH) {
 	output = rb_hash_new();
+    }
+    if (!tuple) {
+	return output;
     }
 
     for (i = 0; i < tupdesc->natts; i++) {
@@ -1774,30 +1909,36 @@ pl_trigger_handler(FmgrInfo *proinfo)
     }
     rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("relatts")), rb_ary_freeze(tmp));
 
-    if (TRIGGER_FIRED_BEFORE(trigdata->tg_event))
+    if (TRIGGER_FIRED_BEFORE(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("when")), INT2FIX(TG_BEFORE)); 
-    else if (TRIGGER_FIRED_AFTER(trigdata->tg_event))
+    }
+    else if (TRIGGER_FIRED_AFTER(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("when")), INT2FIX(TG_AFTER)); 
-    else
-	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("when")), INT2FIX(TG_UNKNOWN)); 
+    }
+    else {
+	rb_raise(pl_ePLruby, "unknown WHEN event (%u)", trigdata->tg_event);
+    }
     
-    if (TRIGGER_FIRED_FOR_ROW(trigdata->tg_event))
+    if (TRIGGER_FIRED_FOR_ROW(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("level")),INT2FIX(TG_ROW));
-    else if (TRIGGER_FIRED_FOR_STATEMENT(trigdata->tg_event))
+    }
+    else if (TRIGGER_FIRED_FOR_STATEMENT(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("level")), INT2FIX(TG_STATEMENT)); 
-    else
-	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("level")), INT2FIX(TG_UNKNOWN)); 
+    }
+    else {
+	rb_raise(pl_ePLruby, "unknown LEVEL event (%u)", trigdata->tg_event);
+    }
 
     if (TRIGGER_FIRED_BY_INSERT(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_INSERT));
 	tg_new = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-	tg_old = rb_ary_new2(0);
+	tg_old = rb_hash_new();
 	rettup = trigdata->tg_trigtuple;
     }
     else if (TRIGGER_FIRED_BY_DELETE(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_DELETE));
 	tg_old = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-	tg_new = rb_ary_new2(0);
+	tg_new = rb_hash_new();
 
 	rettup = trigdata->tg_trigtuple;
     }
@@ -1808,10 +1949,7 @@ pl_trigger_handler(FmgrInfo *proinfo)
 	rettup = trigdata->tg_newtuple;
     }
     else {
-	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_UNKNOWN));
-	tg_new = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-	tg_old = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-	rettup = trigdata->tg_trigtuple;
+	rb_raise(pl_ePLruby, "unknown OP event (%u)", trigdata->tg_event);
     }
     rb_hash_freeze(TG);
 
@@ -2985,6 +3123,8 @@ pl_init_all(void)
     rb_define_module_function(pl_mPL, "result_size", pl_query_lgth, 0);
     rb_define_module_function(pl_mPL, "result_description", pl_query_description, 0);
     rb_define_module_function(pl_mPL, "args_type", pl_args_type, 0);
+    rb_define_module_function(pl_mPL, "context", pl_context_get, 0);
+    rb_define_module_function(pl_mPL, "context=", pl_context_set, 1);
 #endif
     /* deprecated */
     rb_define_module_function(pl_mPL, "spi_prepare", pl_plan_prepare, -1);
@@ -3043,6 +3183,10 @@ pl_init_all(void)
     rb_define_variable("$Plans", &plans);
     PLruby_hash = rb_hash_new();
     rb_global_variable(&PLruby_hash);
+#if PG_PL_VERSION >= 73
+    PLcontext = rb_hash_new();
+    rb_global_variable(&PLcontext);
+#endif
     if (SPI_connect() != SPI_OK_CONNECT) {
 	elog(ERROR, "plruby_singleton_methods : SPI_connect failed");
     }

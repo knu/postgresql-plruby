@@ -17,6 +17,7 @@
 
 #if PG_PL_VERSION >= 73
 #include "nodes/makefuncs.h"
+#include "nodes/nodes.h"
 #include "parser/parse_type.h"
 #include "utils/lsyscache.h"
 #include "funcapi.h"

@@ -45,3 +45,8 @@
  Warning : array as input and output (7.4)
  anyarray/anyelement in input/output for 7.4
 
+--- 0.3.6
+
+ corrected "EACH STATEMENT"
+ added ExprMultiResult
+

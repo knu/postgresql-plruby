@@ -2,7 +2,8 @@
 = PL/Ruby
 
 * ((<Defining function in PL Ruby>))
-* ((<Function returning SET>))
+* ((<Function returning SET (SFRM Materialize)>))
+* ((<Function returning SET (ExprMultiResult)>))
 * ((<Trigger procedures in PL Ruby>))
 * ((<plruby_singleton_methods>))
 * ((<Class and modules>))
@@ -76,7 +77,7 @@ This must now (>= 7.4) be written
    ' LANGUAGE 'plruby';
 
 
-== Function returning SET
+== Function returning SET (SFRM Materialize)
 
 The return type must be declared as SETOF
 
@@ -122,6 +123,44 @@ For example to concatenate 2 rows create the function
     1 |  2 | 3 | 4
     5 |  6 | 7 | 8
     9 | 10 |   |  
+   (3 rows)
+   
+   plruby_test=# 
+
+== Function returning SET (ExprMultiResult)
+
+The return type must be declared as SETOF
+
+The function is called until it returns nil
+
+The method PL#context and PL#context= give the possibility to store information
+between the call
+
+For example
+
+   plruby_test=# create or replace function vv(int) returns setof int as '
+   plruby_test'#    i = PL.context || 0
+   plruby_test'#    if i >= args[0].to_i
+   plruby_test'#       nil
+   plruby_test'#    else
+   plruby_test'#       PL.context = i + 1
+   plruby_test'#    end
+   plruby_test'# ' language plruby;
+   CREATE FUNCTION
+   plruby_test=# 
+   plruby_test=# select * from uu;
+    b 
+   ---
+    2
+   (1 row)
+   
+   plruby_test=# 
+   plruby_test=# select *,vv(3) from uu;
+    b | vv 
+   ---+----
+    2 |  1
+    2 |  2
+    2 |  3
    (3 rows)
    
    plruby_test=# 
@@ -339,6 +378,13 @@ test/plp/test_setup.sql)
 
 --- column_type(table)
     return the type of the columns for the table
+
+--- context
+    Return the context (or nil) associated with a SETOF function 
+    (ExprMultiResult)
+
+--- context=
+    Set the context for a SETOF function (ExprMultiResult)
 
 --- quote(string)
  

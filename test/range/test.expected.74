@@ -1,14 +1,14 @@
 SELECT * FROM pg_settings WHERE name LIKE 'enable%';
-       name       | setting 
-------------------+---------
- enable_hashagg   | on
- enable_hashjoin  | on
- enable_indexscan | on
- enable_mergejoin | on
- enable_nestloop  | on
- enable_seqscan   | on
- enable_sort      | on
- enable_tidscan   | on
+       name       | setting | context | vartype | source  | min_val | max_val 
+------------------+---------+---------+---------+---------+---------+---------
+ enable_hashagg   | on      | user    | bool    | default |         | 
+ enable_hashjoin  | on      | user    | bool    | default |         | 
+ enable_indexscan | on      | user    | bool    | default |         | 
+ enable_mergejoin | on      | user    | bool    | default |         | 
+ enable_nestloop  | on      | user    | bool    | default |         | 
+ enable_seqscan   | on      | user    | bool    | default |         | 
+ enable_sort      | on      | user    | bool    | default |         | 
+ enable_tidscan   | on      | user    | bool    | default |         | 
 (8 rows)
 
 CREATE TABLE foo2(fooid int, f2 int);
@@ -19,7 +19,7 @@ CREATE FUNCTION foot(int) returns setof foo2 as '
 "SELECT * FROM foo2 WHERE fooid = #{args[0]}"' 
 LANGUAGE 'plruby';
 select * from foo2, foot(foo2.fooid) z where foo2.f2 = z.f2;
-ERROR:  FROM function expression may not refer to other relations of same query level
+ERROR:  function expression in FROM may not refer to other relations of same query level
 select * from foo2 where f2 in (
 	select f2 from foot(foo2.fooid) z where z.fooid = foo2.fooid
 ) ORDER BY 1,2;
@@ -56,7 +56,7 @@ select foot.fooid, foot.f2 from foot(sin(pi()/2)::int) ORDER BY 1,2;
 (2 rows)
 
 CREATE TABLE foo (fooid int, foosubid int, fooname text, primary key(fooid,foosubid));
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index 'foo_pkey' for table 'foo'
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "foo_pkey" for table "foo"
 INSERT INTO foo VALUES(1,1,'Joe');
 INSERT INTO foo VALUES(1,2,'Ed');
 INSERT INTO foo VALUES(2,1,'Mary');
@@ -206,7 +206,7 @@ DROP FUNCTION foot(int);
 DROP TABLE foo2;
 DROP TABLE foo;
 CREATE TABLE foorescan (fooid int, foosubid int, fooname text, primary key(fooid,foosubid));
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index 'foorescan_pkey' for table 'foorescan'
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "foorescan_pkey" for table "foorescan"
 INSERT INTO foorescan values(5000,1,'abc.5000.1');
 INSERT INTO foorescan values(5001,1,'abc.5001.1');
 INSERT INTO foorescan values(5002,1,'abc.5002.1');
@@ -296,7 +296,7 @@ SELECT * FROM foorescan f WHERE f.fooid IN (
 (10 rows)
 
 CREATE TABLE barrescan (fooid int primary key);
-NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index 'barrescan_pkey' for table 'barrescan'
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "barrescan_pkey" for table "barrescan"
 INSERT INTO barrescan values(5003);
 INSERT INTO barrescan values(5004);
 INSERT INTO barrescan values(5005);

@@ -10,10 +10,11 @@
 <h1><a name="label-0" id="label-0">PL/Ruby</a></h1><!-- RDLabel: "PL/Ruby" -->
 <ul>
 <li><a href="#label-2">Defining function in PL Ruby</a></li>
-<li><a href="#label-4">Function returning SET</a></li>
-<li><a href="#label-5">Trigger procedures in PL Ruby</a></li>
-<li><a href="#label-17">plruby_singleton_methods</a></li>
-<li><a href="#label-18">Class and modules</a></li>
+<li><a href="#label-4">Function returning SET (SFRM Materialize)</a></li>
+<li><a href="#label-5">Function returning SET (ExprMultiResult)</a></li>
+<li><a href="#label-6">Trigger procedures in PL Ruby</a></li>
+<li><a href="#label-18">plruby_singleton_methods</a></li>
+<li><a href="#label-19">Class and modules</a></li>
 </ul>
 <p>PL/Ruby is a loadable procedural language for the Postgres database
 system  that enable the Ruby language to create functions and trigger
@@ -66,7 +67,7 @@ in version &lt; 7.4 you write</p>
    a = args[0]
    [a[0].to_i + args[1].to_i, a[1].to_i + 1]
 ' LANGUAGE 'plruby';</pre>
-<h2><a name="label-4" id="label-4">Function returning SET</a></h2><!-- RDLabel: "Function returning SET" -->
+<h2><a name="label-4" id="label-4">Function returning SET (SFRM Materialize)</a></h2><!-- RDLabel: "Function returning SET (SFRM Materialize)" -->
 <p>The return type must be declared as SETOF</p>
 <p>The function must call <kbd>yield</kbd> to return rows or return a String which
 must be a valid SELECT statement</p>
@@ -111,57 +112,89 @@ plruby_test=# select * from tu('tt') as tbl(a int, b int, c int, d int);
 (3 rows)
 
 plruby_test=# </pre>
-<h2><a name="label-5" id="label-5">Trigger procedures in PL Ruby</a></h2><!-- RDLabel: "Trigger procedures in PL Ruby" -->
+<h2><a name="label-5" id="label-5">Function returning SET (ExprMultiResult)</a></h2><!-- RDLabel: "Function returning SET (ExprMultiResult)" -->
+<p>The return type must be declared as SETOF</p>
+<p>The function is called until it returns nil</p>
+<p>The method PL#context and PL#context= give the possibility to store information
+between the call</p>
+<p>For example</p>
+<pre>plruby_test=# create or replace function vv(int) returns setof int as '
+plruby_test'#    i = PL.context || 0
+plruby_test'#    if i &gt;= args[0].to_i
+plruby_test'#       nil
+plruby_test'#    else
+plruby_test'#       PL.context = i + 1
+plruby_test'#    end
+plruby_test'# ' language plruby;
+CREATE FUNCTION
+plruby_test=# 
+plruby_test=# select * from uu;
+ b 
+---
+ 2
+(1 row)
+
+plruby_test=# 
+plruby_test=# select *,vv(3) from uu;
+ b | vv 
+---+----
+ 2 |  1
+ 2 |  2
+ 2 |  3
+(3 rows)
+
+plruby_test=# </pre>
+<h2><a name="label-6" id="label-6">Trigger procedures in PL Ruby</a></h2><!-- RDLabel: "Trigger procedures in PL Ruby" -->
 <p>Trigger procedures are defined in Postgres as functions without
 arguments and a return type of trigger. In PL/Ruby the procedure is
 called with 4 arguments :</p>
 <dl>
-<dt><a name="label-6" id="label-6">new (hash, tainted)</a></dt><!-- RDLabel: "new (hash, tainted)" -->
+<dt><a name="label-7" id="label-7">new (hash, tainted)</a></dt><!-- RDLabel: "new (hash, tainted)" -->
 <dd>
 an hash containing the values of the new table row on INSERT/UPDATE
 actions, or empty on DELETE. 
 </dd>
-<dt><a name="label-7" id="label-7">old (hash, tainted)</a></dt><!-- RDLabel: "old (hash, tainted)" -->
+<dt><a name="label-8" id="label-8">old (hash, tainted)</a></dt><!-- RDLabel: "old (hash, tainted)" -->
 <dd>
 an hash containing the values of the old table row on UPDATE/DELETE
 actions, or empty on INSERT 
 </dd>
-<dt><a name="label-8" id="label-8">args (array, tainted, frozen)</a></dt><!-- RDLabel: "args (array, tainted, frozen)" -->
+<dt><a name="label-9" id="label-9">args (array, tainted, frozen)</a></dt><!-- RDLabel: "args (array, tainted, frozen)" -->
 <dd>
 An array of the arguments to the procedure as given in the CREATE
 TRIGGER statement 
 </dd>
-<dt><a name="label-9" id="label-9">tg (hash, tainted, frozen)</a></dt><!-- RDLabel: "tg (hash, tainted, frozen)" -->
+<dt><a name="label-10" id="label-10">tg (hash, tainted, frozen)</a></dt><!-- RDLabel: "tg (hash, tainted, frozen)" -->
 <dd>
 The following keys are defined
 <dl>
-<dt><a name="label-10" id="label-10">name</a></dt><!-- RDLabel: "name" -->
+<dt><a name="label-11" id="label-11">name</a></dt><!-- RDLabel: "name" -->
 <dd>
 The name of the trigger from the CREATE TRIGGER statement.
 </dd>
-<dt><a name="label-11" id="label-11">relname</a></dt><!-- RDLabel: "relname" -->
+<dt><a name="label-12" id="label-12">relname</a></dt><!-- RDLabel: "relname" -->
 <dd>
 The name of the relation who has fired the trigger
 </dd>
-<dt><a name="label-12" id="label-12">relid</a></dt><!-- RDLabel: "relid" -->
+<dt><a name="label-13" id="label-13">relid</a></dt><!-- RDLabel: "relid" -->
 <dd>
 The object ID of the table that caused the trigger procedure to be invoked.
 </dd>
-<dt><a name="label-13" id="label-13">relatts</a></dt><!-- RDLabel: "relatts" -->
+<dt><a name="label-14" id="label-14">relatts</a></dt><!-- RDLabel: "relatts" -->
 <dd>
 An array containing the name of the tables field.
 </dd>
-<dt><a name="label-14" id="label-14">when</a></dt><!-- RDLabel: "when" -->
+<dt><a name="label-15" id="label-15">when</a></dt><!-- RDLabel: "when" -->
 <dd>
 The constant <kbd>PL::BEFORE</kbd>, <kbd>PL::AFTER</kbd> or
 <kbd>PL::UNKNOWN</kbd> depending on the event of the trigger call.
 </dd>
-<dt><a name="label-15" id="label-15">level</a></dt><!-- RDLabel: "level" -->
+<dt><a name="label-16" id="label-16">level</a></dt><!-- RDLabel: "level" -->
 <dd>
 The constant <kbd>PL::ROW</kbd> or <kbd>PL::STATEMENT</kbd>
 depending on the event of the trigger call.
 </dd>
-<dt><a name="label-16" id="label-16">op</a></dt><!-- RDLabel: "op" -->
+<dt><a name="label-17" id="label-17">op</a></dt><!-- RDLabel: "op" -->
 <dd>
 The constant <kbd>PL::INSERT</kbd>, <kbd>PL::UPDATE</kbd> or 
 <kbd>PL::DELETE</kbd> depending on the event of the trigger call.
@@ -244,7 +277,7 @@ new["key2"]])
 create trigger pkey2_after after update or delete on T_pkey2
  for each row execute procedure
  trig_pkey2_after();</pre>
-<h2><a name="label-17" id="label-17">plruby_singleton_methods</a></h2><!-- RDLabel: "plruby_singleton_methods" -->
+<h2><a name="label-18" id="label-18">plruby_singleton_methods</a></h2><!-- RDLabel: "plruby_singleton_methods" -->
 <p>Sometime it can be usefull to define methods (in pure Ruby) which can be
 called from a PL/Ruby function or a PL/Ruby trigger.</p>
 <p>In this case, you have 2 possibilities</p>
@@ -296,56 +329,63 @@ tutu
 (1 row)
 
 toto=&gt;</pre>
-<h2><a name="label-18" id="label-18">Class and modules</a></h2><!-- RDLabel: "Class and modules" -->
-<h3><a name="label-19" id="label-19">Global</a></h3><!-- RDLabel: "Global" -->
+<h2><a name="label-19" id="label-19">Class and modules</a></h2><!-- RDLabel: "Class and modules" -->
+<h3><a name="label-20" id="label-20">Global</a></h3><!-- RDLabel: "Global" -->
 <dl>
-<dt><a name="label-20" id="label-20"><code>warn [<var>level</var>], <var>message</var></code></a></dt><!-- RDLabel: "warn [level], message" -->
+<dt><a name="label-21" id="label-21"><code>warn [<var>level</var>], <var>message</var></code></a></dt><!-- RDLabel: "warn [level], message" -->
 <dd>
 <p>Ruby interface to PostgreSQL elog()</p>
 <p>Possible value for <kbd>level</kbd> are <kbd>NOTICE</kbd>, <kbd>DEBUG</kbd> and <kbd>NOIND</kbd></p>
 <p>Use <kbd>raise()</kbd> if you want to simulate <kbd>elog(ERROR, "...")</kbd></p></dd>
-<dt><a name="label-21" id="label-21"><code>$Plans (<var>hash</var>, <var>tainted</var>)</code></a></dt><!-- RDLabel: "$Plans" -->
+<dt><a name="label-22" id="label-22"><code>$Plans (<var>hash</var>, <var>tainted</var>)</code></a></dt><!-- RDLabel: "$Plans" -->
 <dd>
 can be used to store prepared plans.</dd>
 </dl>
-<h3><a name="label-22" id="label-22">module PL</a></h3><!-- RDLabel: "module PL" -->
+<h3><a name="label-23" id="label-23">module PL</a></h3><!-- RDLabel: "module PL" -->
 <dl>
-<dt><a name="label-23" id="label-23"><code>args_type</code></a></dt><!-- RDLabel: "args_type" -->
+<dt><a name="label-24" id="label-24"><code>args_type</code></a></dt><!-- RDLabel: "args_type" -->
 <dd>
 Return the type of the arguments given to the function</dd>
-<dt><a name="label-24" id="label-24"><code>column_name(<var>table</var>)</code></a></dt><!-- RDLabel: "column_name" -->
+<dt><a name="label-25" id="label-25"><code>column_name(<var>table</var>)</code></a></dt><!-- RDLabel: "column_name" -->
 <dd>
 Return the name of the columns for the table</dd>
-<dt><a name="label-25" id="label-25"><code>column_type(<var>table</var>)</code></a></dt><!-- RDLabel: "column_type" -->
+<dt><a name="label-26" id="label-26"><code>column_type(<var>table</var>)</code></a></dt><!-- RDLabel: "column_type" -->
 <dd>
 return the type of the columns for the table</dd>
-<dt><a name="label-26" id="label-26"><code>quote(<var>string</var>)</code></a></dt><!-- RDLabel: "quote" -->
+<dt><a name="label-27" id="label-27"><code>context</code></a></dt><!-- RDLabel: "context" -->
+<dd>
+Return the context (or nil) associated with a SETOF function 
+(ExprMultiResult)</dd>
+<dt><a name="label-28" id="label-28"><code>context=</code></a></dt><!-- RDLabel: "context=" -->
+<dd>
+Set the context for a SETOF function (ExprMultiResult)</dd>
+<dt><a name="label-29" id="label-29"><code>quote(<var>string</var>)</code></a></dt><!-- RDLabel: "quote" -->
 <dd>
 Duplicates all occurences of single quote and backslash
 characters. It should be used when variables are used in the query
 string given to spi_exec or spi_prepare (not for the value list on
 execp).</dd>
-<dt><a name="label-27" id="label-27"><code>result_name</code></a></dt><!-- RDLabel: "result_name" -->
+<dt><a name="label-30" id="label-30"><code>result_name</code></a></dt><!-- RDLabel: "result_name" -->
 <dd>
 Return the name of the columns for a function returning a SETOF</dd>
-<dt><a name="label-28" id="label-28"><code>result_type</code></a></dt><!-- RDLabel: "result_type" -->
+<dt><a name="label-31" id="label-31"><code>result_type</code></a></dt><!-- RDLabel: "result_type" -->
 <dd>
 Return the type of the columns for a function returning a SETOF
 or the type of the return value</dd>
-<dt><a name="label-29" id="label-29"><code>result_size</code></a></dt><!-- RDLabel: "result_size" -->
+<dt><a name="label-32" id="label-32"><code>result_size</code></a></dt><!-- RDLabel: "result_size" -->
 <dd>
 Return the number of columns  for a function returning a SETOF</dd>
-<dt><a name="label-30" id="label-30"><code>result_description</code></a></dt><!-- RDLabel: "result_description" -->
+<dt><a name="label-33" id="label-33"><code>result_description</code></a></dt><!-- RDLabel: "result_description" -->
 <dd>
 Return the table description given to a function returning a SETOF</dd>
-<dt><a name="label-31" id="label-31"><code>exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
-<dt><a name="label-32" id="label-32"><code>spi_exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "spi_exec" -->
+<dt><a name="label-34" id="label-34"><code>exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
+<dt><a name="label-35" id="label-35"><code>spi_exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "spi_exec" -->
 <dd>
 Call parser/planner/optimizer/executor for query. The optional
 <kbd>count</kbd> value tells spi_exec the maximum number of rows to be
 processed by the query.
 <dl>
-<dt><a name="label-33" id="label-33">SELECT</a></dt><!-- RDLabel: "SELECT" -->
+<dt><a name="label-36" id="label-36">SELECT</a></dt><!-- RDLabel: "SELECT" -->
 <dd>
 <p>If the query is a SELECT statement, an array is return (if count is
 not specified or with a value &gt; 1). Each element of this array is an
@@ -424,18 +464,18 @@ FALSE if it fail) is returned as a hash. Here a little example :</p>
   return 1
 ' LANGUAGE 'plruby';</pre>
 </dd>
-<dt><a name="label-34" id="label-34">SELECT INTO, INSERT, UPDATE, DELETE</a></dt><!-- RDLabel: "SELECT INTO, INSERT, UPDATE, DELETE" -->
+<dt><a name="label-37" id="label-37">SELECT INTO, INSERT, UPDATE, DELETE</a></dt><!-- RDLabel: "SELECT INTO, INSERT, UPDATE, DELETE" -->
 <dd>
 return the number of rows insered, updated, deleted, ...
 </dd>
-<dt><a name="label-35" id="label-35">UTILITY</a></dt><!-- RDLabel: "UTILITY" -->
+<dt><a name="label-38" id="label-38">UTILITY</a></dt><!-- RDLabel: "UTILITY" -->
 <dd>
 return TRUE
 </dd>
 </dl></dd>
-<dt><a name="label-36" id="label-36"><code>prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "prepare" -->
-<dt><a name="label-37" id="label-37"><code>spi_prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "spi_prepare" -->
-<dt><a name="label-38" id="label-38"><code>prepare(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>tmp</var>" =&gt; <var>true</var>)</code></a></dt><!-- RDLabel: "prepare" -->
+<dt><a name="label-39" id="label-39"><code>prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "prepare" -->
+<dt><a name="label-40" id="label-40"><code>spi_prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "spi_prepare" -->
+<dt><a name="label-41" id="label-41"><code>prepare(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>tmp</var>" =&gt; <var>true</var>)</code></a></dt><!-- RDLabel: "prepare" -->
 <dd>
 <p>Deprecated : See <kbd>PL::Plan::new</kbd> and <kbd>PL::Plan#save</kbd></p>
 <p>Prepares AND SAVES a query plan for later execution. It is a bit
@@ -448,9 +488,9 @@ Ruby array of strings. The return value from prepare is a
 <p>If the hash given has the keys <kbd>count</kbd>, <kbd>output</kbd> these values
 will be given to the subsequent calls to <kbd>each</kbd></p></dd>
 </dl>
-<h3><a name="label-39" id="label-39">class PL::Plan</a></h3><!-- RDLabel: "class PL::Plan" -->
+<h3><a name="label-42" id="label-42">class PL::Plan</a></h3><!-- RDLabel: "class PL::Plan" -->
 <dl>
-<dt><a name="label-40" id="label-40"><code>initialize(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>save</var>" =&gt; <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-43" id="label-43"><code>initialize(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>save</var>" =&gt; <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 <p>Prepares a query plan for later execution.</p>
 <p>If the query references arguments, the type names must be given as a
@@ -458,10 +498,10 @@ Ruby array of strings.</p>
 <p>If the hash given has the keys <kbd>output</kbd>, <kbd>count</kbd> these values
 will be given to the subsequent calls to <kbd>each</kbd></p>
 <p>If <kbd>"save"</kbd> as a true value, the plan will be saved </p></dd>
-<dt><a name="label-41" id="label-41"><code>exec(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
-<dt><a name="label-42" id="label-42"><code>execp(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "execp" -->
-<dt><a name="label-43" id="label-43"><code>exec("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "exec" -->
-<dt><a name="label-44" id="label-44"><code>execp("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "execp" -->
+<dt><a name="label-44" id="label-44"><code>exec(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
+<dt><a name="label-45" id="label-45"><code>execp(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "execp" -->
+<dt><a name="label-46" id="label-46"><code>exec("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "exec" -->
+<dt><a name="label-47" id="label-47"><code>execp("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "execp" -->
 <dd>
 <p>Execute a prepared plan from <kbd>PL::PLan::new</kbd> with variable
 substitution. The optional <kbd>count</kbd> value tells
@@ -491,7 +531,7 @@ the fields selected.</p>
     n = $Plans["plan"].exec([args[0], args[1]], 1)
     n["cnt"]
 ' LANGUAGE 'plruby';</pre></dd>
-<dt><a name="label-45" id="label-45"><code>cursor(<var>name</var> = <var>nil</var>, "<var>values</var>" =&gt; <var>values</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "cursor" -->
+<dt><a name="label-48" id="label-48"><code>cursor(<var>name</var> = <var>nil</var>, "<var>values</var>" =&gt; <var>values</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "cursor" -->
 <dd>
 <p>Create a new object PL::Cursor</p>
 <p>If output is specified it can take the values</p>
@@ -503,10 +543,10 @@ the fields selected.</p>
 <p>If there was a typelist given to <kbd>PL::Plan::new</kbd>, an array
 of <kbd>values</kbd> of exactly the same length must be given to
 <kbd>PL::Plan#cursor</kbd></p></dd>
-<dt><a name="label-46" id="label-46"><code>each(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "each" -->
-<dt><a name="label-47" id="label-47"><code>fetch(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
-<dt><a name="label-48" id="label-48"><code>each("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "each" -->
-<dt><a name="label-49" id="label-49"><code>fetch("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
+<dt><a name="label-49" id="label-49"><code>each(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "each" -->
+<dt><a name="label-50" id="label-50"><code>fetch(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
+<dt><a name="label-51" id="label-51"><code>each("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "each" -->
+<dt><a name="label-52" id="label-52"><code>fetch("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
 <dd>
 <p>Same then #exec but a call to SPI_cursor_open(), SPI_cursor_fetch() is made.</p>
 <p>Can be used only with a block and a SELECT statement</p>
@@ -546,34 +586,34 @@ NOTICE:  {"skey1"=&gt;"24", "skey2"=&gt;"c", "stxt"=&gt;"d"}
 (1 row)
 
 plruby_test=# </pre></dd>
-<dt><a name="label-50" id="label-50"><code>release</code></a></dt><!-- RDLabel: "release" -->
+<dt><a name="label-53" id="label-53"><code>release</code></a></dt><!-- RDLabel: "release" -->
 <dd>
 Release a query plan</dd>
-<dt><a name="label-51" id="label-51"><code>save</code></a></dt><!-- RDLabel: "save" -->
+<dt><a name="label-54" id="label-54"><code>save</code></a></dt><!-- RDLabel: "save" -->
 <dd>
 Save a query plan for later execution. The plan is copied to the
 toplevel memory context.</dd>
 </dl>
-<h3><a name="label-52" id="label-52">class PL::Cursor</a></h3><!-- RDLabel: "class PL::Cursor" -->
+<h3><a name="label-55" id="label-55">class PL::Cursor</a></h3><!-- RDLabel: "class PL::Cursor" -->
 <dl>
-<dt><a name="label-53" id="label-53"><code>close</code></a></dt><!-- RDLabel: "close" -->
+<dt><a name="label-56" id="label-56"><code>close</code></a></dt><!-- RDLabel: "close" -->
 <dd>
 Closes a cursor</dd>
-<dt><a name="label-54" id="label-54"><code>each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "each" -->
+<dt><a name="label-57" id="label-57"><code>each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "each" -->
 <dd>
 Iterate over all rows (forward)</dd>
-<dt><a name="label-55" id="label-55"><code>fetch(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "fetch" -->
-<dt><a name="label-56" id="label-56"><code>row(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "row" -->
+<dt><a name="label-58" id="label-58"><code>fetch(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "fetch" -->
+<dt><a name="label-59" id="label-59"><code>row(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "row" -->
 <dd>
 <p>Fetches some rows from a cursor</p>
 <p>if count &gt; 0 fetch forward else backward</p></dd>
-<dt><a name="label-57" id="label-57"><code>move(<var>count</var>)</code></a></dt><!-- RDLabel: "move" -->
+<dt><a name="label-60" id="label-60"><code>move(<var>count</var>)</code></a></dt><!-- RDLabel: "move" -->
 <dd>
 Move a cursor : if count &gt; 0 move forward else backward</dd>
-<dt><a name="label-58" id="label-58"><code>reverse_each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "reverse_each" -->
+<dt><a name="label-61" id="label-61"><code>reverse_each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "reverse_each" -->
 <dd>
 Iterate over all rows (backward)</dd>
-<dt><a name="label-59" id="label-59"><code>rewind</code></a></dt><!-- RDLabel: "rewind" -->
+<dt><a name="label-62" id="label-62"><code>rewind</code></a></dt><!-- RDLabel: "rewind" -->
 <dd>
 Positions the cursor at the beginning of the table</dd>
 </dl>

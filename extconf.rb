@@ -11,11 +11,11 @@ libs = if CONFIG.key?("LIBRUBYARG_STATIC")
 unknown = find_library(libs, "ruby_init", 
 		       Config::expand(CONFIG["archdir"].dup))
 
-if srcdir = with_config("pgsql-srcinc-dir")
+if srcdir = with_config("pgsql-srcinc")
    $CFLAGS = "-I#{srcdir} "
 end
 
-include_dir, = dir_config("pgsql", "/usr/local/pgsql")
+include_dir, = dir_config("pgsql", "/usr/local/pgsql/include", "/usr/local/pgsql/lib")
 
 $CFLAGS += if File.exist?("#{include_dir}/server")
 	      " -I#{include_dir}/server"

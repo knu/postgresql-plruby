@@ -6,18 +6,12 @@
 #   (make install-all-headers)
 # you just need to specify pgsql-prefix
 #
-ruby extconf.rb --with-pgsql-prefix=/home/ts/local/pgsql
-#
-#
-# ruby extconf.rb --with-pgsql-prefix=/home/ts/local/pgsql \
-#   --with-pgsql-srcinc-dir=/home/ts/postgresql/postgresql-7.1.2/src/include \
-#   --with-pgsql-version=71
-#
+ruby extconf.rb --with-pgsql-dir=/home/ts/local/pgsql
 #
 # for developpement version (version is not defined)
 # with the new style of function call
 #
-# ruby extconf.rb --with-pgsql-prefix=/home/ts/local/pgtemp \
-#   --with-pgsql-srcinc-dir=/home/ts/postgresql/pgsql/src/include \
+# ruby extconf.rb --with-pgsql-dir=/home/ts/local/pgtemp \
+#   --with-pgsql-srcinc=/home/ts/postgresql/pgsql/src/include \
 #   --with-pgsql-version=71
 #

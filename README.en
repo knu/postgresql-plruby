@@ -29,12 +29,12 @@ be 'newC' in this case
 
   --with-pgsql-dir=<prefix for include and lib directories for PostgreSQL>
 
-  --with-pgsql-include-dir=<include file directory for PostgreSQL>
+  --with-pgsql-include=<include file directory for PostgreSQL>
 
-  --with-pgsql-lib-dir=<library dir for PostgreSQL>
+  --with-pgsql-lib=<library dir for PostgreSQL>
 
-  --with-pgsql-srcinc-dir=<include file *from* the source of PostgreSQL>
-     pgsql-srcinc-dir must contains, for example, the file catalog/pg_proc.h
+  --with-pgsql-srcinc=<include file *from* the source of PostgreSQL>
+     pgsql-srcinc must contains, for example, the file catalog/pg_proc.h
      (not needed if `make install-all-headers' was executed)
 
   --with-pgsql-version=<release number for PostgreSQL, actually 65, 70, 71
@@ -42,9 +42,9 @@ be 'newC' in this case
 
  Example :
 
-  ruby extconf.rb --with-pgsql-include-dir=/usr/include/postgresql \
-                  --with-pgsql-lib-dir=/usr/lib \
-                  --with-pgsql-srcinc-dir=/var/postgres/postgresl-6.5/src/include
+  ruby extconf.rb --with-pgsql-include=/usr/include/postgresql \
+                  --with-pgsql-lib=/usr/lib \
+                  --with-pgsql-srcinc=/var/postgres/postgresl-6.5/src/include
 
 
 * Test (and examples)
