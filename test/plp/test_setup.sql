@@ -725,7 +725,7 @@ returns text as '
         retval << " slot "
         comm = PL.exec("select slotno from HSlot
                             where slotname = ''#{rec[''slotlink'']}''", 1)
-        return retval + comm["slotno"]
+        return retval + comm["slotno"].to_s
     end
     rec["slotlink"]
 ' language 'plruby';

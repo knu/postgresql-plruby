@@ -24,30 +24,16 @@
 #endif
 
 #if PG_PL_VERSION >= 74
-#include "server/utils/array.h"
+#include "utils/array.h"
 #endif
 
-#ifdef PACKAGE_NAME
-#undef PACKAGE_NAME
-#endif
-
-#ifdef PACKAGE_TARNAME
-#undef PACKAGE_TARNAME
-#endif
-
-#ifdef PACKAGE_VERSION
-#undef PACKAGE_VERSION
-#endif
-
-#ifdef PACKAGE_STRING
-#undef PACKAGE_STRING
-#endif
-
-#ifdef PACKAGE_BUGREPORT
-#undef PACKAGE_BUGREPORT
-#endif
+#include "package.h"
 
 #include <ruby.h>
+
+#ifndef StringValuePtr
+#define StringValuePtr(x) STR2CSTR(x)
+#endif
 
 #ifndef MAXFMGRARGS
 #define RUBY_ARGS_MAXFMGR FUNC_MAX_ARGS
@@ -171,6 +157,11 @@ typedef struct pl_query_desc
     FmgrInfo *arginfuncs;
     Oid *argtypelems;
     int	*arglen;
+#if PG_PL_VERSION >= 74
+    bool       *arg_is_array;
+    bool       *arg_val;
+    char       *arg_align;
+#endif
     int cursor;
     struct portal_options po;
 } pl_query_desc;
@@ -213,9 +204,9 @@ static void portal_free _((struct PLportal *));
 
 #ifdef NEW_STYLE_FUNCTION
 #if PG_PL_VERSION >= 71
-PG_FUNCTION_INFO_V1(plruby_call_handler);
+PG_FUNCTION_INFO_V1(PLRUBY_CALL_HANDLER);
 #else
-Datum plruby_call_handler(PG_FUNCTION_ARGS);
+Datum PLRUBY_CALL_HANDLER(PG_FUNCTION_ARGS);
 #endif
 static Datum pl_func_handler(PG_FUNCTION_ARGS);
 static HeapTuple pl_trigger_handler(PG_FUNCTION_ARGS);

@@ -14,17 +14,33 @@
 <li><a href="#label-5">Function returning SET (ExprMultiResult)</a></li>
 <li><a href="#label-6">Trigger procedures in PL Ruby</a></li>
 <li><a href="#label-18">plruby_singleton_methods</a></li>
-<li><a href="#label-19">Class and modules</a></li>
+<li><a href="#label-19">Conversion</a></li>
+<li><a href="#label-20">Class and modules</a>
+<ul>
+<li><a href="#label-24">module PL</a> : general module</li>
+<li><a href="#label-43">class PL::Plan</a> : class for prepared plans</li>
+<li><a href="#label-56">class PL::Cursor</a> : class for cursors</li>
+<li><a href="#label-90">class Tinterval</a> : only if compiled with --enable-conversion</li>
+<li><a href="#label-64">class NetAddr</a> : only if compiled with --enable-network</li>
+<li><a href="#label-84">class MacAddr</a> : only if compiled with --enable-network</li>
+<li><a href="#label-98">class Box</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-203">class Circle</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-130">class Path</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-146">class Point</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-184">class Polygon</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-169">class Segment</a> : only if compiled with --enable-geometry</li>
+</ul></li>
 </ul>
 <p>PL/Ruby is a loadable procedural language for the Postgres database
 system  that enable the Ruby language to create functions and trigger
 procedures</p>
 <p>Functions and triggers are singleton methods of the module PLtemp.</p>
 <h1><a name="label-1" id="label-1">WARNING</a></h1><!-- RDLabel: "WARNING" -->
-<p><em>All arguments (to the function or the triggers) are passed as string 
+<p><em>if PL/Ruby was *NOT* compiled with <kbd>--enable-conversion</kbd>,
+all arguments (to the function or the triggers) are passed as string 
 values, except for NULL values represented by <kbd>Qnil</kbd>.</em>
-<em>You must explicitely call a conversion function (like to_i) if you want 
-to use an argument as an integer</em></p>
+<em>In this case you must explicitely call a conversion function (like to_i)
+if you want to use an argument as an integer</em></p>
 <h2><a name="label-2" id="label-2">Defining function in PL Ruby</a></h2><!-- RDLabel: "Defining function in PL Ruby" -->
 <p>To create a function in the PL/Ruby language use the syntax</p>
 <pre>CREATE FUNCTION funcname(arguments_type) RETURNS type AS '
@@ -287,21 +303,21 @@ called from a PL/Ruby function or a PL/Ruby trigger.</p>
 <p>just close the current definition of the function (or trigger) with a
 <code>end</code> and define your singleton method without the final <code>end</code></p>
 <p>Here a small and useless example</p>
-<pre>toto=&gt; CREATE FUNCTION tutu() RETURNS int4 AS '
-toto'&gt;     toto(1, 3) + toto(4, 4)
-toto'&gt; end
-toto'&gt; 
-toto'&gt; def PLtemp.toto(a, b)
-toto'&gt;     a + b
-toto'&gt; ' LANGUAGE 'plruby';
+<pre>plruby_test=# CREATE FUNCTION tutu() RETURNS int4 AS '
+plruby_test'#     toto(1, 3) + toto(4, 4)
+plruby_test'# end
+plruby_test'# 
+plruby_test'# def PLtemp.toto(a, b)
+plruby_test'#     a + b
+plruby_test'# ' LANGUAGE 'plruby';
 CREATE
-toto=&gt; select tutu();
+plruby_test=# select tutu();
 tutu
 ----
   12
 (1 row)
 
-toto=&gt;</pre>
+plruby_test=#</pre>
 <ul>
 <li>create a table plruby_singleton_methods with the columns (name, args, body)</li>
 </ul>
@@ -312,85 +328,165 @@ found try, for each row, to define singleton methods with the template :</p>
 end</pre>
 <p>The previous example can be written (you have a more complete example in
 test/plp/test_setup.sql)</p>
-<pre>toto=&gt; SELECT * FROM plruby_singleton_methods;
+<pre>plruby_test=# SELECT * FROM plruby_singleton_methods;
 name|args|body 
 ----+----+-----
 toto|a, b|a + b
 (1 row)
 
-toto=&gt; CREATE FUNCTION tutu() RETURNS int4 AS '
-toto'&gt;     toto(1, 3) + toto(4, 4)
-toto'&gt; ' LANGUAGE 'plruby';
+plruby_test=# CREATE FUNCTION tutu() RETURNS int4 AS '
+plruby_test'#     toto(1, 3) + toto(4, 4)
+plruby_test'# ' LANGUAGE 'plruby';
 CREATE
-toto=&gt; select tutu();
+plruby_test=# select tutu();
 tutu
 ----
   12
 (1 row)
 
-toto=&gt;</pre>
-<h2><a name="label-19" id="label-19">Class and modules</a></h2><!-- RDLabel: "Class and modules" -->
-<h3><a name="label-20" id="label-20">Global</a></h3><!-- RDLabel: "Global" -->
+plruby_test=#</pre>
+<ul>
+<li><p>Another example, if PLRuby was compiled with --enable-conversion and it 
+  exist a column with the name '***' then it can create a singleton method
+  from a PLRuby function</p>
+<pre>plruby_test=# select * from plruby_singleton_methods;
+ name | args | body 
+------+------+------
+ ***  |      | 
+(1 row)
+
+plruby_test=# create function add_value(int, int) returns int as '
+plruby_test'# args[0] + args[1]
+plruby_test'# ' language 'plruby';
+CREATE FUNCTION
+plruby_test=# 
+plruby_test=# select add_value(10, 2);
+ add_value 
+-----------
+        12
+(1 row)
+
+plruby_test=# 
+plruby_test=# create function add_one(int) returns int as '
+plruby_test'# add_value(args[0], 1)
+plruby_test'# ' language 'plruby';
+CREATE FUNCTION
+plruby_test=# 
+plruby_test=# select add_one(11);
+ add_one 
+---------
+      12
+(1 row)
+
+plruby_test=# </pre></li>
+</ul>
+<h2><a name="label-19" id="label-19">Conversion</a></h2><!-- RDLabel: "Conversion" -->
+<p>When compiled with --enable-conversion the following conversions are
+made</p>
+<pre>PostgreSQL             Ruby
+----------             ----
+OID                    Fixnum
+INT2OID                Fixnum
+INT4OID                Fixnum
+INT8OID                Fixnum (or Bignum)
+FLOAT4OID              Float
+FLOAT8OID              Float
+CASHOID                Float
+NUMERICOID             Float
+BOOLOID                true, false
+ABSTIMEOID             Time
+RELTIMEOID             Time
+TIMEOID                Time
+TIMETZOID              Time
+TIMESTAMPOID           Time
+TIMESTAMPTZOID         Time
+DATEOID                Time
+INTERVALOID            Time
+TINTERVALOID           Tinterval (new Ruby class)</pre>
+<p>The following conversions are added when compiled with --enable-network</p>
+<pre>INETOID                NetAddr (new Ruby class)
+CIDROID                NetAddr (new Ruby class)
+MACADDROID             MacAddr (new Ruby class)</pre>
+<p>The following conversions are added when compiled with --enable-geometry</p>
+<pre>POINTOID               Point   (new Ruby class)
+LSEGOID                Segment (new Ruby class)
+LINEOID                Line    (new Ruby class)
+BOXOID                 Box     (new Ruby class)
+PATHOID                Path    (new Ruby class)
+POLYGONOID             Polygon (new Ruby class)
+CIRCLEOID              Circle  (new Ruby class)</pre>
+<p>all others OID are converted to a String object</p>
+<h2><a name="label-20" id="label-20">Class and modules</a></h2><!-- RDLabel: "Class and modules" -->
+<h3><a name="label-21" id="label-21">Global</a></h3><!-- RDLabel: "Global" -->
 <dl>
-<dt><a name="label-21" id="label-21"><code>warn [<var>level</var>], <var>message</var></code></a></dt><!-- RDLabel: "warn [level], message" -->
+<dt><a name="label-22" id="label-22"><code>warn [<var>level</var>], <var>message</var></code></a></dt><!-- RDLabel: "warn [level], message" -->
 <dd>
 <p>Ruby interface to PostgreSQL elog()</p>
 <p>Possible value for <kbd>level</kbd> are <kbd>NOTICE</kbd>, <kbd>DEBUG</kbd> and <kbd>NOIND</kbd></p>
 <p>Use <kbd>raise()</kbd> if you want to simulate <kbd>elog(ERROR, "...")</kbd></p></dd>
-<dt><a name="label-22" id="label-22"><code>$Plans (<var>hash</var>, <var>tainted</var>)</code></a></dt><!-- RDLabel: "$Plans" -->
+<dt><a name="label-23" id="label-23"><code>$Plans (<var>hash</var>, <var>tainted</var>)</code></a></dt><!-- RDLabel: "$Plans" -->
 <dd>
 can be used to store prepared plans.</dd>
 </dl>
-<h3><a name="label-23" id="label-23">module PL</a></h3><!-- RDLabel: "module PL" -->
+<h3><a name="label-24" id="label-24">module PL</a></h3><!-- RDLabel: "module PL" -->
+<pre>general module</pre>
 <dl>
-<dt><a name="label-24" id="label-24"><code>args_type</code></a></dt><!-- RDLabel: "args_type" -->
+<dt><a name="label-25" id="label-25"><code>args_type</code></a></dt><!-- RDLabel: "args_type" -->
 <dd>
 Return the type of the arguments given to the function</dd>
-<dt><a name="label-25" id="label-25"><code>column_name(<var>table</var>)</code></a></dt><!-- RDLabel: "column_name" -->
+<dt><a name="label-26" id="label-26"><code>column_name(<var>table</var>)</code></a></dt><!-- RDLabel: "column_name" -->
 <dd>
 Return the name of the columns for the table</dd>
-<dt><a name="label-26" id="label-26"><code>column_type(<var>table</var>)</code></a></dt><!-- RDLabel: "column_type" -->
+<dt><a name="label-27" id="label-27"><code>column_type(<var>table</var>)</code></a></dt><!-- RDLabel: "column_type" -->
 <dd>
 return the type of the columns for the table</dd>
-<dt><a name="label-27" id="label-27"><code>context</code></a></dt><!-- RDLabel: "context" -->
+<dt><a name="label-28" id="label-28"><code>context</code></a></dt><!-- RDLabel: "context" -->
 <dd>
 Return the context (or nil) associated with a SETOF function 
 (ExprMultiResult)</dd>
-<dt><a name="label-28" id="label-28"><code>context=</code></a></dt><!-- RDLabel: "context=" -->
+<dt><a name="label-29" id="label-29"><code>context=</code></a></dt><!-- RDLabel: "context=" -->
 <dd>
 Set the context for a SETOF function (ExprMultiResult)</dd>
-<dt><a name="label-29" id="label-29"><code>quote(<var>string</var>)</code></a></dt><!-- RDLabel: "quote" -->
+<dt><a name="label-30" id="label-30"><code>quote(<var>string</var>)</code></a></dt><!-- RDLabel: "quote" -->
 <dd>
 Duplicates all occurences of single quote and backslash
 characters. It should be used when variables are used in the query
 string given to spi_exec or spi_prepare (not for the value list on
 execp).</dd>
-<dt><a name="label-30" id="label-30"><code>result_name</code></a></dt><!-- RDLabel: "result_name" -->
+<dt><a name="label-31" id="label-31"><code>result_name</code></a></dt><!-- RDLabel: "result_name" -->
 <dd>
 Return the name of the columns for a function returning a SETOF</dd>
-<dt><a name="label-31" id="label-31"><code>result_type</code></a></dt><!-- RDLabel: "result_type" -->
+<dt><a name="label-32" id="label-32"><code>result_type</code></a></dt><!-- RDLabel: "result_type" -->
 <dd>
 Return the type of the columns for a function returning a SETOF
 or the type of the return value</dd>
-<dt><a name="label-32" id="label-32"><code>result_size</code></a></dt><!-- RDLabel: "result_size" -->
+<dt><a name="label-33" id="label-33"><code>result_size</code></a></dt><!-- RDLabel: "result_size" -->
 <dd>
 Return the number of columns  for a function returning a SETOF</dd>
-<dt><a name="label-33" id="label-33"><code>result_description</code></a></dt><!-- RDLabel: "result_description" -->
+<dt><a name="label-34" id="label-34"><code>result_description</code></a></dt><!-- RDLabel: "result_description" -->
 <dd>
 Return the table description given to a function returning a SETOF</dd>
-<dt><a name="label-34" id="label-34"><code>exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
-<dt><a name="label-35" id="label-35"><code>spi_exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "spi_exec" -->
+<dt><a name="label-35" id="label-35"><code>exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
+<dt><a name="label-36" id="label-36"><code>spi_exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "spi_exec" -->
 <dd>
 Call parser/planner/optimizer/executor for query. The optional
 <kbd>count</kbd> value tells spi_exec the maximum number of rows to be
 processed by the query.
 <dl>
-<dt><a name="label-36" id="label-36">SELECT</a></dt><!-- RDLabel: "SELECT" -->
+<dt><a name="label-37" id="label-37">SELECT</a></dt><!-- RDLabel: "SELECT" -->
 <dd>
 <p>If the query is a SELECT statement, an array is return (if count is
 not specified or with a value &gt; 1). Each element of this array is an
-hash where the key is the column name.  For example this procedure
-display all rows in the table pg_table.</p>
+hash where the key is the column name.</p>
+<p>If type is specified it can take the value</p>
+<ul>
+<li>"array" return for each column an array with the element
+            ["name", "value", "type", "len", "typeid"]</li>
+<li>"hash" return for each column an hash with the keys 
+            {"name", "value", "type", "len", "typeid"}</li>
+<li>"value" return all values</li>
+</ul>
+<p>For example this procedure display all rows in the table pg_table.</p>
 <pre>CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
 res = PLruby.exec("select * from pg_class")
 res.each do |x|
@@ -402,14 +498,18 @@ res.each do |x|
 end
 return res.size
 ' LANGUAGE 'plruby';</pre>
-<p>if type is specified it can take the value</p>
-<ul>
-<li>"array" return an array with the element ["name", "value", "type", "len", "typeid"]</li>
-<li>"hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}</li>
-</ul>
-<pre>Example :
-
-create table T_pkey1 (
+<p>A block can be specified, in this case a call to yield() will be
+made.</p>
+<p>If count is specified with the value 1, only the first row (or
+FALSE if it fail) is returned as a hash. Here a little example :</p>
+<pre>CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
+   PL.exec("select * from pg_class", 1) { |y, z|
+      warn "name = #{y} -- value = #{z}"
+  }
+  return 1
+' LANGUAGE 'plruby';</pre>
+<p>Another example with count = 1</p>
+<pre>create table T_pkey1 (
     skey1        int4,
     skey2        varchar(20),
     stxt         varchar(40)
@@ -453,29 +553,19 @@ NOTICE:  =======
 (1 row)
 
 plruby_test=# </pre>
-<p>A block can be specified, in this case a call to yield() will be
-made.</p>
-<p>If count is specified with the value 1, only the first row (or
-FALSE if it fail) is returned as a hash. Here a little example :</p>
-<pre>CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
-   PL.exec("select * from pg_class", 1) { |y, z|
-      warn "name = #{y} -- value = #{z}"
-  }
-  return 1
-' LANGUAGE 'plruby';</pre>
 </dd>
-<dt><a name="label-37" id="label-37">SELECT INTO, INSERT, UPDATE, DELETE</a></dt><!-- RDLabel: "SELECT INTO, INSERT, UPDATE, DELETE" -->
+<dt><a name="label-38" id="label-38">SELECT INTO, INSERT, UPDATE, DELETE</a></dt><!-- RDLabel: "SELECT INTO, INSERT, UPDATE, DELETE" -->
 <dd>
 return the number of rows insered, updated, deleted, ...
 </dd>
-<dt><a name="label-38" id="label-38">UTILITY</a></dt><!-- RDLabel: "UTILITY" -->
+<dt><a name="label-39" id="label-39">UTILITY</a></dt><!-- RDLabel: "UTILITY" -->
 <dd>
 return TRUE
 </dd>
 </dl></dd>
-<dt><a name="label-39" id="label-39"><code>prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "prepare" -->
-<dt><a name="label-40" id="label-40"><code>spi_prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "spi_prepare" -->
-<dt><a name="label-41" id="label-41"><code>prepare(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>tmp</var>" =&gt; <var>true</var>)</code></a></dt><!-- RDLabel: "prepare" -->
+<dt><a name="label-40" id="label-40"><code>prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "prepare" -->
+<dt><a name="label-41" id="label-41"><code>spi_prepare(<var>string</var>[, <var>types</var>])</code></a></dt><!-- RDLabel: "spi_prepare" -->
+<dt><a name="label-42" id="label-42"><code>prepare(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>tmp</var>" =&gt; <var>true</var>)</code></a></dt><!-- RDLabel: "prepare" -->
 <dd>
 <p>Deprecated : See <kbd>PL::Plan::new</kbd> and <kbd>PL::Plan#save</kbd></p>
 <p>Prepares AND SAVES a query plan for later execution. It is a bit
@@ -488,9 +578,10 @@ Ruby array of strings. The return value from prepare is a
 <p>If the hash given has the keys <kbd>count</kbd>, <kbd>output</kbd> these values
 will be given to the subsequent calls to <kbd>each</kbd></p></dd>
 </dl>
-<h3><a name="label-42" id="label-42">class PL::Plan</a></h3><!-- RDLabel: "class PL::Plan" -->
+<h3><a name="label-43" id="label-43">class PL::Plan</a></h3><!-- RDLabel: "class PL::Plan" -->
+<pre>class for prepared plan</pre>
 <dl>
-<dt><a name="label-43" id="label-43"><code>initialize(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>save</var>" =&gt; <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-44" id="label-44"><code>initialize(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>save</var>" =&gt; <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 <p>Prepares a query plan for later execution.</p>
 <p>If the query references arguments, the type names must be given as a
@@ -498,10 +589,10 @@ Ruby array of strings.</p>
 <p>If the hash given has the keys <kbd>output</kbd>, <kbd>count</kbd> these values
 will be given to the subsequent calls to <kbd>each</kbd></p>
 <p>If <kbd>"save"</kbd> as a true value, the plan will be saved </p></dd>
-<dt><a name="label-44" id="label-44"><code>exec(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
-<dt><a name="label-45" id="label-45"><code>execp(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "execp" -->
-<dt><a name="label-46" id="label-46"><code>exec("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "exec" -->
-<dt><a name="label-47" id="label-47"><code>execp("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "execp" -->
+<dt><a name="label-45" id="label-45"><code>exec(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "exec" -->
+<dt><a name="label-46" id="label-46"><code>execp(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "execp" -->
+<dt><a name="label-47" id="label-47"><code>exec("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "exec" -->
+<dt><a name="label-48" id="label-48"><code>execp("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "execp" -->
 <dd>
 <p>Execute a prepared plan from <kbd>PL::PLan::new</kbd> with variable
 substitution. The optional <kbd>count</kbd> value tells
@@ -531,7 +622,7 @@ the fields selected.</p>
     n = $Plans["plan"].exec([args[0], args[1]], 1)
     n["cnt"]
 ' LANGUAGE 'plruby';</pre></dd>
-<dt><a name="label-48" id="label-48"><code>cursor(<var>name</var> = <var>nil</var>, "<var>values</var>" =&gt; <var>values</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "cursor" -->
+<dt><a name="label-49" id="label-49"><code>cursor(<var>name</var> = <var>nil</var>, "<var>values</var>" =&gt; <var>values</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "cursor" -->
 <dd>
 <p>Create a new object PL::Cursor</p>
 <p>If output is specified it can take the values</p>
@@ -543,10 +634,10 @@ the fields selected.</p>
 <p>If there was a typelist given to <kbd>PL::Plan::new</kbd>, an array
 of <kbd>values</kbd> of exactly the same length must be given to
 <kbd>PL::Plan#cursor</kbd></p></dd>
-<dt><a name="label-49" id="label-49"><code>each(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "each" -->
-<dt><a name="label-50" id="label-50"><code>fetch(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
-<dt><a name="label-51" id="label-51"><code>each("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "each" -->
-<dt><a name="label-52" id="label-52"><code>fetch("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
+<dt><a name="label-50" id="label-50"><code>each(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "each" -->
+<dt><a name="label-51" id="label-51"><code>fetch(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
+<dt><a name="label-52" id="label-52"><code>each("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "each" -->
+<dt><a name="label-53" id="label-53"><code>fetch("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
 <dd>
 <p>Same then #exec but a call to SPI_cursor_open(), SPI_cursor_fetch() is made.</p>
 <p>Can be used only with a block and a SELECT statement</p>
@@ -586,36 +677,621 @@ NOTICE:  {"skey1"=&gt;"24", "skey2"=&gt;"c", "stxt"=&gt;"d"}
 (1 row)
 
 plruby_test=# </pre></dd>
-<dt><a name="label-53" id="label-53"><code>release</code></a></dt><!-- RDLabel: "release" -->
+<dt><a name="label-54" id="label-54"><code>release</code></a></dt><!-- RDLabel: "release" -->
 <dd>
 Release a query plan</dd>
-<dt><a name="label-54" id="label-54"><code>save</code></a></dt><!-- RDLabel: "save" -->
+<dt><a name="label-55" id="label-55"><code>save</code></a></dt><!-- RDLabel: "save" -->
 <dd>
 Save a query plan for later execution. The plan is copied to the
 toplevel memory context.</dd>
 </dl>
-<h3><a name="label-55" id="label-55">class PL::Cursor</a></h3><!-- RDLabel: "class PL::Cursor" -->
+<h3><a name="label-56" id="label-56">class PL::Cursor</a></h3><!-- RDLabel: "class PL::Cursor" -->
+<pre>A cursor is created with the method PL::Plan#cursor</pre>
 <dl>
-<dt><a name="label-56" id="label-56"><code>close</code></a></dt><!-- RDLabel: "close" -->
+<dt><a name="label-57" id="label-57"><code>close</code></a></dt><!-- RDLabel: "close" -->
 <dd>
 Closes a cursor</dd>
-<dt><a name="label-57" id="label-57"><code>each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "each" -->
+<dt><a name="label-58" id="label-58"><code>each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "each" -->
 <dd>
 Iterate over all rows (forward)</dd>
-<dt><a name="label-58" id="label-58"><code>fetch(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "fetch" -->
-<dt><a name="label-59" id="label-59"><code>row(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "row" -->
+<dt><a name="label-59" id="label-59"><code>fetch(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "fetch" -->
+<dt><a name="label-60" id="label-60"><code>row(<var>count</var> = <var>1</var>)</code></a></dt><!-- RDLabel: "row" -->
 <dd>
 <p>Fetches some rows from a cursor</p>
 <p>if count &gt; 0 fetch forward else backward</p></dd>
-<dt><a name="label-60" id="label-60"><code>move(<var>count</var>)</code></a></dt><!-- RDLabel: "move" -->
+<dt><a name="label-61" id="label-61"><code>move(<var>count</var>)</code></a></dt><!-- RDLabel: "move" -->
 <dd>
 Move a cursor : if count &gt; 0 move forward else backward</dd>
-<dt><a name="label-61" id="label-61"><code>reverse_each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "reverse_each" -->
+<dt><a name="label-62" id="label-62"><code>reverse_each {|<var>row</var>| ... }</code></a></dt><!-- RDLabel: "reverse_each" -->
 <dd>
 Iterate over all rows (backward)</dd>
-<dt><a name="label-62" id="label-62"><code>rewind</code></a></dt><!-- RDLabel: "rewind" -->
+<dt><a name="label-63" id="label-63"><code>rewind</code></a></dt><!-- RDLabel: "rewind" -->
 <dd>
 Positions the cursor at the beginning of the table</dd>
+</dl>
+<h3><a name="label-64" id="label-64">class NetAddr</a></h3><!-- RDLabel: "class NetAddr" -->
+<p>The class NetAddr implement the PostgreSQL type <var>inet</var>
+and <var>cidr</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-network</var></p>
+<p>The module Comparable is included</p>
+<dl>
+<dt><a name="label-65" id="label-65"><code>from_string(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> to a <var>NetAddr</var></dd>
+<dt><a name="label-66" id="label-66"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dd>
+<p>comparison function for 2 <var>NetAddr</var> objects</p>
+<p>comparison is first on the common bits of the network part, then on
+the length of the network part, and then on the whole unmasked address.</p></dd>
+<dt><a name="label-67" id="label-67"><code>abbrev</code></a></dt><!-- RDLabel: "abbrev" -->
+<dd>
+return the abbreviated display format as a <var>String</var> object</dd>
+<dt><a name="label-68" id="label-68"><code>broadcast</code></a></dt><!-- RDLabel: "broadcast" -->
+<dd>
+return the broadcast address from the network</dd>
+<dt><a name="label-69" id="label-69"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dd>
+return true if <var>other</var> is included in <var>self</var></dd>
+<dt><a name="label-70" id="label-70"><code>contain_or_equal?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain_or_equal?" -->
+<dd>
+return true if <var>other</var> is included in <var>self</var>, or equal</dd>
+<dt><a name="label-71" id="label-71"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dd>
+return true if <var>self</var> is included in <var>other</var></dd>
+<dt><a name="label-72" id="label-72"><code>contained_or_equal?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained_or_equal?" -->
+<dd>
+return true if <var>self</var> is included in <var>other</var>, or equal</dd>
+<dt><a name="label-73" id="label-73"><code>family</code></a></dt><!-- RDLabel: "family" -->
+<dd>
+return the String "AF_INET" or "AF_INET6"</dd>
+<dt><a name="label-74" id="label-74"><code>first</code></a></dt><!-- RDLabel: "first" -->
+<dd>
+return the first address in the network</dd>
+<dt><a name="label-75" id="label-75"><code>host</code></a></dt><!-- RDLabel: "host" -->
+<dd>
+extract the IP address and return it as a <var>String</var> </dd>
+<dt><a name="label-76" id="label-76"><code>hostmask</code></a></dt><!-- RDLabel: "hostmask" -->
+<dd>
+return the host mask for network</dd>
+<dt><a name="label-77" id="label-77"><code>initialize(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+create a <var>NetAddr</var> from a <var>String</var></dd>
+<dt><a name="label-78" id="label-78"><code>last</code></a></dt><!-- RDLabel: "last" -->
+<dd>
+return the last address in the network</dd>
+<dt><a name="label-79" id="label-79"><code>masklen</code></a></dt><!-- RDLabel: "masklen" -->
+<dd>
+return the length of the netmask</dd>
+<dt><a name="label-80" id="label-80"><code>netmask</code></a></dt><!-- RDLabel: "netmask" -->
+<dd>
+return the netmask for the network</dd>
+<dt><a name="label-81" id="label-81"><code>network</code></a></dt><!-- RDLabel: "network" -->
+<dd>
+return the network part of the address</dd>
+<dt><a name="label-82" id="label-82"><code>set_masklen(<var>len</var>)</code></a></dt><!-- RDLabel: "set_masklen" -->
+<dd>
+return a new <var>NetAddr</var> with netmask length <var>len</var></dd>
+<dt><a name="label-83" id="label-83"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
+<dd>
+return the string representation of the address</dd>
+</dl>
+<h3><a name="label-84" id="label-84">class MacAddr</a></h3><!-- RDLabel: "class MacAddr" -->
+<p>The MacAddr implement the PostgreSQL type <var>macaddr</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-network</var></p>
+<p>The module Comparable is included</p>
+<dl>
+<dt><a name="label-85" id="label-85"><code>from_string(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> to a <var>MacAddr</var></dd>
+<dt><a name="label-86" id="label-86"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dd>
+comparison function for 2 <var>MacAddr</var> objects</dd>
+<dt><a name="label-87" id="label-87"><code>initialize(<var>string</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+create a <var>MacAddr</var> from a <var>String</var></dd>
+<dt><a name="label-88" id="label-88"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
+<dd>
+return the string representation of the MAC address</dd>
+<dt><a name="label-89" id="label-89"><code>truncate</code></a></dt><!-- RDLabel: "truncate" -->
+<dd>
+return a new object with the last 3 bytes set to zero</dd>
+</dl>
+<h3><a name="label-90" id="label-90">class Tinterval</a></h3><!-- RDLabel: "class Tinterval" -->
+<p>The Tinterval implement the PostgreSQL type <var>tinterval</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-conversion</var></p>
+<dl>
+<dt><a name="label-91" id="label-91"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> (PostgreSQL representation)
+to a <var>Tinterval</var></dd>
+<dt><a name="label-92" id="label-92"><code>high</code></a></dt><!-- RDLabel: "high" -->
+<dd>
+return a <var>Time</var> which is the high value of the interval</dd>
+<dt><a name="label-93" id="label-93"><code>high=(<var>time</var>)</code></a></dt><!-- RDLabel: "high=" -->
+<dd>
+set the high value for the interval</dd>
+<dt><a name="label-94" id="label-94"><code>initialize(<var>low</var>, <var>high</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+create a <var>Tinterval</var> with the 2 <var>Time</var> objects
+<var>low</var> and <var>high</var></dd>
+<dt><a name="label-95" id="label-95"><code>low</code></a></dt><!-- RDLabel: "low" -->
+<dd>
+return a <var>Time</var> which is the low value of the interval</dd>
+<dt><a name="label-96" id="label-96"><code>low=(<var>time</var>)</code></a></dt><!-- RDLabel: "low=" -->
+<dd>
+set the low value for the interval</dd>
+<dt><a name="label-97" id="label-97"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
+<dd>
+return the string representation of the object</dd>
+</dl>
+<h3><a name="label-98" id="label-98">class Box</a></h3><!-- RDLabel: "class Box" -->
+<p>The Box implement the PostgreSQL type <var>box</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
+<p>The module Comparable is included</p>
+<dl>
+<dt><a name="label-99" id="label-99"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> (PostgreSQL representation)
+to a <var>Box</var> object</dd>
+<dt><a name="label-100" id="label-100"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dd>
+translate (right, up) <var>self</var></dd>
+<dt><a name="label-101" id="label-101"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dd>
+translate (left, down) <var>self</var></dd>
+<dt><a name="label-102" id="label-102"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-103" id="label-103"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-104" id="label-104"><code>===(<var>other</var>)</code></a></dt><!-- RDLabel: "===" -->
+<dd>
+return true if the 2 boxes <var>self</var> and <var>other</var> are identical</dd>
+<dt><a name="label-105" id="label-105"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dd>
+comparison operator for 2 Box based on the area of the 2 objects, i.e.
+self.area &lt;=&gt; box.area</dd>
+<dt><a name="label-106" id="label-106"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
+<dd>
+return true if  <var>self</var> is above <var>other</var></dd>
+<dt><a name="label-107" id="label-107"><code>area</code></a></dt><!-- RDLabel: "area" -->
+<dd>
+return the area of the Box</dd>
+<dt><a name="label-108" id="label-108"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
+<dd>
+return true if  <var>self</var> is below <var>other</var></dd>
+<dt><a name="label-109" id="label-109"><code>center</code></a></dt><!-- RDLabel: "center" -->
+<dd>
+return the center point of the Box</dd>
+<dt><a name="label-110" id="label-110"><code>closest(<var>other</var>)</code></a></dt><!-- RDLabel: "closest" -->
+<dd>
+<p>closest point to <var>other</var></p>
+<p><var>other</var> can be a Point, or Segment</p></dd>
+<dt><a name="label-111" id="label-111"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dd>
+return true if  <var>self</var> contain <var>other</var></dd>
+<dt><a name="label-112" id="label-112"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dd>
+return true if  <var>self</var> is contained by <var>other</var></dd>
+<dt><a name="label-113" id="label-113"><code>diagonal</code></a></dt><!-- RDLabel: "diagonal" -->
+<dd>
+return a line Segment which happens to be the
+positive-slope diagonal of Box</dd>
+<dt><a name="label-114" id="label-114"><code>height</code></a></dt><!-- RDLabel: "height" -->
+<dd>
+return the height of the Box (vertical magnitude)</dd>
+<dt><a name="label-115" id="label-115"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
+<dd>
+return true if  <var>self</var> is contained by <var>other</var></dd>
+<dt><a name="label-116" id="label-116"><code>initialize(*<var>args</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+<p>create a new Box object</p>
+<p><var>args</var> can be 2 Point objects (low, high) or 4 Float objects
+(low.x, low.y, high.x, high.y)</p></dd>
+<dt><a name="label-117" id="label-117"><code>intersection(<var>other</var>)</code></a></dt><!-- RDLabel: "intersection" -->
+<dd>
+returns the overlapping portion of two boxes,
+or <var>nil</var> if they do not intersect.</dd>
+<dt><a name="label-118" id="label-118"><code>intersect?(<var>segment</var>)</code></a></dt><!-- RDLabel: "intersect?" -->
+<dd>
+<p>returns  true if the Segment <var>segment</var>
+intersect with the Box</p>
+<p>Segment completely inside box counts as intersection.
+If you want only segments crossing box boundaries,
+try converting Box to Path first.</p></dd>
+<dt><a name="label-119" id="label-119"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dd>
+return true if <var>self</var> is strictly left of <var>other</var></dd>
+<dt><a name="label-120" id="label-120"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
+<dd>
+return true if <var>self</var> overlap <var>other</var></dd>
+<dt><a name="label-121" id="label-121"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
+<dd>
+return true if the right edge of <var>self</var> is to the left of
+the right edge of <var>other</var></dd>
+<dt><a name="label-122" id="label-122"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
+<dd>
+return true if the left edge of <var>self</var> is to the right of
+the left edge of <var>other</var></dd>
+<dt><a name="label-123" id="label-123"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<dd>
+return true if <var>self</var> is strictly right of <var>other</var></dd>
+<dt><a name="label-124" id="label-124"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
+<dd>
+return true if the 2 boxes <var>self</var> and <var>other</var> are identical</dd>
+<dt><a name="label-125" id="label-125"><code>to_circle</code></a></dt><!-- RDLabel: "to_circle" -->
+<dd>
+convert a Box to a Circle</dd>
+<dt><a name="label-126" id="label-126"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dd>
+return the center Point of the Box</dd>
+<dt><a name="label-127" id="label-127"><code>to_polygon</code></a></dt><!-- RDLabel: "to_polygon" -->
+<dd>
+convert a Box to a Polygon</dd>
+<dt><a name="label-128" id="label-128"><code>to_segment</code></a></dt><!-- RDLabel: "to_segment" -->
+<dd>
+return a line Segment which happens to be the
+positive-slope diagonal of Box</dd>
+<dt><a name="label-129" id="label-129"><code>width</code></a></dt><!-- RDLabel: "width" -->
+<dd>
+return the width of the Box (horizontal magnitude)</dd>
+</dl>
+<h3><a name="label-130" id="label-130">class Path</a></h3><!-- RDLabel: "class Path" -->
+<p>The Path implement the PostgreSQL type <var>path</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
+<p>The module Comparable is included</p>
+<dl>
+<dt><a name="label-131" id="label-131"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> (PostgreSQL representation)
+to a <var>Path</var></dd>
+<dt><a name="label-132" id="label-132"><code>&lt;&lt;(<var>path</var>)</code></a></dt><!-- RDLabel: "<<" -->
+<dd>
+concatenate the two paths (only if they are both open)</dd>
+<dt><a name="label-133" id="label-133"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dd>
+translate (right, up) <var>self</var></dd>
+<dt><a name="label-134" id="label-134"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dd>
+translate (left, down) <var>self</var></dd>
+<dt><a name="label-135" id="label-135"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-136" id="label-136"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-137" id="label-137"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dd>
+comparison function based on the path cardinality, i.e.
+self.npoints &lt;=&gt; other.npoints</dd>
+<dt><a name="label-138" id="label-138"><code>close</code></a></dt><!-- RDLabel: "close" -->
+<dd>
+make a closed path</dd>
+<dt><a name="label-139" id="label-139"><code>closed?</code></a></dt><!-- RDLabel: "closed?" -->
+<dd>
+return true if <var>self</var> is a closed path</dd>
+<dt><a name="label-140" id="label-140"><code>concat(<var>path</var>)</code></a></dt><!-- RDLabel: "concat" -->
+<dd>
+concatenate the two paths (only if they are both open)</dd>
+<dt><a name="label-141" id="label-141"><code>initialize(<var>points</var>, <var>closed</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+create a new Path object from the Array of Point <var>points</var></dd>
+<dt><a name="label-142" id="label-142"><code>length</code></a></dt><!-- RDLabel: "length" -->
+<dd>
+return the length of <var>self</var></dd>
+<dt><a name="label-143" id="label-143"><code>npoints</code></a></dt><!-- RDLabel: "npoints" -->
+<dd>
+return the path cardinality</dd>
+<dt><a name="label-144" id="label-144"><code>open</code></a></dt><!-- RDLabel: "open" -->
+<dd>
+make an open path</dd>
+<dt><a name="label-145" id="label-145"><code>to_polygon</code></a></dt><!-- RDLabel: "to_polygon" -->
+<dd>
+convert <var>self</var> to a Polygon object</dd>
+</dl>
+<h3><a name="label-146" id="label-146">class Point</a></h3><!-- RDLabel: "class Point" -->
+<p>The Point implement the PostgreSQL type <var>point</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
+<p>The module Comparable is included</p>
+<dl>
+<dt><a name="label-147" id="label-147"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> (PostgreSQL representation)
+to a <var>Point</var></dd>
+<dt><a name="label-148" id="label-148"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dd>
+translate (right, up) <var>self</var></dd>
+<dt><a name="label-149" id="label-149"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dd>
+translate (left, down) <var>self</var></dd>
+<dt><a name="label-150" id="label-150"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-151" id="label-151"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-152" id="label-152"><code>[<var>indice</var>]</code></a></dt><!-- RDLabel: "[]" -->
+<dd>
+<p>return the coordinate</p>
+<p><var>indice</var> can have the value 0 or 1</p></dd>
+<dt><a name="label-153" id="label-153"><code>[<var>indice</var>] = <var>value</var></code></a></dt><!-- RDLabel: "[]=" -->
+<dd>
+<p>set the coordinate</p>
+<p><var>indice</var> can have the value 0 or 1</p></dd>
+<dt><a name="label-154" id="label-154"><code>==(<var>other</var>)</code></a></dt><!-- RDLabel: "==" -->
+<dd>
+return true if <var>self</var> and <var>other</var> are the same,
+i.e. self.x == other.x &amp;&amp; self.y == other.y</dd>
+<dt><a name="label-155" id="label-155"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
+<dd>
+return true if <var>self</var> is above <var>other</var>,
+i.e. self.y &gt; other.y</dd>
+<dt><a name="label-156" id="label-156"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
+<dd>
+return true if <var>self</var> is below <var>other</var>,
+i.e. self.y &lt; other.y</dd>
+<dt><a name="label-157" id="label-157"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dd>
+<p>return true if <var>self</var> is contained in <var>other</var></p>
+<p><var>other</var> can be Point, Polygon or a Circle object</p></dd>
+<dt><a name="label-158" id="label-158"><code>horizontal?(<var>other</var>)</code></a></dt><!-- RDLabel: "horizontal?" -->
+<dd>
+return true if <var>self</var> and <var>other</var> are horizontal,
+i.e. self.y == other.y</dd>
+<dt><a name="label-159" id="label-159"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
+<dd>
+<p>return true if <var>self</var> is contained in <var>other</var></p>
+<p><var>other</var> can be Point, Polygon or a Circle object</p></dd>
+<dt><a name="label-160" id="label-160"><code>initialize(<var>x</var>, <var>y</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+create a Point with the 2 Float object (x, y)</dd>
+<dt><a name="label-161" id="label-161"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dd>
+return true if <var>self</var> is at the left of <var>other</var>,
+i.e. self.x &lt; other.x</dd>
+<dt><a name="label-162" id="label-162"><code>on?(<var>other</var>)</code></a></dt><!-- RDLabel: "on?" -->
+<dd>
+<p>return true if <var>self</var> is on <var>other</var></p>
+<p><var>other</var> can be Point, Line, Segment, Box or Path object</p></dd>
+<dt><a name="label-163" id="label-163"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<dd>
+return true if <var>self</var> is at the right of <var>other</var>,
+i.e. self.x &gt; other.x</dd>
+<dt><a name="label-164" id="label-164"><code>vertical?(<var>other</var>)</code></a></dt><!-- RDLabel: "vertical?" -->
+<dd>
+return true if <var>self</var> and <var>other</var> are vertical,
+i.e. self.x == other.x</dd>
+<dt><a name="label-165" id="label-165"><code>x</code></a></dt><!-- RDLabel: "x" -->
+<dd>
+return <var>x</var> for <var>self</var></dd>
+<dt><a name="label-166" id="label-166"><code>x=(<var>value</var>)</code></a></dt><!-- RDLabel: "x=" -->
+<dd>
+set the <var>x</var> value for <var>self</var></dd>
+<dt><a name="label-167" id="label-167"><code>y</code></a></dt><!-- RDLabel: "y" -->
+<dd>
+return <var>y</var> for <var>self</var></dd>
+<dt><a name="label-168" id="label-168"><code>y=(<var>value</var>)</code></a></dt><!-- RDLabel: "y=" -->
+<dd>
+set the <var>y</var> value for <var>self</var></dd>
+</dl>
+<h3><a name="label-169" id="label-169">class Segment</a></h3><!-- RDLabel: "class Segment" -->
+<p>The Segment implement the PostgreSQL type <var>lseg</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
+<p>The module Comparable is included</p>
+<dl>
+<dt><a name="label-170" id="label-170"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> (PostgreSQL representation)
+to a <var>Segment</var></dd>
+<dt><a name="label-171" id="label-171"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dd>
+<p>comparison function for the 2 segments, returns</p>
+<pre>0  if self[0] == other[0] &amp;&amp; self[1] == other[1]
+
+1  if distance(self[0], self[1]) &gt; distance(other[0], other[1]) 
+
+-1 if distance(self[0], self[1]) &lt; distance(other[0], other[1]) </pre></dd>
+<dt><a name="label-172" id="label-172"><code>center</code></a></dt><!-- RDLabel: "center" -->
+<dd>
+return the center of the segment</dd>
+<dt><a name="label-173" id="label-173"><code>closest(<var>other</var>)</code></a></dt><!-- RDLabel: "closest" -->
+<dd>
+<p>closest point to other</p>
+<p><var>other</var> can be a Point, Segment or Box</p>
+<p>With a point, take the closest endpoint 
+if the point is left, right, above, or below the segment, otherwise 
+find the intersection point of the segment and its perpendicular through
+the point.</p></dd>
+<dt><a name="label-174" id="label-174"><code>horizontal?</code></a></dt><!-- RDLabel: "horizontal?" -->
+<dd>
+returns true if <var>self</var> is a horizontal Segment</dd>
+<dt><a name="label-175" id="label-175"><code>initialize(<var>point0</var>, <var>point1</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+create a Segment from the 2 Point p0, p1</dd>
+<dt><a name="label-176" id="label-176"><code>intersect?(<var>other</var>)</code></a></dt><!-- RDLabel: "intersect?" -->
+<dd>
+returns true if <var>self</var> and <var>other</var> intersect</dd>
+<dt><a name="label-177" id="label-177"><code>intersection(<var>other</var>)</code></a></dt><!-- RDLabel: "intersection" -->
+<dd>
+returns the Point where the 2 Segment <var>self</var> and <var>other</var>
+intersect or nil</dd>
+<dt><a name="label-178" id="label-178"><code>length</code></a></dt><!-- RDLabel: "length" -->
+<dd>
+return the length of <var>self</var>, i.e. the distnace between the 2 points</dd>
+<dt><a name="label-179" id="label-179"><code>on?(<var>other</var>)</code></a></dt><!-- RDLabel: "on?" -->
+<dd>
+<p>return true if <var>self</var> is on <var>other</var></p>
+<p><var>other</var> can be a Segment, or a Box object</p></dd>
+<dt><a name="label-180" id="label-180"><code>parallel?(<var>other</var>)</code></a></dt><!-- RDLabel: "parallel?" -->
+<dd>
+returns true if the 2 Segment <var>self</var> and <var>other</var> 
+are parallel</dd>
+<dt><a name="label-181" id="label-181"><code>perpendicular?(<var>other</var>)</code></a></dt><!-- RDLabel: "perpendicular?" -->
+<dd>
+returns true if <var>self</var> is perpendicular to <var>other</var></dd>
+<dt><a name="label-182" id="label-182"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dd>
+conversion function to a Point, return the center of the segment</dd>
+<dt><a name="label-183" id="label-183"><code>vertical?</code></a></dt><!-- RDLabel: "vertical?" -->
+<dd>
+returns true if <var>self</var> is a vertical Segment</dd>
+</dl>
+<h3><a name="label-184" id="label-184">class Polygon</a></h3><!-- RDLabel: "class Polygon" -->
+<p>The Polygon implement the PostgreSQL type <var>polygon</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
+<dl>
+<dt><a name="label-185" id="label-185"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> (PostgreSQL representation)
+to a <var>Polygon</var></dd>
+<dt><a name="label-186" id="label-186"><code>==(<var>other</var>)</code></a></dt><!-- RDLabel: "==" -->
+<dd>
+return true if <var>self</var> is the same as <var>other</var>, i.e. all
+the points are the same</dd>
+<dt><a name="label-187" id="label-187"><code>center</code></a></dt><!-- RDLabel: "center" -->
+<dd>
+return the center of <var>self</var>, i.e. create a circle and return its 
+center</dd>
+<dt><a name="label-188" id="label-188"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dd>
+<p>return true if <var>self</var> contains <var>other</var></p>
+<p><var>other</var> can be a Point or a Polygon</p></dd>
+<dt><a name="label-189" id="label-189"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dd>
+return true if <var>self</var> is contained in <var>other</var> by determining
+if <var>self</var> bounding box is contained by <var>other</var>'s bounding box.</dd>
+<dt><a name="label-190" id="label-190"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
+<dd>
+return true if <var>self</var> is contained in <var>other</var> by determining
+if <var>self</var> bounding box is contained by <var>other</var>'s bounding box.</dd>
+<dt><a name="label-191" id="label-191"><code>initialize(<var>points</var>, <var>closed</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+create a new Polygon object from the Array of Point <var>points</var></dd>
+<dt><a name="label-192" id="label-192"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dd>
+return true if <var>self</var> is strictly left of <var>other</var>, i.e.
+the right most point of <var>self</var> is left of the left
+most point of <var>other</var></dd>
+<dt><a name="label-193" id="label-193"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
+<dd>
+return true if <var>self</var> is overlapping or left of <var>other</var>,
+i.e. the left most point of <var>self</var> is left of the right
+most point of <var>other</var></dd>
+<dt><a name="label-194" id="label-194"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
+<dd>
+return true if <var>self</var> is overlapping or right of <var>other</var>,
+i.e. the right most point of <var>self</var> is right of the left
+most point of <var>other</var></dd>
+<dt><a name="label-195" id="label-195"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
+<dd>
+return true if <var>self</var> and <var>other</var> overlap by determining if
+their bounding boxes overlap.</dd>
+<dt><a name="label-196" id="label-196"><code>npoints</code></a></dt><!-- RDLabel: "npoints" -->
+<dd>
+return the number of points in <var>self</var></dd>
+<dt><a name="label-197" id="label-197"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<dd>
+return true if <var>self</var> is strictly right of <var>other</var>, i.e.
+the left most point of <var>self</var> is right of the left
+most point of <var>other</var></dd>
+<dt><a name="label-198" id="label-198"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
+<dd>
+return true if <var>self</var> is the same as <var>other</var>, i.e. all 
+the points are the same</dd>
+<dt><a name="label-199" id="label-199"><code>to_box</code></a></dt><!-- RDLabel: "to_box" -->
+<dd>
+convert <var>self</var> to a Box</dd>
+<dt><a name="label-200" id="label-200"><code>to_circle</code></a></dt><!-- RDLabel: "to_circle" -->
+<dd>
+convert <var>self</var> to a Circle</dd>
+<dt><a name="label-201" id="label-201"><code>to_path</code></a></dt><!-- RDLabel: "to_path" -->
+<dd>
+convert <var>self</var> to a Path</dd>
+<dt><a name="label-202" id="label-202"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dd>
+convert <var>self</var> to a Point by returning its center</dd>
+</dl>
+<h3><a name="label-203" id="label-203">class Circle</a></h3><!-- RDLabel: "class Circle" -->
+<p>The Circle implement the PostgreSQL type <var>circle</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
+<p>The module Comparable is included</p>
+<dl>
+<dt><a name="label-204" id="label-204"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> (PostgreSQL representation)
+to a <var>Circle</var></dd>
+<dt><a name="label-205" id="label-205"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dd>
+translate (right, up) <var>self</var></dd>
+<dt><a name="label-206" id="label-206"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dd>
+translate (left, down) <var>self</var></dd>
+<dt><a name="label-207" id="label-207"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-208" id="label-208"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dd>
+scale and rotate <var>self</var></dd>
+<dt><a name="label-209" id="label-209"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dd>
+comparison function based on area,
+i.e. self.area &lt;=&gt; other.area</dd>
+<dt><a name="label-210" id="label-210"><code>area</code></a></dt><!-- RDLabel: "area" -->
+<dd>
+return the area</dd>
+<dt><a name="label-211" id="label-211"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
+<dd>
+return true if <var>self</var> is entirely above <var>other</var></dd>
+<dt><a name="label-212" id="label-212"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
+<dd>
+return true if <var>self</var> is entirely below <var>other</var></dd>
+<dt><a name="label-213" id="label-213"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dd>
+return true if <var>self</var> contain <var>other</var></dd>
+<dt><a name="label-214" id="label-214"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dd>
+return true if <var>self</var> is contained in <var>other</var></dd>
+<dt><a name="label-215" id="label-215"><code>diameter</code></a></dt><!-- RDLabel: "diameter" -->
+<dd>
+return the diameter</dd>
+<dt><a name="label-216" id="label-216"><code>initialize(<var>center</var>, <var>radius</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+<p>create a Circle object with <var>center</var> and <var>radius</var></p>
+<p><var>center</var> can be a Point or an Array [x, y]</p></dd>
+<dt><a name="label-217" id="label-217"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
+<dd>
+return true if <var>self</var> overlap <var>other</var></dd>
+<dt><a name="label-218" id="label-218"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
+<dd>
+return true if the right edge of <var>self</var> is to the left of
+the right edge of <var>other</var></dd>
+<dt><a name="label-219" id="label-219"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dd>
+return true if <var>self</var> is strictly left of <var>other</var></dd>
+<dt><a name="label-220" id="label-220"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
+<dd>
+return true if the left edge of <var>self</var> is to the right of
+the left edge of <var>other</var></dd>
+<dt><a name="label-221" id="label-221"><code>radius</code></a></dt><!-- RDLabel: "radius" -->
+<dd>
+return the radius</dd>
+<dt><a name="label-222" id="label-222"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<dd>
+return true if <var>self</var> is strictly right of <var>other</var></dd>
+<dt><a name="label-223" id="label-223"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
+<dd>
+return true if <var>self</var> is the same than <var>other</var>, i.e.
+self.center == other.center &amp;&amp; self.radius == other.radius</dd>
+<dt><a name="label-224" id="label-224"><code>to_box</code></a></dt><!-- RDLabel: "to_box" -->
+<dd>
+convert <var>self</var> to a Box</dd>
+<dt><a name="label-225" id="label-225"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dd>
+convert <var>self</var> to a Point by returning its center</dd>
+<dt><a name="label-226" id="label-226"><code>to_polygon(<var>npts</var>)</code></a></dt><!-- RDLabel: "to_polygon" -->
+<dd>
+convert <var>self</var> to a Polygon with <var>npts</var> Points</dd>
 </dl>
 
 </body>

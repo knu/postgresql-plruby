@@ -1,8 +1,8 @@
  
-create function plruby_call_handler() returns language_handler
-    as '/home/ts/ruby/perso/plruby-0.3.8/plruby.so'
+   create function plruby_call_handler() returns language_handler
+   as '/home/ts/ruby/perso/plruby-0.3.9/src/plruby.so'
    language 'C';
  
-create trusted procedural language 'plruby'
-        handler plruby_call_handler
+   create trusted procedural language 'plruby'
+	handler plruby_call_handler
         lancompiler 'PL/Ruby';

@@ -6,8 +6,20 @@
 * ((<Function returning SET (ExprMultiResult)>))
 * ((<Trigger procedures in PL Ruby>))
 * ((<plruby_singleton_methods>))
+* ((<Conversion>))
 * ((<Class and modules>))
-
+  * ((<module PL>)) : general module
+  * ((<class PL::Plan>)) : class for prepared plans
+  * ((<class PL::Cursor>)) : class for cursors
+  * ((<class Tinterval>)) : only if compiled with --enable-conversion
+  * ((<class NetAddr>)) : only if compiled with --enable-network
+  * ((<class MacAddr>)) : only if compiled with --enable-network
+  * ((<class Box>)) : only if compiled with --enable-geometry
+  * ((<class Circle>)) : only if compiled with --enable-geometry
+  * ((<class Path>)) : only if compiled with --enable-geometry
+  * ((<class Point>)) : only if compiled with --enable-geometry
+  * ((<class Polygon>)) : only if compiled with --enable-geometry
+  * ((<class Segment>)) : only if compiled with --enable-geometry
 
 PL/Ruby is a loadable procedural language for the Postgres database
 system  that enable the Ruby language to create functions and trigger
@@ -16,10 +28,11 @@ procedures
 Functions and triggers are singleton methods of the module PLtemp.
 
 = WARNING
-((*All arguments (to the function or the triggers) are passed as string 
+((*if PL/Ruby was *NOT* compiled with ((%--enable-conversion%)),
+all arguments (to the function or the triggers) are passed as string 
 values, except for NULL values represented by ((%Qnil%)).*))
-((*You must explicitely call a conversion function (like to_i) if you want 
-to use an argument as an integer*))
+((*In this case you must explicitely call a conversion function (like to_i)
+if you want to use an argument as an integer*))
 
 == Defining function in PL Ruby
 
@@ -305,27 +318,28 @@ just close the current definition of the function (or trigger) with a
 
 Here a small and useless example
 
-          toto=> CREATE FUNCTION tutu() RETURNS int4 AS '
-          toto'>     toto(1, 3) + toto(4, 4)
-          toto'> end
-          toto'> 
-          toto'> def PLtemp.toto(a, b)
-          toto'>     a + b
-          toto'> ' LANGUAGE 'plruby';
+          plruby_test=# CREATE FUNCTION tutu() RETURNS int4 AS '
+          plruby_test'#     toto(1, 3) + toto(4, 4)
+          plruby_test'# end
+          plruby_test'# 
+          plruby_test'# def PLtemp.toto(a, b)
+          plruby_test'#     a + b
+          plruby_test'# ' LANGUAGE 'plruby';
           CREATE
-          toto=> select tutu();
+          plruby_test=# select tutu();
           tutu
           ----
             12
           (1 row)
           
-          toto=>
+          plruby_test=#
 
 
 * create a table plruby_singleton_methods with the columns (name, args, body)
 
 At load time, PL/Ruby look if it exist a table plruby_singleton_methods and if
 found try, for each row, to define singleton methods with the template :
+
 
           def PLtemp.#{name} (#{args})
               #{body}
@@ -335,23 +349,103 @@ The previous example can be written (you have a more complete example in
 test/plp/test_setup.sql)
 
           
-          toto=> SELECT * FROM plruby_singleton_methods;
+          plruby_test=# SELECT * FROM plruby_singleton_methods;
           name|args|body 
           ----+----+-----
           toto|a, b|a + b
           (1 row)
           
-          toto=> CREATE FUNCTION tutu() RETURNS int4 AS '
-          toto'>     toto(1, 3) + toto(4, 4)
-          toto'> ' LANGUAGE 'plruby';
+          plruby_test=# CREATE FUNCTION tutu() RETURNS int4 AS '
+          plruby_test'#     toto(1, 3) + toto(4, 4)
+          plruby_test'# ' LANGUAGE 'plruby';
           CREATE
-          toto=> select tutu();
+          plruby_test=# select tutu();
           tutu
           ----
             12
           (1 row)
           
-          toto=>
+          plruby_test=#
+
+* Another example, if PLRuby was compiled with --enable-conversion and it 
+  exist a column with the name '***' then it can create a singleton method
+  from a PLRuby function
+
+
+          plruby_test=# select * from plruby_singleton_methods;
+           name | args | body 
+          ------+------+------
+           ***  |      | 
+          (1 row)
+          
+          plruby_test=# create function add_value(int, int) returns int as '
+          plruby_test'# args[0] + args[1]
+          plruby_test'# ' language 'plruby';
+          CREATE FUNCTION
+          plruby_test=# 
+          plruby_test=# select add_value(10, 2);
+           add_value 
+          -----------
+                  12
+          (1 row)
+          
+          plruby_test=# 
+          plruby_test=# create function add_one(int) returns int as '
+          plruby_test'# add_value(args[0], 1)
+          plruby_test'# ' language 'plruby';
+          CREATE FUNCTION
+          plruby_test=# 
+          plruby_test=# select add_one(11);
+           add_one 
+          ---------
+                12
+          (1 row)
+          
+          plruby_test=# 
+
+== Conversion
+
+When compiled with --enable-conversion the following conversions are
+made
+
+                  PostgreSQL             Ruby
+                  ----------             ----
+                  OID                    Fixnum
+                  INT2OID                Fixnum
+                  INT4OID                Fixnum
+                  INT8OID                Fixnum (or Bignum)
+                  FLOAT4OID              Float
+                  FLOAT8OID              Float
+                  CASHOID                Float
+                  NUMERICOID             Float
+                  BOOLOID                true, false
+                  ABSTIMEOID             Time
+                  RELTIMEOID             Time
+                  TIMEOID                Time
+                  TIMETZOID              Time
+                  TIMESTAMPOID           Time
+                  TIMESTAMPTZOID         Time
+                  DATEOID                Time
+                  INTERVALOID            Time
+                  TINTERVALOID           Tinterval (new Ruby class)
+
+The following conversions are added when compiled with --enable-network
+
+                  INETOID                NetAddr (new Ruby class)
+                  CIDROID                NetAddr (new Ruby class)
+                  MACADDROID             MacAddr (new Ruby class)
+
+The following conversions are added when compiled with --enable-geometry
+
+                  POINTOID               Point   (new Ruby class)
+                  LSEGOID                Segment (new Ruby class)
+                  LINEOID                Line    (new Ruby class)
+                  BOXOID                 Box     (new Ruby class)
+                  PATHOID                Path    (new Ruby class)
+                  POLYGONOID             Polygon (new Ruby class)
+                  CIRCLEOID              Circle  (new Ruby class)
+
+all others OID are converted to a String object
 
 
 == Class and modules
@@ -369,6 +463,8 @@ test/plp/test_setup.sql)
     can be used to store prepared plans.
  
 === module PL
+
+    general module
 
 --- args_type
     Return the type of the arguments given to the function
@@ -528,6 +624,8 @@ test/plp/test_setup.sql)
 
 === class PL::Plan
 
+    class for prepared plan
+
 --- initialize(string, "types" => types, "count" => count, "output" => type, "save" => false)
 
     Prepares a query plan for later execution.
@@ -648,6 +746,8 @@ test/plp/test_setup.sql)
 
 === class PL::Cursor
 
+    A cursor is created with the method PL::Plan#cursor
+
 --- close
 
     Closes a cursor
@@ -675,4 +775,622 @@ test/plp/test_setup.sql)
 
     Positions the cursor at the beginning of the table
 
+=== class NetAddr
+
+The class NetAddr implement the PostgreSQL type ((|inet|))
+and ((|cidr|))
+
+only available if PL/Ruby was compiled with ((|--enable-network|))
+
+The module Comparable is included
+
+---  from_string(string, cidr = false)
+     Convert a ((|String|)) to a ((|NetAddr|))
+
+--- <=>(other)
+     comparison function for 2 ((|NetAddr|)) objects
+    
+     comparison is first on the common bits of the network part, then on
+     the length of the network part, and then on the whole unmasked address.
+
+--- abbrev
+     return the abbreviated display format as a ((|String|)) object
+
+--- broadcast
+     return the broadcast address from the network
+
+--- contain?(other)
+     return true if ((|other|)) is included in ((|self|))
+
+--- contain_or_equal?(other)
+     return true if ((|other|)) is included in ((|self|)), or equal
+
+--- contained?(other)
+     return true if ((|self|)) is included in ((|other|))
+
+--- contained_or_equal?(other)
+     return true if ((|self|)) is included in ((|other|)), or equal
+
+--- family
+     return the String "AF_INET" or "AF_INET6"
+
+--- first
+     return the first address in the network
+
+--- host
+     extract the IP address and return it as a ((|String|)) 
+
+--- hostmask
+     return the host mask for network
+
+--- initialize(string, cidr = false)
+     create a ((|NetAddr|)) from a ((|String|))
+
+--- last
+     return the last address in the network
+
+--- masklen
+     return the length of the netmask
+
+--- netmask
+     return the netmask for the network
+
+--- network
+     return the network part of the address
+
+--- set_masklen(len)
+     return a new ((|NetAddr|)) with netmask length ((|len|))
+
+--- to_s
+     return the string representation of the address
+
+=== class MacAddr
+
+The MacAddr implement the PostgreSQL type ((|macaddr|))
+
+only available if PL/Ruby was compiled with ((|--enable-network|))
+
+The module Comparable is included
+
+--- from_string(string, cidr = false)
+     Convert a ((|String|)) to a ((|MacAddr|))
+
+--- <=>(other)
+     comparison function for 2 ((|MacAddr|)) objects
+
+--- initialize(string)
+     create a ((|MacAddr|)) from a ((|String|))
+
+--- to_s
+     return the string representation of the MAC address
+
+--- truncate
+     return a new object with the last 3 bytes set to zero
+
+=== class Tinterval
+
+The Tinterval implement the PostgreSQL type ((|tinterval|))
+
+only available if PL/Ruby was compiled with ((|--enable-conversion|))
+
+
+--- from_string(string)
+      Convert a ((|String|)) (PostgreSQL representation)
+      to a ((|Tinterval|))
+
+--- high
+     return a ((|Time|)) which is the high value of the interval
+
+--- high=(time)
+     set the high value for the interval
+
+--- initialize(low, high)
+     create a ((|Tinterval|)) with the 2 ((|Time|)) objects
+     ((|low|)) and ((|high|))
+
+--- low
+     return a ((|Time|)) which is the low value of the interval
+
+--- low=(time)
+     set the low value for the interval
+ 
+--- to_s
+     return the string representation of the object
+
+=== class Box
+
+The Box implement the PostgreSQL type ((|box|))
+
+only available if PL/Ruby was compiled with ((|--enable-geometry|))
+
+The module Comparable is included
+
+--- from_string(string)
+     Convert a ((|String|)) (PostgreSQL representation)
+     to a ((|Box|)) object
+
+--- +(point)
+     translate (right, up) ((|self|))
+
+--- -(point)
+     translate (left, down) ((|self|))
+
+--- *(point)
+     scale and rotate ((|self|))
+
+--- /(point)
+     scale and rotate ((|self|))
+
+--- ===(other)
+     return true if the 2 boxes ((|self|)) and ((|other|)) are identical
+
+--- <=>(other)
+     comparison operator for 2 Box based on the area of the 2 objects, i.e.
+     self.area <=> box.area
+
+--- above?(other)
+     return true if  ((|self|)) is above ((|other|))
+
+--- area
+     return the area of the Box
+
+--- below?(other)
+     return true if  ((|self|)) is below ((|other|))
+
+--- center
+     return the center point of the Box
+
+--- closest(other)
+     closest point to ((|other|))
+    
+     ((|other|)) can be a Point, or Segment
+
+--- contain?(other)
+     return true if  ((|self|)) contain ((|other|))
+
+--- contained?(other)
+     return true if  ((|self|)) is contained by ((|other|))
+
+--- diagonal
+     return a line Segment which happens to be the
+     positive-slope diagonal of Box
+
+--- height
+     return the height of the Box (vertical magnitude)
+
+--- in?(other)
+     return true if  ((|self|)) is contained by ((|other|))
+
+--- initialize(*args)
+     create a new Box object
+    
+     ((|args|)) can be 2 Point objects (low, high) or 4 Float objects
+     (low.x, low.y, high.x, high.y)
+
+--- intersection(other)
+     returns the overlapping portion of two boxes,
+     or ((|nil|)) if they do not intersect.
+
+--- intersect?(segment)
+     returns  true if the Segment ((|segment|))
+     intersect with the Box
+    
+     Segment completely inside box counts as intersection.
+     If you want only segments crossing box boundaries,
+     try converting Box to Path first.
+     
+
+--- left?(other)
+     return true if ((|self|)) is strictly left of ((|other|))
+
+--- overlap?(other)
+     return true if ((|self|)) overlap ((|other|))
+ 
+--- overleft?(other)
+     return true if the right edge of ((|self|)) is to the left of
+     the right edge of ((|other|))
+
+--- overright?(other)
+     return true if the left edge of ((|self|)) is to the right of
+     the left edge of ((|other|))
+
+--- right?(other)
+     return true if ((|self|)) is strictly right of ((|other|))
+
+--- same?(other)
+     return true if the 2 boxes ((|self|)) and ((|other|)) are identical
+
+--- to_circle
+     convert a Box to a Circle
+
+--- to_point
+     return the center Point of the Box
+
+--- to_polygon
+     convert a Box to a Polygon
+
+--- to_segment
+     return a line Segment which happens to be the
+     positive-slope diagonal of Box
+
+--- width
+     return the width of the Box (horizontal magnitude)
+
+=== class Path
+
+The Path implement the PostgreSQL type ((|path|))
+
+only available if PL/Ruby was compiled with ((|--enable-geometry|))
+
+The module Comparable is included
+
+--- from_string(string)
+     Convert a ((|String|)) (PostgreSQL representation)
+     to a ((|Path|))
+
+--- <<(path)
+     concatenate the two paths (only if they are both open)
+
+--- +(point)
+     translate (right, up) ((|self|))
+
+--- -(point)
+     translate (left, down) ((|self|))
+
+--- *(point)
+     scale and rotate ((|self|))
+
+--- /(point)
+     scale and rotate ((|self|))
+
+--- <=>(other)
+     comparison function based on the path cardinality, i.e.
+     self.npoints <=> other.npoints
+
+--- close
+     make a closed path
+
+--- closed?
+     return true if ((|self|)) is a closed path
+
+--- concat(path)
+     concatenate the two paths (only if they are both open)
+
+--- initialize(points, closed = false)
+     create a new Path object from the Array of Point ((|points|))
+
+--- length
+     return the length of ((|self|))
+
+--- npoints
+     return the path cardinality
+
+--- open
+     make an open path
+
+--- to_polygon
+     convert ((|self|)) to a Polygon object
+
+=== class Point
+
+The Point implement the PostgreSQL type ((|point|))
+
+only available if PL/Ruby was compiled with ((|--enable-geometry|))
+
+The module Comparable is included
+
+--- from_string(string)
+     Convert a ((|String|)) (PostgreSQL representation)
+     to a ((|Point|))
+
+--- +(point)
+     translate (right, up) ((|self|))
+
+--- -(point)
+     translate (left, down) ((|self|))
+
+--- *(point)
+     scale and rotate ((|self|))
+
+--- /(point)
+     scale and rotate ((|self|))
+
+--- [](indice)
+     return the coordinate
+    
+     ((|indice|)) can have the value 0 or 1
+
+--- []=(indice, value)
+     set the coordinate
+    
+     ((|indice|)) can have the value 0 or 1
+
+--- ==(other)
+     return true if ((|self|)) and ((|other|)) are the same,
+     i.e. self.x == other.x && self.y == other.y
+
+--- above?(other)
+     return true if ((|self|)) is above ((|other|)),
+     i.e. self.y > other.y
+
+--- below?(other)
+     return true if ((|self|)) is below ((|other|)),
+     i.e. self.y < other.y
+
+--- contained?(other)
+     return true if ((|self|)) is contained in ((|other|))
+     
+     ((|other|)) can be Point, Polygon or a Circle object
+
+--- horizontal?(other)
+     return true if ((|self|)) and ((|other|)) are horizontal,
+     i.e. self.y == other.y
+
+--- in?(other)
+     return true if ((|self|)) is contained in ((|other|))
+     
+     ((|other|)) can be Point, Polygon or a Circle object
+
+--- initialize(x, y)
+     create a Point with the 2 Float object (x, y)
+
+--- left?(other)
+     return true if ((|self|)) is at the left of ((|other|)),
+     i.e. self.x < other.x
+
+--- on?(other)
+     return true if ((|self|)) is on ((|other|))
+     
+     ((|other|)) can be Point, Line, Segment, Box or Path object
+
+--- right?(other)
+     return true if ((|self|)) is at the right of ((|other|)),
+     i.e. self.x > other.x
+
+--- vertical?(other)
+     return true if ((|self|)) and ((|other|)) are vertical,
+     i.e. self.x == other.x
+
+--- x
+     return ((|x|)) for ((|self|))
+
+--- x=(value)
+     set the ((|x|)) value for ((|self|))
+
+--- y
+     return ((|y|)) for ((|self|))
+
+--- y=(value)
+     set the ((|y|)) value for ((|self|))
+
+=== class Segment
+
+The Segment implement the PostgreSQL type ((|lseg|))
+
+only available if PL/Ruby was compiled with ((|--enable-geometry|))
+
+The module Comparable is included
+
+--- from_string(string)
+     Convert a ((|String|)) (PostgreSQL representation)
+     to a ((|Segment|))
+
+--- <=>(other)
+     comparison function for the 2 segments, returns
+    
+      0  if self[0] == other[0] && self[1] == other[1]
+    
+      1  if distance(self[0], self[1]) > distance(other[0], other[1]) 
+    
+      -1 if distance(self[0], self[1]) < distance(other[0], other[1]) 
+
+--- center
+     return the center of the segment
+
+--- closest(other)
+     closest point to other
+    
+     ((|other|)) can be a Point, Segment or Box
+    
+     With a point, take the closest endpoint 
+     if the point is left, right, above, or below the segment, otherwise 
+     find the intersection point of the segment and its perpendicular through
+     the point.
+
+--- horizontal?
+     returns true if ((|self|)) is a horizontal Segment
+
+--- initialize(point0, point1)
+     create a Segment from the 2 Point p0, p1
+
+--- intersect?(other)
+     returns true if ((|self|)) and ((|other|)) intersect
+
+--- intersection(other)
+     returns the Point where the 2 Segment ((|self|)) and ((|other|))
+     intersect or nil
+
+--- length
+     return the length of ((|self|)), i.e. the distnace between the 2 points
+
+--- on?(other)
+     return true if ((|self|)) is on ((|other|))
+    
+     ((|other|)) can be a Segment, or a Box object
+
+--- parallel?(other)
+     returns true if the 2 Segment ((|self|)) and ((|other|)) 
+     are parallel
+
+--- perpendicular?(other)
+     returns true if ((|self|)) is perpendicular to ((|other|))
+
+--- to_point
+     conversion function to a Point, return the center of the segment
+
+--- vertical?
+     returns true if ((|self|)) is a vertical Segment
+=== class Polygon
+
+The Polygon implement the PostgreSQL type ((|polygon|))
+
+only available if PL/Ruby was compiled with ((|--enable-geometry|))
+
+
+--- from_string(string)
+     Convert a ((|String|)) (PostgreSQL representation)
+     to a ((|Polygon|))
+
+--- ==(other)
+     return true if ((|self|)) is the same as ((|other|)), i.e. all
+     the points are the same
+
+--- center
+     return the center of ((|self|)), i.e. create a circle and return its 
+     center
+
+--- contain?(other)
+     return true if ((|self|)) contains ((|other|))
+    
+     ((|other|)) can be a Point or a Polygon
+
+--- contained?(other)
+     return true if ((|self|)) is contained in ((|other|)) by determining
+     if ((|self|)) bounding box is contained by ((|other|))'s bounding box.
+
+--- in?(other)
+     return true if ((|self|)) is contained in ((|other|)) by determining
+     if ((|self|)) bounding box is contained by ((|other|))'s bounding box.
+
+--- initialize(points, closed = false)
+     create a new Polygon object from the Array of Point ((|points|))
+
+--- left?(other)
+     return true if ((|self|)) is strictly left of ((|other|)), i.e.
+     the right most point of ((|self|)) is left of the left
+     most point of ((|other|))
+
+--- overleft?(other)
+     return true if ((|self|)) is overlapping or left of ((|other|)),
+     i.e. the left most point of ((|self|)) is left of the right
+     most point of ((|other|))
+
+--- overright?(other)
+     return true if ((|self|)) is overlapping or right of ((|other|)),
+     i.e. the right most point of ((|self|)) is right of the left
+     most point of ((|other|))
+
+--- overlap?(other)
+     return true if ((|self|)) and ((|other|)) overlap by determining if
+     their bounding boxes overlap.
+
+--- npoints
+     return the number of points in ((|self|))
+
+--- right?(other)
+     return true if ((|self|)) is strictly right of ((|other|)), i.e.
+     the left most point of ((|self|)) is right of the left
+     most point of ((|other|))
+
+--- same?(other)
+     return true if ((|self|)) is the same as ((|other|)), i.e. all 
+     the points are the same
+
+--- to_box
+     convert ((|self|)) to a Box
+
+--- to_circle
+     convert ((|self|)) to a Circle
+
+--- to_path
+     convert ((|self|)) to a Path
+
+--- to_point
+     convert ((|self|)) to a Point by returning its center
+
+=== class Circle
+
+The Circle implement the PostgreSQL type ((|circle|))
+
+only available if PL/Ruby was compiled with ((|--enable-geometry|))
+
+The module Comparable is included
+
+--- from_string(string)
+     Convert a ((|String|)) (PostgreSQL representation)
+     to a ((|Circle|))
+
+--- +(point)
+     translate (right, up) ((|self|))
+
+--- -(point)
+     translate (left, down) ((|self|))
+
+--- *(point)
+     scale and rotate ((|self|))
+
+--- /(point)
+     scale and rotate ((|self|))
+
+--- <=>(other)
+     comparison function based on area,
+     i.e. self.area <=> other.area
+
+--- area
+     return the area
+
+--- above?(other)
+     return true if ((|self|)) is entirely above ((|other|))
+
+--- below?(other)
+     return true if ((|self|)) is entirely below ((|other|))
+
+--- contain?(other)
+     return true if ((|self|)) contain ((|other|))
+
+--- contained?(other)
+     return true if ((|self|)) is contained in ((|other|))
+
+--- diameter
+     return the diameter
+
+--- initialize(center, radius)
+     create a Circle object with ((|center|)) and ((|radius|))
+    
+     ((|center|)) can be a Point or an Array [x, y]
+
+--- overlap?(other)
+     return true if ((|self|)) overlap ((|other|))
+
+--- overleft?(other)
+     return true if the right edge of ((|self|)) is to the left of
+     the right edge of ((|other|))
+
+--- left?(other)
+     return true if ((|self|)) is strictly left of ((|other|))
+
+--- overright?(other)
+     return true if the left edge of ((|self|)) is to the right of
+     the left edge of ((|other|))
+
+--- radius
+     return the radius
+
+--- right?(other)
+     return true if ((|self|)) is strictly right of ((|other|))
+
+--- same?(other)
+     return true if ((|self|)) is the same than ((|other|)), i.e.
+     self.center == other.center && self.radius == other.radius
+
+--- to_box
+     convert ((|self|)) to a Box
+
+--- to_point
+     convert ((|self|)) to a Point by returning its center
+
+--- to_polygon(npts)
+     convert ((|self|)) to a Polygon with ((|npts|)) Points
+
 =end
+

@@ -60,3 +60,13 @@
 --- 0.3.8
 
  stupid bug portalActive (only 7.4)
+
+--- 0.3.9
+
+ corrected rb_hash_delete for 1.6  (Thanks Dennis Vshivkov <walrus@amur.ru>)
+ decode arrays in tuples (Thanks Dennis Vshivkov <walrus@amur.ru>)
+ corrected pl_yield (Thanks Dennis Vshivkov <walrus@amur.ru>)
+ convert arguments (--enable-conversion at compile time : experimental)
+ conversion plfunction ==> method (only with --enable-conversion)
+ add network, geometry (experimental)
+ corrected function returning table

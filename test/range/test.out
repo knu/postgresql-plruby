@@ -17,7 +17,7 @@ INSERT INTO foo2 VALUES(2, 22);
 INSERT INTO foo2 VALUES(1, 111);
 CREATE FUNCTION foot(int) returns setof foo2 as ' 
 "SELECT * FROM foo2 WHERE fooid = #{args[0]}"' 
-LANGUAGE 'plruby';
+language 'plruby';
 select * from foo2, foot(foo2.fooid) z where foo2.f2 = z.f2;
 ERROR:  function expression in FROM may not refer to other relations of same query level
 select * from foo2 where f2 in (
@@ -62,7 +62,7 @@ INSERT INTO foo VALUES(1,2,'Ed');
 INSERT INTO foo VALUES(2,1,'Mary');
 CREATE FUNCTION getfoo(int) RETURNS int AS '
    args[0]
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM getfoo(1) AS t1;
  t1 
 ----
@@ -80,7 +80,7 @@ DROP VIEW vw_getfoo;
 DROP FUNCTION getfoo(int);
 CREATE FUNCTION getfoo(int) RETURNS setof int AS '
    "SELECT fooid FROM foo WHERE fooid = #{args[0]}"
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM getfoo(1) AS t1;
  t1 
 ----
@@ -100,7 +100,7 @@ DROP VIEW vw_getfoo;
 DROP FUNCTION getfoo(int);
 CREATE FUNCTION getfoo(int) RETURNS setof text AS '
    "SELECT fooname FROM foo WHERE fooid = #{args[0]}"
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM getfoo(1) AS t1;
  t1  
 -----
@@ -120,7 +120,7 @@ DROP VIEW vw_getfoo;
 DROP FUNCTION getfoo(int);
 CREATE FUNCTION getfoo(int) RETURNS setof foo AS '
    "SELECT * FROM foo WHERE fooid = #{args[0]}"
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM getfoo(1) AS t1;
  fooid | foosubid | fooname 
 -------+----------+---------
@@ -140,7 +140,7 @@ DROP VIEW vw_getfoo;
 DROP FUNCTION getfoo(int);
 CREATE FUNCTION getfoo(int) RETURNS setof record AS '
    "SELECT * FROM foo WHERE fooid = #{args[0]}"
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM getfoo(1) AS t1(fooid int, foosubid int, fooname text);
  fooid | foosubid | fooname 
 -------+----------+---------
@@ -162,7 +162,7 @@ CREATE FUNCTION getfoo(int) RETURNS setof int AS '
    PL.exec("SELECT fooid FROM foo WHERE fooid = #{args[0]}") do |row|
       yield row.values
    end
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM getfoo(1) AS t1;
  t1 
 ----
@@ -184,7 +184,7 @@ CREATE FUNCTION getfoo(int) RETURNS setof foo AS '
    PL.exec("SELECT * FROM foo WHERE fooid = #{args[0]}", nil, "value") do |r|
       yield r
    end
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM getfoo(1) AS t1;
  fooid | foosubid | fooname 
 -------+----------+---------
@@ -259,7 +259,7 @@ INSERT INTO foorescan values(5008,5,'abc.5008.5');
 INSERT INTO foorescan values(5009,5,'abc.5009.5');
 CREATE FUNCTION foorescan(int,int) RETURNS setof foorescan AS '
    "SELECT * FROM foorescan WHERE fooid >= #{args[0]} and fooid < #{args[1]}"
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT * FROM foorescan f WHERE f.fooid IN (
 	SELECT fooid FROM foorescan(5002,5004)
 ) ORDER BY 1,2;
@@ -305,7 +305,7 @@ INSERT INTO barrescan values(5007);
 INSERT INTO barrescan values(5008);
 CREATE FUNCTION foorescan(int) RETURNS setof foorescan AS '
    "SELECT * FROM foorescan WHERE fooid = #{args[0]}"
-' LANGUAGE 'plruby';
+' language 'plruby';
 SELECT f.* FROM barrescan b, foorescan f 
 WHERE f.fooid = b.fooid AND b.fooid IN (
 	SELECT fooid FROM foorescan(b.fooid)

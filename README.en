@@ -40,6 +40,27 @@ be 'newC' in this case
   --with-pgsql-version=<release number for PostgreSQL, actually 65, 70, 71
                         or 72 i.e. major and minor number>
 
+  --enable-conversion
+    arguments for the function will be converted to Integer, Float, true, 
+    false, Time, Tinterval or String depending of the internal type.
+
+  --enable-geometry
+    add the classes Point, Segment, Line, Box, Path, Polygon, Circle to
+    plruby (--enable-conversion is automatically added)
+
+  --enable-network
+    add the classes NetAddr, MacAddr to plruby  (--enable-conversion
+    is automatically added)
+
+  --with_suffix=<suffix to add>
+
+    For example
+
+    ruby extconf.rb --enable_geometry --with-suffix=_geo
+
+    will create plruby_geo.so
+
+
  Example :
 
   ruby extconf.rb --with-pgsql-include=/usr/include/postgresql \
@@ -48,6 +69,9 @@ be 'newC' in this case
 
 
 * Test (and examples)
+
+ WARNING : if plruby was compiled with --enable-conversion and $SAFE < 3
+ you must *FIRST* run `make install' before `make test'
 
   make test
 
@@ -58,6 +82,7 @@ be 'newC' in this case
 
  The database plruby_test is created and then destroyed. Don't use it if 
  such a database exist on your system.
+
 
 * Now create the PL/Ruby language in PostgreSQL
 
