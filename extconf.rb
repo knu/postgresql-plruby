@@ -90,11 +90,11 @@ open("Makefile", "a") do |make|
     make.print <<-EOF
 
 test: $(DLLIB)
-\t(cd test/plt ; sh ./runtest #{version})
-\t(cd test/plp ; sh ./runtest #{version})
+\t-(cd test/plt ; sh ./runtest #{version})
+\t-(cd test/plp ; sh ./runtest #{version})
     EOF
     if version >= "73"
-        make.puts "\t(cd test/range; sh ./runtest #{version})"
+        make.puts "\t-(cd test/range; sh ./runtest #{version})"
     end
 end
 

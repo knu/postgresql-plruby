@@ -13,9 +13,6 @@ when 73, 74
    opaque = 'language_handler'
 end
 begin
-   f = File.new("test_setup.sql", "w")
-   IO.foreach("test_setup#{extension}.sql") {|x| f.print x }
-   f.close
    f = File.new("test_mklang.sql", "w")
    f.print <<EOF
  

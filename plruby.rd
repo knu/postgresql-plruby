@@ -416,9 +416,17 @@ test/plp/test_setup.sql)
       :SELECT
         If the query is a SELECT statement, an array is return (if count is
         not specified or with a value > 1). Each element of this array is an
-        hash where the key is the column name.  For example this procedure
-        display all rows in the table pg_table.
+        hash where the key is the column name.
     
+        If type is specified it can take the value
+
+          * "array" return for each column an array with the element
+            ["name", "value", "type", "len", "typeid"]
+          * "hash" return for each column an hash with the keys 
+            {"name", "value", "type", "len", "typeid"}
+          * "value" return all values
+
+        For example this procedure display all rows in the table pg_table.
     
           CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
           res = PLruby.exec("select * from pg_class")
@@ -432,11 +440,21 @@ test/plp/test_setup.sql)
           return res.size
           ' LANGUAGE 'plruby';
     
-        if type is specified it can take the value
-          * "array" return an array with the element ["name", "value", "type", "len", "typeid"]
-          *  "hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}
+        A block can be specified, in this case a call to yield() will be
+        made.
     
-          Example :
+        If count is specified with the value 1, only the first row (or
+        FALSE if it fail) is returned as a hash. Here a little example :
+    
+    
+           CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
+              PL.exec("select * from pg_class", 1) { |y, z|
+                 warn "name = #{y} -- value = #{z}"
+             }
+             return 1
+           ' LANGUAGE 'plruby';
+    
+        Another example with count = 1
     
           create table T_pkey1 (
               skey1        int4,
@@ -483,20 +501,6 @@ test/plp/test_setup.sql)
             
           plruby_test=# 
     
-    
-        A block can be specified, in this case a call to yield() will be
-        made.
-    
-        If count is specified with the value 1, only the first row (or
-        FALSE if it fail) is returned as a hash. Here a little example :
-    
-    
-           CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
-              PL.exec("select * from pg_class", 1) { |y, z|
-                 warn "name = #{y} -- value = #{z}"
-             }
-             return 1
-           ' LANGUAGE 'plruby';
     
       :SELECT INTO, INSERT, UPDATE, DELETE
          return the number of rows insered, updated, deleted, ...

@@ -106,7 +106,9 @@ extern VALUE rb_thread_list();
 
 #else
 #define PLRUBY_BEGIN(lvl)
+
 #define PLRUBY_END
+
 #endif
 
 enum { TG_OK, TG_SKIP };

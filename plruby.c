@@ -666,6 +666,22 @@ pl_error(VALUE v)
     return result;
 }
 
+#if defined(PLRUBY_TIMEOUT) && PG_PL_VERSION >= 73
+struct extra_args {
+    VALUE result;
+    struct Node *context;
+    SetFunctionReturnMode returnMode;
+    Tuplestorestate *setResult;
+    ExprDoneCond isDone;
+};
+
+static void
+extra_args_mark(struct extra_args *exa)
+{
+    rb_gc_mark(exa->result);
+}
+#endif
+
 static VALUE
 pl_real_handler(struct pl_thread_st *plth)
 {
@@ -692,6 +708,24 @@ pl_real_handler(struct pl_thread_st *plth)
 	    result = rb_str_new2("Unknown Error");
 	}
     }
+#if defined(PLRUBY_TIMEOUT) && PG_PL_VERSION >= 73
+    {
+	VALUE res;
+	struct extra_args *exa;
+	ReturnSetInfo *rsi;
+
+	res = Data_Make_Struct(rb_cData, struct extra_args, extra_args_mark, 0, exa);
+	exa->context = plth->fcinfo->context;
+	rsi = (ReturnSetInfo *)plth->fcinfo->resultinfo;
+	if (rsi) {
+	    exa->setResult = rsi->setResult; 
+	    exa->returnMode = rsi->returnMode;
+	    exa->isDone = rsi->isDone;
+	}
+	exa->result = result;
+	return res;
+    }
+#endif
     return result;
 }
 
@@ -768,6 +802,23 @@ plruby_call_handler(FmgrInfo *proinfo,
 	result = pl_real_handler(&plth);
 	PLRUBY_END;
     }
+#if defined(PLRUBY_TIMEOUT) && PG_PL_VERSION >= 73
+    if (TYPE(result) == T_DATA &&
+	RDATA(result)->dmark == (RUBY_DATA_FUNC)extra_args_mark) {
+	ReturnSetInfo *rsi;
+	struct extra_args *exa;
+
+	Data_Get_Struct(result, struct extra_args, exa);
+	fcinfo->context = exa->context;
+	rsi = (ReturnSetInfo *)fcinfo->resultinfo;
+	if (rsi) {
+	    rsi->setResult = exa->setResult; 
+	    rsi->returnMode = exa->returnMode;
+	    rsi->isDone = exa->isDone;
+	}
+	result = exa->result;
+    }
+#endif
     memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
 
 #ifdef PLRUBY_TIMEOUT
@@ -1183,7 +1234,6 @@ pl_func_handler(proinfo, proargs, isNull)
 #if PG_PL_VERSION >= 71
 	ReleaseSysCache(typeTup);
 #endif
-	PLRUBY_END;
 
 	prodesc->nargs = nargs;
 	proc_internal_args[0] = '\0';
@@ -1410,8 +1460,8 @@ pl_func_handler(proinfo, proargs, isNull)
 		    tuplestore_donestoring(tpl->out);
 		    MemoryContextSwitchTo(oldcxt);
 		    PLRUBY_END;
-		    ((ReturnSetInfo *)fcinfo->resultinfo)->setResult = tpl->out;
-		    ((ReturnSetInfo *)fcinfo->resultinfo)->returnMode = SFRM_Materialize;
+                    ((ReturnSetInfo *)fcinfo->resultinfo)->setResult = tpl->out;
+                    ((ReturnSetInfo *)fcinfo->resultinfo)->returnMode = SFRM_Materialize;
 		    break;
 		}
 		if (NIL_P(res)) {
@@ -1443,11 +1493,18 @@ pl_func_handler(proinfo, proargs, isNull)
 
     PLRUBY_BEGIN(1);
 #if PG_PL_VERSION >= 73
-    MemoryContextSwitchTo(spi_context);
+    {
+	MemoryContext oldcxt;
+
+	oldcxt = MemoryContextSwitchTo(spi_context);
 #endif
-    if (SPI_finish() != SPI_OK_FINISH) {
-        rb_raise(pl_ePLruby, "SPI_finish() failed");
+	if (SPI_finish() != SPI_OK_FINISH) {
+	    rb_raise(pl_ePLruby, "SPI_finish() failed");
+	}
+#if PG_PL_VERSION >= 73
+	MemoryContextSwitchTo(oldcxt);
     }
+#endif
     PLRUBY_END;
 
     if (c == Qnil) {
@@ -1456,8 +1513,8 @@ pl_func_handler(proinfo, proargs, isNull)
 #if PG_PL_VERSION >= 73
 	    if (expr_multiple) {
 		pl_context_remove();
-		fcinfo->context = NULL;
-		((ReturnSetInfo *)fcinfo->resultinfo)->isDone = ExprEndResult;
+                fcinfo->context = NULL;
+                ((ReturnSetInfo *)fcinfo->resultinfo)->isDone = ExprEndResult;
 	    }
 #endif
 	    PG_RETURN_NULL();
@@ -1502,7 +1559,7 @@ static VALUE
 pl_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
 {
     int	i;
-    VALUE output, res;
+    VALUE output, res = Qnil;
     Datum attr;
     bool isnull;
     char *attname, *outputstr, *typname;
@@ -2371,11 +2428,22 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
 	qdesc->arglen = ALLOC_N(int, qdesc->nargs);
  
 	for (i = 0; i < qdesc->nargs; i++)	{
+#if PG_PL_VERSION >= 73
+	    char *argcopy;
+	    List *names = NIL;
+	    List  *lp;
+	    TypeName *typename;
+#endif
 	    VALUE args = pl_to_s(RARRAY(qdesc->po.argsv)->ptr[i]);
 
 	    PLRUBY_BEGIN(1);
 #if PG_PL_VERSION >= 73
-	    typeTup = typenameType(makeTypeName(RSTRING(args)->ptr));
+	    argcopy  = pstrdup(RSTRING(args)->ptr);
+	    SplitIdentifierString(argcopy, '.', &names);
+	    typename = makeNode(TypeName);
+	    foreach (lp, names)
+		typename->names = lappend(typename->names, makeString(lfirst(lp)));
+	    typeTup = typenameType(typename);
 	    qdesc->argtypes[i] = HeapTupleGetOid(typeTup);
 #else
 	    typeTup = SearchSysCacheTuple(RUBY_TYPNAME,
@@ -2392,15 +2460,35 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
 	    qdesc->arglen[i] = (int) (((Form_pg_type) GETSTRUCT(typeTup))->typlen);
 #if PG_PL_VERSION >= 71
 	    ReleaseSysCache(typeTup);
+#if PG_PL_VERSION >= 73
+	    freeList(typename->names);
+	    pfree(typename);
+	    freeList(names);
+	    pfree(argcopy);
+#endif
 #endif
 	    PLRUBY_END;
 
 	}
     }
 
-    PLRUBY_BEGIN(1);
-    plan = SPI_prepare(RSTRING(a)->ptr, qdesc->nargs, qdesc->argtypes);
-    PLRUBY_END;
+    {
+	extern bool InError;
+	sigjmp_buf save_restart;
+
+	memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
+	if (sigsetjmp(Warn_restart, 1) == 0) {
+	    PLRUBY_BEGIN(1);
+	    plan = SPI_prepare(RSTRING(a)->ptr, qdesc->nargs, qdesc->argtypes);
+	    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+	    PLRUBY_END;
+	}
+	else {
+	    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+	    InError = 0;
+	    plan = NULL;
+	}
+    }
 
     if (plan == NULL) {
 	char		buf[128];
@@ -2425,12 +2513,16 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
 	case SPI_ERROR_OPUNKNOWN:
 	    reason = "SPI_ERROR_OPUNKNOWN";
 	    break;
+	case 0:
+	    reason = "SPI_PARSE_ERROR";
+	    break;
 	default:
 	    sprintf(buf, "unknown RC %d", SPI_result);
 	    reason = buf;
 	    break;
 	}
-	rb_raise(pl_ePLruby, "SPI_prepare() failed - %s", reason);
+	rb_raise(pl_ePLruby, "SPI_prepare() failed - %s\n%s",
+		 reason, RSTRING(a)->ptr);
     }
     qdesc->plan = plan;
     if (qdesc->po.save) {
@@ -2707,7 +2799,9 @@ pl_close(VALUE vortal)
 
     GetPortal(vortal, portal);
     PLRUBY_BEGIN(1);
-    SPI_cursor_close(portal->portal);
+    if (!portal->portal->portalActive) {
+	SPI_cursor_close(portal->portal);
+    }
     portal->portal = 0;
     PLRUBY_END;
     return Qnil;
@@ -2732,7 +2826,7 @@ pl_fetch(VALUE vortal)
 	SPI_cursor_fetch(portal->portal, true, block);
 	PLRUBY_END;
 	if (SPI_processed <= 0) {
-	    return Qfalse;
+	    return Qnil;
 	}
 	proces = SPI_processed;
 	tuptab = SPI_tuptable;
@@ -2743,7 +2837,7 @@ pl_fetch(VALUE vortal)
 	}
 	SPI_freetuptable(tuptab);
     }
-    return Qtrue;
+    return Qnil;
 }
 
 static VALUE
@@ -2752,7 +2846,6 @@ pl_plan_each(argc, argv, obj)
     VALUE *argv;
     VALUE obj;
 {
-    VALUE result;
     pl_query_desc *qdesc;
     Portal pgportal;
     struct PLportal *portal;
@@ -2774,8 +2867,8 @@ pl_plan_each(argc, argv, obj)
 	rb_raise(pl_ePLruby,  "SPI_cursor_open() failed");
     }
     portal->portal = pgportal;
-    return rb_ensure(pl_fetch, vortal, pl_close, vortal);
-    return result;
+    rb_ensure(pl_fetch, vortal, pl_close, vortal);
+    return Qnil;
 }
 
 #if PG_PL_VERSION >= 73
