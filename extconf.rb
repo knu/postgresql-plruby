@@ -8,12 +8,8 @@ stat_lib = if CONFIG.key?("LIBRUBYARG_STATIC")
 	      "-lruby"
 	   end.sub(/^-l/, '')
             
-src_dir = ""
 if srcdir = with_config("pgsql-srcinc-dir")
    $CFLAGS = "-I#{srcdir}"
-else
-   srcdir = "/var/postgres/postgresl-6.5/src/include"
-   $CFLAGS = "-I/var/postgres/postgresl-6.5/src/include"
 end
 include_dir = ""
 if prefix = with_config("pgsql-prefix")
@@ -30,9 +26,22 @@ end
 if  libdir = with_config("pgsql-lib-dir")
     $LDFLAGS += " -L#{libdir}"
 end
+
 if safe = with_config("safe-level")
     $CFLAGS += " -DSAFE_LEVEL=#{safe}"
 end
+
+if timeout = with_config("timeout")
+   timeout = timeout.to_i
+   if timeout < 2
+      raise "Invalid value for timeout #{timeout}"
+   end
+   $CFLAGS += " -DPLRUBY_TIMEOUT=#{timeout}"
+   if safe = with_config("main-safe-level")
+      $CFLAGS += " -DMAIN_SAFE_LEVEL=#{safe}"
+   end
+end
+
 if ! have_header("catalog/pg_proc.h")
     raise  "Some include file are missing (see README for the installation)"
 end
@@ -82,8 +91,8 @@ open("Makefile", "a") do |make|
     make.print <<-EOF
 
 test: $(DLLIB)
-\t(cd test/plt ; ./runtest #{version})
-\t(cd test/plp ; ./runtest #{version})
+\t(cd test/plt ; sh ./runtest #{version})
+\t(cd test/plp ; sh ./runtest #{version})
     EOF
 end
 
