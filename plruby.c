@@ -549,9 +549,8 @@ struct foreach_fmgr {
 }; 
 
 static VALUE
-for_numvals(obj, arg)
-    VALUE obj;
-    struct foreach_fmgr *arg;
+for_numvals(obj, argobj)
+    VALUE obj, argobj;
 {
     int			attnum;
     HeapTuple	typeTup;
@@ -559,7 +558,9 @@ for_numvals(obj, arg)
     Oid			typelem;
     FmgrInfo	finfo;
     VALUE key, value;
+    struct foreach_fmgr *arg;
 
+    Data_Get_Struct(argobj, struct foreach_fmgr, arg);
     key = rb_funcall(rb_ary_entry(obj, 0), to_s_id, 0);
     value = rb_funcall(rb_ary_entry(obj, 1), to_s_id, 0);
 
@@ -819,9 +820,15 @@ plruby_trigger_handler(FmgrInfo *proinfo)
     memset(modnulls, 'n', tupdesc->natts);
     modnulls[tupdesc->natts] = '\0';
     {
-	struct foreach_fmgr mgr = { tupdesc, modattrs, modvalues, modnulls };
-	
-	rb_iterate(rb_each, c, for_numvals, (VALUE)&mgr);
+	struct foreach_fmgr *mgr;
+	VALUE res;
+
+	res = Data_Make_Struct(rb_cObject, struct foreach_fmgr, 0, free, mgr);
+	mgr->tupdesc = tupdesc;
+	mgr->modattrs = modattrs;
+	mgr->modvalues = modvalues;
+	mgr->modnulls = modnulls;
+	rb_iterate(rb_each, c, for_numvals, res);
     }
 
     rettup = SPI_modifytuple(trigdata->tg_relation, rettup, tupdesc->natts,
