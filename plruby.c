@@ -48,7 +48,6 @@
 #define SAFE_LEVEL 12
 #endif
 
-/* system stuff */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -57,7 +56,6 @@
 #include <string.h>
 #include <setjmp.h>
 
-/* postgreSQL stuff */
 #include "executor/spi.h"
 #include "commands/trigger.h"
 #include "utils/elog.h"
@@ -99,9 +97,6 @@ enum { TG_BEFORE, TG_AFTER, TG_ROW, TG_STATEMENT, TG_INSERT,
 
 static ID to_s_id;
    
-/**********************************************************************
- * The information we cache about loaded procedures
- **********************************************************************/
 typedef struct plruby_proc_desc
 {
     char	   *proname;
@@ -123,9 +118,7 @@ plruby_proc_free(proc)
 	free(proc->proname);
     free(proc);
 }
-/**********************************************************************
- * The information we cache about prepared and saved plans
- **********************************************************************/
+
 typedef struct plruby_query_desc
 {
     char		qname[20];
@@ -138,9 +131,6 @@ typedef struct plruby_query_desc
     int		   *arglen;
 } plruby_query_desc;
 
-/**********************************************************************
- * Global data
- **********************************************************************/
 static int	plruby_firstcall = 1;
 static int	plruby_call_level = 0;
 static VALUE    pg_mPLruby, pg_mPLtemp, pg_cPLrubyPlan;
@@ -153,9 +143,6 @@ def PLtemp.%s(%s)
 end
 ";
 
-/**********************************************************************
- * Forward declarations
- **********************************************************************/
 static void plruby_init_all(void);
 
 #ifdef NEW_STYLE_FUNCTION
@@ -177,7 +164,7 @@ static HeapTuple plruby_trigger_handler(FmgrInfo *proinfo);
 #endif
 
 static VALUE plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc,
-					 int iterat);
+					 int iterat, int complete);
 
 static VALUE
 plruby_protect(args)
@@ -206,13 +193,6 @@ plruby_protect(args)
     return res;
 }
 
-/**********************************************************************
- * plruby_call_handler		- This is the only visible function
- *				  of the PL interpreter. The PostgreSQL
- *				  function manager and trigger manager
- *				  call this function for execution of
- *				  ruby procedures.
- **********************************************************************/
 Datum
 #ifdef NEW_STYLE_FUNCTION
 plruby_call_handler(PG_FUNCTION_ARGS)
@@ -275,9 +255,6 @@ plruby_call_handler(FmgrInfo *proinfo,
     return *result;
 }
 
-/**********************************************************************
- * plruby_func_handler()		- Handler for regular function calls
- **********************************************************************/
 static Datum
 #ifdef NEW_STYLE_FUNCTION
 plruby_func_handler(PG_FUNCTION_ARGS)
@@ -423,7 +400,7 @@ plruby_func_handler(proinfo, proargs, isNull)
 #endif
 	    rb_ary_push(ary, plruby_build_tuple_argument(slot->val,
 							 slot->ttc_tupleDescriptor, 
-							 0));
+							 0, Qnil));
 	} 
 	else {
 #ifdef NEW_STYLE_FUNCTION
@@ -483,28 +460,30 @@ plruby_func_handler(proinfo, proargs, isNull)
 
 }
 
-/**********************************************************************
- * plruby_build_tuple_argument() - Build a string for a ref to a hash
- *				  from all attributes of a given tuple
- **********************************************************************/
 static VALUE
-plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, int iterat)
+plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, 
+			    int iterat, int array)
 {
-    int			i;
-    VALUE output;
-    Datum		attr;
-    bool		isnull;
+    int	i;
+    VALUE output, res;
+    Datum attr;
+    bool isnull;
+    char *attname, *outputstr, *typname;
+    HeapTuple typeTup;
+    Oid	typoutput;
+    Oid	typelem;
+    Form_pg_type fpgt;
+    int alen;
     
-    char	   *attname;
-    char*     outputstr;
-    HeapTuple	typeTup;
-    Oid			typoutput;
-    Oid			typelem;
-    
-    if (!iterat)
-	output = rb_hash_new();
-    else
-	output = Qtrue;
+    output = Qtrue;
+    if (!iterat) {
+	if (array == Qnil) {
+	    output = rb_hash_new();
+	}
+	else {
+	    output = rb_ary_new();
+	}
+    }
 
     for (i = 0; i < tupdesc->natts; i++) {
 #ifdef NEW_STYLE_FUNCTION
@@ -521,9 +500,39 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, int iterat)
 		 attname, ObjectIdGetDatum(tupdesc->attrs[i]->atttypid));
 	}
 
-	typoutput = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typoutput);
-	typelem = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typelem);
+	fpgt = (Form_pg_type) GETSTRUCT(typeTup);
+	typoutput = (Oid) (fpgt->typoutput);
+	typelem = (Oid) (fpgt->typelem);
 #if PG_PL_VERSION >= 71
+	if (array != Qnil) {
+	    typname = fpgt->typname.data;
+	    alen = tupdesc->attrs[i]->attlen;
+	    if (strcmp(typname, "text") == 0) {
+		alen = -1;
+	    }
+	    else if (strcmp(typname, "bpchar") == 0 ||
+		     strcmp(typname, "varchar") == 0) {
+		if (tupdesc->attrs[i]->atttypmod == -1) {
+		    alen = 0;
+		}
+		else {
+		    alen = tupdesc->attrs[i]->atttypmod - 4;
+		}
+	    }
+	    if (array == Qtrue) {
+		res = rb_ary_new();
+		rb_ary_push(res, rb_tainted_str_new2(attname));
+		rb_ary_push(res, Qnil);
+		rb_ary_push(res, rb_tainted_str_new2(typname));
+		rb_ary_push(res, INT2FIX(alen));
+	    }
+	    else {
+		res = rb_hash_new();
+		rb_hash_aset(res, rb_tainted_str_new2("name"), rb_tainted_str_new2(attname));
+		rb_hash_aset(res, rb_tainted_str_new2("type"), rb_tainted_str_new2(typname));
+		rb_hash_aset(res, rb_tainted_str_new2("len"), INT2FIX(alen));
+	    }
+	}
 	ReleaseSysCache(typeTup);
 #endif
 	if (!isnull && OidIsValid(typoutput)) {
@@ -544,26 +553,62 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, int iterat)
 #endif
 	    s = rb_tainted_str_new2(outputstr);
 	    pfree(outputstr);
-	    if (iterat)
-		rb_yield(rb_assoc_new(rb_tainted_str_new2(attname), s));
-	    else
-		rb_hash_aset(output, rb_tainted_str_new2(attname), s);
+#if PG_PL_VERSION >= 71
+	    if (array != Qnil) {
+		if (array == Qtrue) {
+		    RARRAY(res)->ptr[1] = s;
+		}
+		else {
+		    rb_hash_aset(res, rb_tainted_str_new2("value"), s);
+		}
+		if (iterat) {
+		    rb_yield(res);
+		}
+		else {
+		    rb_ary_push(output, res);
+		}
+	    }
+	    else 
+#endif
+	    {
+		if (iterat) {
+		    rb_yield(rb_assoc_new(rb_tainted_str_new2(attname), s));
+		}
+		else {
+		    rb_hash_aset(output, rb_tainted_str_new2(attname), s);
+		}
+	    }
 	} 
 	else {
 	    if (isnull) {
-		if (iterat)
-		    rb_yield(rb_assoc_new(rb_tainted_str_new2(attname), Qnil));
-		else
-		    rb_hash_aset(output, rb_tainted_str_new2(attname), Qnil);
+#if PG_PL_VERSION >= 71
+		if (array != Qnil) {
+		    if (array == Qfalse) {
+			rb_hash_aset(res, rb_tainted_str_new2("value"), Qnil);
+		    }			
+		    if (iterat) {
+			rb_yield(res);
+		    }
+		    else {
+			rb_ary_push(output, res);
+		    }
+		}
+		else 
+#endif
+		{
+		    if (iterat) {
+			rb_yield(rb_assoc_new(rb_tainted_str_new2(attname), Qnil));
+		    }
+		    else {
+			rb_hash_aset(output, rb_tainted_str_new2(attname), Qnil);
+		    }
+		}
 	    }
 	}
     }
     return output;
 }
 
-/**********************************************************************
- * plruby_trigger_handler()	- Handler for trigger calls
- **********************************************************************/
 struct foreach_fmgr {
     TupleDesc	tupdesc;
     int		   *modattrs;
@@ -587,17 +632,9 @@ for_numvals(obj, argobj)
     key = rb_funcall(rb_ary_entry(obj, 0), to_s_id, 0);
     value = rb_funcall(rb_ary_entry(obj, 1), to_s_id, 0);
 
-    /************************************************************
-     * Ignore pseudo elements with a dot name
-     ************************************************************/
-    if ((RSTRING(key)->ptr)[0]  == '.')
+    if ((RSTRING(key)->ptr)[0]  == '.' || NIL_P(value)) {
 	return Qnil;
-
-    /************************************************************
-     * Special case for NULL values
-     ************************************************************/
-    if (NIL_P(value))
-	return Qnil;
+    }
 
     attnum = SPI_fnumber(arg->tupdesc, RSTRING(key)->ptr);
     if (attnum == SPI_ERROR_NOATTRIBUTE)
@@ -616,9 +653,6 @@ for_numvals(obj, argobj)
     ReleaseSysCache(typeTup);
 #endif
 
-    /************************************************************
-     * Set the attribute to NOT NULL and convert the contents
-     ************************************************************/
     arg->modnulls[attnum - 1] = ' ';
     fmgr_info(typinput, &finfo);
 #ifdef NEW_STYLE_FUNCTION
@@ -791,27 +825,27 @@ plruby_trigger_handler(FmgrInfo *proinfo)
 
     if (TRIGGER_FIRED_BY_INSERT(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_INSERT));
-	tg_new = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0);
+	tg_new = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0, Qnil);
 	tg_old = rb_ary_new2(0);
 	rettup = trigdata->tg_trigtuple;
     }
     else if (TRIGGER_FIRED_BY_DELETE(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_DELETE));
-	tg_old = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0);
+	tg_old = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0, Qnil);
 	tg_new = rb_ary_new2(0);
 
 	rettup = trigdata->tg_trigtuple;
     }
     else if (TRIGGER_FIRED_BY_UPDATE(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_UPDATE)); 
-	tg_new = plruby_build_tuple_argument(trigdata->tg_newtuple, tupdesc, 0);
-	tg_old = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0);
+	tg_new = plruby_build_tuple_argument(trigdata->tg_newtuple, tupdesc, 0, Qnil);
+	tg_old = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0, Qnil);
 	rettup = trigdata->tg_newtuple;
     }
     else {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_UNKNOWN));
-	tg_new = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0);
-	tg_old = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0);
+	tg_new = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0, Qnil);
+	tg_old = plruby_build_tuple_argument(trigdata->tg_trigtuple, tupdesc, 0, Qnil);
 	rettup = trigdata->tg_trigtuple;
     }
     rb_hash_freeze(TG);
@@ -952,9 +986,6 @@ plruby_quote(obj, mes)
     tmp = ALLOCA_N(char, RSTRING(mes)->len * 2 + 1);
     cp1 = RSTRING(mes)->ptr;
     cp2 = tmp;
-    /************************************************************
-     * Walk through string and double every quote and backslash
-     ************************************************************/
     while (*cp1) {
 	if (*cp1 == '\'')
 	    *cp2++ = '\'';
@@ -964,36 +995,49 @@ plruby_quote(obj, mes)
 	}
 	*cp2++ = *cp1++;
     }
-
-    /************************************************************
-     * Terminate the string and set it as result
-     ************************************************************/
     *cp2 = '\0';
     return rb_tainted_str_new2(tmp);
 }
 
-/**********************************************************************
- * plruby_SPI_exec()		- The builtin SPI_exec command
- *				  for the safe interpreter
- **********************************************************************/
 static VALUE
 plruby_SPI_exec(argc, argv, obj)
     int argc;
     VALUE *argv;
     VALUE obj;
 {
-    int			spi_rc;
-    volatile int			count = 0;
-    int			i;
-    int			ntuples;
-    VALUE a, b, result;
+    int	spi_rc;
+    volatile int count = 0;
+    volatile int array = Qnil;
+    int	i, comp;
+    int	ntuples;
+    VALUE a, b, c, result;
     HeapTuple  *tuples;
     TupleDesc	tupdesc = NULL;
 
-    if (rb_scan_args(argc, argv, "11", &a, &b) == 2)
-	count = NUM2INT(b);
-    if (TYPE(a) != T_STRING)
+    comp = Qnil;
+    switch (rb_scan_args(argc, argv, "12", &a, &b, &c)) {
+    case 3:
+	if (TYPE(c) != T_STRING) {
+	    rb_raise(pg_ePLruby, "string expected for optionnal output");
+	}
+	if (strcmp(RSTRING(c)->ptr, "array") == 0) {
+	    comp = Qtrue;
+	}
+	else if (strcmp(RSTRING(c)->ptr, "hash") == 0) {
+	    comp = Qfalse;
+	}
+	/* ... */
+    case 2:
+	if (!NIL_P(b)) {
+	    count = NUM2INT(b);
+	}
+    }
+    if (TYPE(a) != T_STRING) {
 	rb_raise(pg_ePLruby, "exec: first argument must be a string");
+    }
+#if PG_PL_VERSION >= 71
+    array = comp;
+#endif
 
     spi_rc = SPI_exec(RSTRING(a)->ptr, count);
 
@@ -1025,53 +1069,46 @@ plruby_SPI_exec(argc, argv, obj)
 
     ntuples = SPI_processed;
     if (ntuples <= 0) {
-	if (rb_iterator_p() || count == 1)
+	if (rb_block_given_p() || count == 1)
 	    return Qfalse;
 	else
 	    return rb_ary_new2(0);
     }
     tuples = SPI_tuptable->vals;
     tupdesc = SPI_tuptable->tupdesc;
-    if (rb_iterator_p()) {
-	if (count == 1)
-	    plruby_build_tuple_argument(tuples[0], tupdesc, 1);
+    if (rb_block_given_p()) {
+	if (count == 1) {
+	    plruby_build_tuple_argument(tuples[0], tupdesc, 1, array);
+	}
 	else {
-	    for (i = 0; i < ntuples; i++)
-		rb_yield(plruby_build_tuple_argument(tuples[i], tupdesc, 0));
+	    for (i = 0; i < ntuples; i++) {
+		rb_yield(plruby_build_tuple_argument(tuples[i], tupdesc, 0, array));
+	    }
 	}
 	result = Qtrue;
     }
     else {
-	if (count == 1)
-	    result = plruby_build_tuple_argument(tuples[0], tupdesc, 0);
+	if (count == 1) {
+	    result = plruby_build_tuple_argument(tuples[0], tupdesc, 0, array);
+	}
 	else {
 	    result = rb_ary_new2(ntuples);
-	    for (i = 0; i < ntuples; i++)
-		rb_ary_push(result, plruby_build_tuple_argument(tuples[i], tupdesc, 0));
+	    for (i = 0; i < ntuples; i++) {
+		rb_ary_push(result, plruby_build_tuple_argument(tuples[i], tupdesc, 0, array));
+	    }
 	}
     }
     return result;
 }
 
-/**********************************************************************
- * plruby_SPI_prepare()		- Builtin support for prepared plans
- *				  The Ruby command SPI_prepare
- *				  allways saves the plan using
- *				  SPI_saveplan and returns a key for
- *				  access. There is no chance to prepare
- *				  and not save the plan currently.
- **********************************************************************/
 static void
 plruby_query_free(qdesc)
     plruby_query_desc *qdesc;
 {
     int j;
-    if (qdesc->argtypes)
-	free(qdesc->argtypes);
-    if (qdesc->arginfuncs)
-	free(qdesc->arginfuncs);
-    if (qdesc->argtypelems)
-	free(qdesc->argtypelems);
+    if (qdesc->argtypes) free(qdesc->argtypes);
+    if (qdesc->arginfuncs) free(qdesc->arginfuncs);
+    if (qdesc->argtypelems) free(qdesc->argtypelems);
     if (qdesc->argvalues) {
 	for (j = 0; j < qdesc->nargs; j++) {
 	    if (qdesc->arglen[j] < 0 &&
@@ -1081,8 +1118,7 @@ plruby_query_free(qdesc)
 	}
 	free(qdesc->argvalues);
     }
-    if (qdesc->arglen)
-	free(qdesc->arglen);
+    if (qdesc->arglen) free(qdesc->arglen);
     free(qdesc);
 }
 
@@ -1090,17 +1126,19 @@ static VALUE
 plruby_SPI_prepare(obj, a, b)
     VALUE obj, a, b;
 {
-    int			nargs;
+    int	nargs;
     plruby_query_desc *qdesc;
-    void	   *plan;
-    int			i;
+    void *plan;
+    int	i;
     HeapTuple	typeTup;
     VALUE result;
 
-    if (TYPE(a) != T_STRING)
+    if (TYPE(a) != T_STRING) {
 	rb_raise(pg_ePLruby, "first argument must be a STRING");
-    if (TYPE(b) != T_ARRAY)
+    }
+    if (TYPE(b) != T_ARRAY) {
 	rb_raise(pg_ePLruby, "second argument must be an ARRAY");
+    }
 
     nargs = RARRAY(b)->len;
 
@@ -1188,39 +1226,57 @@ plruby_SPI_prepare(obj, a, b)
     return result;
 }
 
-/**********************************************************************
- * plruby_SPI_execp()		- Execute a prepared plan
- **********************************************************************/
 static VALUE
 plruby_SPI_execp(argc, argv, obj)
     int argc;
     VALUE *argv;
     VALUE obj;
 {
-    int			spi_rc;
-    int			i, j;
+    int	spi_rc;
+    int	i, j, comp;
     VALUE result;
     plruby_query_desc *qdesc;
-    char	   *nulls = NULL;
-    volatile int	count;
-    volatile int	callnargs;
-    int			ntuples;
-    HeapTuple  *tuples = NULL;
-    TupleDesc	tupdesc = NULL;
-    VALUE argsv, countv;
+    char *nulls = NULL;
+    volatile int count;
+    volatile int callnargs;
+    volatile int array = Qnil;
+    int	ntuples;
+    HeapTuple *tuples = NULL;
+    TupleDesc tupdesc = NULL;
+    VALUE argsv, countv, c;
 
     count = 0;
+    comp = Qnil;
     Data_Get_Struct(obj, plruby_query_desc, qdesc);
 
-    if (rb_scan_args(argc, argv, "11", &argsv, &countv) == 2) {
-	count = NUM2INT(countv);
+    switch (rb_scan_args(argc, argv, "12", &argsv, &countv, &c)) {
+    case 3:
+	if (TYPE(c) != T_STRING) {
+	    rb_raise(pg_ePLruby, "string expected for optionnal output");
+	}
+	if (strcmp(RSTRING(c)->ptr, "array") == 0) {
+	    comp = Qtrue;
+	}
+	else if (strcmp(RSTRING(c)->ptr, "hash") == 0) {
+	    comp = Qfalse;
+	}
+	/* ... */
+    case 2:
+	if (!NIL_P(countv)) {
+	    count = NUM2INT(countv);
+	}
     }
+#if PG_PL_VERSION >= 71
+    array = comp;
+#endif
     
     if (qdesc->nargs > 0) {
-	if (TYPE(argsv) != T_ARRAY)
+	if (TYPE(argsv) != T_ARRAY) {
 	    rb_raise(pg_ePLruby, "array expected for arguments");
-	if (RARRAY(argsv)->len != qdesc->nargs)
+	}
+	if (RARRAY(argsv)->len != qdesc->nargs) {
 	    rb_raise(pg_ePLruby, "length of arguments doesn't match # of arguments");
+	}
 	callnargs = RARRAY(argsv)->len;
 	nulls = ALLOCA_N(char, callnargs + 1);
 	for (j = 0; j < callnargs; j++) {
@@ -1252,8 +1308,9 @@ plruby_SPI_execp(argc, argv, obj)
 	}
 	nulls[callnargs] = '\0';
     }
-    else
+    else {
 	callnargs = 0;
+    }
 
     spi_rc = SPI_execp(qdesc->plan, qdesc->argvalues, nulls, count);
 
@@ -1293,29 +1350,39 @@ plruby_SPI_execp(argc, argv, obj)
     
     ntuples = SPI_processed;
     if (ntuples <= 0) {
-	if (rb_iterator_p() || count == 1)
+	if (rb_block_given_p() || count == 1) {
 	    return Qfalse;
-	else
+	}
+	else {
 	    return rb_ary_new2(0);
+	}
     }
     tuples = SPI_tuptable->vals;
     tupdesc = SPI_tuptable->tupdesc;
-    if (rb_iterator_p()) {
-	if (count == 1)
-	    plruby_build_tuple_argument(tuples[0], tupdesc, 1);
+    if (rb_block_given_p()) {
+	if (count == 1) {
+	    plruby_build_tuple_argument(tuples[0], tupdesc, 1, array);
+	}
 	else {
-	    for (i = 0; i < ntuples; i++)
-		rb_yield(plruby_build_tuple_argument(tuples[i], tupdesc, 0));
+	    for (i = 0; i < ntuples; i++) {
+		rb_yield(plruby_build_tuple_argument(tuples[i], tupdesc, 0, 
+						     array));
+	    }
 	}
 	result = Qtrue;
     }
     else {
-	if (count == 1)
-	    result = plruby_build_tuple_argument(tuples[0], tupdesc, 0);
+	if (count == 1) {
+	    result = plruby_build_tuple_argument(tuples[0], 
+						 tupdesc, 0, array);
+	}
 	else {
 	    result = rb_ary_new2(ntuples);
-	    for (i = 0; i < ntuples; i++)
-		rb_ary_push(result, plruby_build_tuple_argument(tuples[i], tupdesc, 0));
+	    for (i = 0; i < ntuples; i++) {
+		rb_ary_push(result, 
+			    plruby_build_tuple_argument(tuples[i], 
+							tupdesc, 0, array));
+	    }
 	}
     }
     return result;
@@ -1391,7 +1458,7 @@ plruby_load_singleton(argc, argv, obj)
 	rb_raise(pg_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
 		 RSTRING(s)->ptr, sinm);
     }
-    if (rb_iterator_p()) {
+    if (rb_block_given_p()) {
 	VALUE tmp[3], res;
 	tmp[0] = (VALUE)id;
 	tmp[1] = (VALUE)argc;
@@ -1405,17 +1472,14 @@ plruby_load_singleton(argc, argv, obj)
     }
 }
 
-/**********************************************************************
- * plruby_init_all()		- Initialize all
- **********************************************************************/
 static VALUE plans;
-
 
 static void
 plruby_init_all(void)
 {
     if (!plruby_firstcall)
 	return;
+    plruby_firstcall = 0;
     ruby_init();
     rb_define_global_const("NOTICE", INT2FIX(NOTICE));
     rb_define_global_const("DEBUG", INT2FIX(DEBUG));
@@ -1434,8 +1498,9 @@ plruby_init_all(void)
     if (rb_const_defined_at(rb_cObject, rb_intern("PLruby")) ||
 	rb_const_defined_at(rb_cObject, rb_intern("PLrubyError")) ||
 	rb_const_defined_at(rb_cObject, rb_intern("PLrubyCatch")) ||
+	rb_const_defined_at(rb_cObject, rb_intern("PLrubyPlan")) ||
 	rb_const_defined_at(rb_cObject, rb_intern("PLtemp"))) {
-	rb_raise(rb_eNameError, "class already defined");
+	elog(ERROR, "class already defined");
     }
     pg_mPLruby = rb_define_module("PLruby");
     pg_ePLruby = rb_define_class("PLrubyError", rb_eStandardError);
@@ -1474,6 +1539,5 @@ plruby_init_all(void)
 	rb_define_module_function(pg_mPLtemp, "method_missing", plruby_load_singleton, -1);
     if (SPI_finish() != SPI_OK_FINISH)
 	elog(ERROR, "plruby_singleton_methods : SPI_finish failed");
-    plruby_firstcall = 0;
     return;
 }
