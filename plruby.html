@@ -9,10 +9,11 @@
 <body>
 <h1><a name="label:0" id="label:0">PL/Ruby</a></h1><!-- RDLabel: "PL/Ruby" -->
 <ul>
-<li><a href="Defining function in PL">Ruby</a></li>
-<li><a href="Trigger procedures in PL">Ruby</a></li>
-<li><a href="#label:15">plruby_singleton_methods</a></li>
-<li><a href="#label:16">Class and modules</a></li>
+<li><a href="#label:2">Defining function in PL Ruby</a></li>
+<li><a href="#label:3">Function returning SET</a></li>
+<li><a href="#label:4">Trigger procedures in PL Ruby</a></li>
+<li><a href="#label:16">plruby_singleton_methods</a></li>
+<li><a href="#label:17">Class and modules</a></li>
 </ul>
 <p>PL/Ruby is a loadable procedural language for the Postgres database
 system  that enable the Ruby language to create functions and trigger
@@ -23,7 +24,7 @@ procedures</p>
 values, except for NULL values represented by <kbd>Qnil</kbd>.</em>
 <em>You must explicitely call a conversion function (like to_i) if you want 
 to use an argument as an integer</em></p>
-<h2><a name="label:2" id="label:2">Defining function in PL/Ruby</a></h2><!-- RDLabel: "Defining function in PL/Ruby" -->
+<h2><a name="label:2" id="label:2">Defining function in PL Ruby</a></h2><!-- RDLabel: "Defining function in PL Ruby" -->
 <p>To create a function in the PL/Ruby language use the syntax</p>
 <pre>CREATE FUNCTION funcname(arguments_type) RETURNS type AS '
 
@@ -47,77 +48,122 @@ in PL/Ruby.</p>
     args[0]["salary"].to_f &gt; 200000 || 
        (args[0]["salary"].to_f &gt; 100000 &amp;&amp; args[0]["age"].to_i &lt; 30)
 ' LANGUAGE 'plruby';</pre>
-<h2><a name="label:3" id="label:3">Trigger procedures in PL/Ruby</a></h2><!-- RDLabel: "Trigger procedures in PL/Ruby" -->
+<h2><a name="label:3" id="label:3">Function returning SET</a></h2><!-- RDLabel: "Function returning SET" -->
+<p>The return type must be declared as SETOF</p>
+<p>The function must call <kbd>yield</kbd> to return rows or return a String which
+must be a valid SELECT statement</p>
+<p>For example to concatenate 2 rows create the function</p>
+<pre>plruby_test=# CREATE FUNCTION tu(varchar) RETURNS setof record
+plruby_test-# AS '
+plruby_test'#    size = PLruby.column_name(args[0]).size
+plruby_test'#    res = nil
+plruby_test'#    PLruby.prepare("select * from #{args[0]}", 
+plruby_test'#                   "block" =&gt; 50, "tmp" =&gt; true).each do |row|
+plruby_test'#       if res.nil?
+plruby_test'#          res = row.values
+plruby_test'#       else
+plruby_test'#          res.concat row.values
+plruby_test'#          yield res
+plruby_test'#          res = nil
+plruby_test'#       end
+plruby_test'#    end
+plruby_test'#    if res
+plruby_test'#       res.concat Array.new(size)
+plruby_test'#       yield res
+plruby_test'#    end
+plruby_test'# ' language 'plruby';
+CREATE FUNCTION
+plruby_test=# 
+plruby_test=# select * from tt;
+ a | b  
+---+----
+ 1 |  2
+ 3 |  4
+ 5 |  6
+ 7 |  8
+ 9 | 10
+(5 rows)
+
+plruby_test=# select * from tu('tt') as tbl(a int, b int, c int, d int);
+ a | b  | c | d 
+---+----+---+---
+ 1 |  2 | 3 | 4
+ 5 |  6 | 7 | 8
+ 9 | 10 |   |  
+(3 rows)
+
+plruby_test=# </pre>
+<h2><a name="label:4" id="label:4">Trigger procedures in PL Ruby</a></h2><!-- RDLabel: "Trigger procedures in PL Ruby" -->
 <p>Trigger procedures are defined in Postgres as functions without
 arguments and a return type of opaque. In PL/Ruby the procedure is
 called with 4 arguments :</p>
 <dl>
-<dt><a name="label:4" id="label:4">new (hash, tainted)
+<dt><a name="label:5" id="label:5">new (hash, tainted)
 </a></dt><!-- RDLabel: "new (hash, tainted)
 " -->
 <dd>
 <p>an hash containing the values of the new table row on INSERT/UPDATE
 actions, or empty on DELETE. </p>
 </dd>
-<dt><a name="label:5" id="label:5">old (hash, tainted)
+<dt><a name="label:6" id="label:6">old (hash, tainted)
 </a></dt><!-- RDLabel: "old (hash, tainted)
 " -->
 <dd>
 <p>an hash containing the values of the old table row on UPDATE/DELETE
 actions, or empty on INSERT </p>
 </dd>
-<dt><a name="label:6" id="label:6">args (array, tainted, frozen)
+<dt><a name="label:7" id="label:7">args (array, tainted, frozen)
 </a></dt><!-- RDLabel: "args (array, tainted, frozen)
 " -->
 <dd>
 <p>An array of the arguments to the procedure as given in the CREATE
 TRIGGER statement </p>
 </dd>
-<dt><a name="label:7" id="label:7">tg (hash, tainted, frozen)
+<dt><a name="label:8" id="label:8">tg (hash, tainted, frozen)
 </a></dt><!-- RDLabel: "tg (hash, tainted, frozen)
 " -->
 <dd>
 <p>The following keys are defined</p>
 <dl>
-<dt><a name="label:8" id="label:8">name
+<dt><a name="label:9" id="label:9">name
 </a></dt><!-- RDLabel: "name
 " -->
 <dd>
 <p>The name of the trigger from the CREATE TRIGGER statement.</p>
 </dd>
-<dt><a name="label:9" id="label:9">relname
+<dt><a name="label:10" id="label:10">relname
 </a></dt><!-- RDLabel: "relname
 " -->
 <dd>
 <p>The name of the relation who has fired the trigger</p>
 </dd>
-<dt><a name="label:10" id="label:10">relid
+<dt><a name="label:11" id="label:11">relid
 </a></dt><!-- RDLabel: "relid
 " -->
 <dd>
 <p>The object ID of the table that caused the trigger procedure to be invoked.</p>
 </dd>
-<dt><a name="label:11" id="label:11">relatts
+<dt><a name="label:12" id="label:12">relatts
 </a></dt><!-- RDLabel: "relatts
 " -->
 <dd>
 <p>An array containing the name of the tables field.</p>
 </dd>
-<dt><a name="label:12" id="label:12">when
+<dt><a name="label:13" id="label:13">when
 </a></dt><!-- RDLabel: "when
 " -->
 <dd>
 <p>The constant <kbd>PLruby::BEFORE</kbd>, <kbd>PLruby::AFTER</kbd> or
 <kbd>PLruby::UNKNOWN</kbd> depending on the event of the trigger call.</p>
 </dd>
-<dt><a name="label:13" id="label:13">level
+<dt><a name="label:14" id="label:14">level
 </a></dt><!-- RDLabel: "level
 " -->
 <dd>
 <p>The constant <kbd>PLruby::ROW</kbd> or <kbd>PLruby::STATEMENT</kbd>
 depending on the event of the trigger call.</p>
 </dd>
-<dt><a name="label:14" id="label:14">op
+<dt><a name="label:15" id="label:15">op
 </a></dt><!-- RDLabel: "op
 " -->
 <dd>
@@ -145,18 +191,18 @@ then incremented on every update operation :</p>
     case tg["op"]
     when PLruby::INSERT
         new[args[0]] = 0
-    when PLruby::UPDATE
-        new[args[0]] = old[args[0]].to_i + 1
-    else
-        return PLruby::OK
-    end
-    new
-' LANGUAGE 'plruby';
+      when PLruby::UPDATE
+          new[args[0]] = old[args[0]].to_i + 1
+      else
+          return PLruby::OK
+      end
+      new
+  ' LANGUAGE 'plruby';
 
-CREATE TABLE mytab (num int4, modcnt int4, descr text);
+  CREATE TABLE mytab (num int4, modcnt int4, descr text);
 
-CREATE TRIGGER trig_mytab_modcount BEFORE INSERT OR UPDATE ON mytab
-    FOR EACH ROW EXECUTE PROCEDURE trigfunc_modcount('modcnt');</pre>
+  CREATE TRIGGER trig_mytab_modcount BEFORE INSERT OR UPDATE ON mytab
+      FOR EACH ROW EXECUTE PROCEDURE trigfunc_modcount('modcnt');</pre>
 <p>A more complex example (extract from test_setup.sql in the distribution)
 which use the global variable <kbd>$Plans</kbd> to store a prepared
 plan</p>
@@ -202,7 +248,7 @@ new["key2"]])
 create trigger pkey2_after after update or delete on T_pkey2
  for each row execute procedure
  trig_pkey2_after();</pre>
-<h2><a name="label:15" id="label:15">plruby_singleton_methods</a></h2><!-- RDLabel: "plruby_singleton_methods" -->
+<h2><a name="label:16" id="label:16">plruby_singleton_methods</a></h2><!-- RDLabel: "plruby_singleton_methods" -->
 <p>Sometime it can be usefull to define methods (in pure Ruby) which can be
 called from a PL/Ruby function or a PL/Ruby trigger.</p>
 <p>In this case, you have 2 possibilities</p>
@@ -253,47 +299,49 @@ tutu
 (1 row)
 
 toto=&gt;</pre>
-<h2><a name="label:16" id="label:16">Class and modules</a></h2><!-- RDLabel: "Class and modules" -->
-<h3><a name="label:17" id="label:17">Global</a></h3><!-- RDLabel: "Global" -->
+<h2><a name="label:17" id="label:17">Class and modules</a></h2><!-- RDLabel: "Class and modules" -->
+<h3><a name="label:18" id="label:18">Global</a></h3><!-- RDLabel: "Global" -->
 <dl>
-<dt><a name="label:18" id="label:18">warn [level], message
-</a></dt><!-- RDLabel: "warn [level], message
-" -->
+<dt><a name="label:19" id="label:19"><code>warn [<var>level</var>], <var>message</var></code></a></dt><!-- RDLabel: "warn [level], message" -->
 <dd>
 <p>Ruby interface to PostgreSQL elog()</p>
 <p>Possible value for <kbd>level</kbd> are <kbd>NOTICE</kbd>, <kbd>DEBUG</kbd> and <kbd>NOIND</kbd></p>
-<p>Use <kbd>raise()</kbd> if you want to simulate <kbd>elog(ERROR, "...")</kbd></p>
-</dd>
-<dt><a name="label:19" id="label:19">$Plans (hash, tainted)
-</a></dt><!-- RDLabel: "$Plans (hash, tainted)
-" -->
+<p>Use <kbd>raise()</kbd> if you want to simulate <kbd>elog(ERROR, "...")</kbd></p></dd>
+<dt><a name="label:20" id="label:20"><code>$Plans (<var>hash</var>, <var>tainted</var>)</code></a></dt><!-- RDLabel: "$Plans" -->
 <dd>
-<p>can be used to store prepared plans.</p>
-</dd>
+<p>can be used to store prepared plans.</p></dd>
 </dl>
-<h3><a name="label:20" id="label:20">module PLruby</a></h3><!-- RDLabel: "module PLruby" -->
+<h3><a name="label:21" id="label:21">module PLruby</a></h3><!-- RDLabel: "module PLruby" -->
 <dl>
-<dt><a name="label:21" id="label:21">quote string
-</a></dt><!-- RDLabel: "quote string
-" -->
+<dt><a name="label:22" id="label:22"><code>column_name(<var>table</var>)</code></a></dt><!-- RDLabel: "column_name" -->
+<dd>
+<p>Return the name of the columns for the table</p></dd>
+<dt><a name="label:23" id="label:23"><code>column_type(<var>table</var>)</code></a></dt><!-- RDLabel: "column_type" -->
+<dd>
+<p>return the type of the columns for the table</p></dd>
+<dt><a name="label:24" id="label:24"><code>result_name</code></a></dt><!-- RDLabel: "result_name" -->
+<dd>
+<p>Return the name of the columns for a function returning a SETOF</p></dd>
+<dt><a name="label:25" id="label:25"><code>result_type</code></a></dt><!-- RDLabel: "result_type" -->
+<dd>
+<p>Return the type of the columns for a function returning a SETOF</p></dd>
+<dt><a name="label:26" id="label:26"><code>result_size</code></a></dt><!-- RDLabel: "result_size" -->
+<dd>
+<p>Return the number of columns  for a function returning a SETOF</p></dd>
+<dt><a name="label:27" id="label:27"><code>quote(<var>string</var>)</code></a></dt><!-- RDLabel: "quote" -->
 <dd>
 <p>Duplicates all occurences of single quote and backslash
 characters. It should be used when variables are used in the query
 string given to spi_exec or spi_prepare (not for the value list on
-execp).</p>
-</dd>
-<dt><a name="label:22" id="label:22">exec(string [, count [, type]])
-</a></dt><!-- RDLabel: "exec(string [, count [, type]])
-" -->
-<dt><a name="label:23" id="label:23">spi_exec(string [, count [, type]])
-</a></dt><!-- RDLabel: "spi_exec(string [, count [, type]])
-" -->
+execp).</p></dd>
+<dt><a name="label:28" id="label:28"><code>exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a><!-- RDLabel: "exec" -->
+<dt><a name="label:29" id="label:29"><code>spi_exec(<var>string</var> [, <var>count</var> [, <var>type</var>]])</code></a></dt><!-- RDLabel: "spi_exec" -->
 <dd>
 <p>Call parser/planner/optimizer/executor for query. The optional
 <kbd>count</kbd> value tells spi_exec the maximum number of rows to be
 processed by the query.</p>
 <dl>
-<dt><a name="label:24" id="label:24">SELECT
+<dt><a name="label:30" id="label:30">SELECT
 </a></dt><!-- RDLabel: "SELECT
 " -->
 <dd>
@@ -326,20 +374,20 @@ create table T_pkey1 (
 );
 
 create function toto() returns bool as '
-       warn("=======")
-       PLruby.exec("select * from T_pkey1", 1, "hash") do |a|
-          warn(a.inspect)
-       end
-       warn("=======")
-       PLruby.exec("select * from T_pkey1", 1, "array") do |a|
-          warn(a.inspect)
-       end
-       warn("=======")
-       PLruby.exec("select * from T_pkey1", 1) do |a|
-          warn(a.inspect)
-       end
-       warn("=======")
-       return true
+   warn("=======")
+   PLruby.exec("select * from T_pkey1", 1, "hash") do |a|
+      warn(a.inspect)
+   end
+   warn("=======")
+   PLruby.exec("select * from T_pkey1", 1, "array") do |a|
+      warn(a.inspect)
+   end
+   warn("=======")
+   PLruby.exec("select * from T_pkey1", 1) do |a|
+      warn(a.inspect)
+   end
+   warn("=======")
+   return true
 ' language 'plruby';
 
 
@@ -374,51 +422,41 @@ FALSE if it fail) is returned as a hash. Here a little example :</p>
   return 1
 ' LANGUAGE 'plruby';</pre>
 </dd>
-<dt><a name="label:25" id="label:25">SELECT INTO, INSERT, UPDATE, DELETE
+<dt><a name="label:31" id="label:31">SELECT INTO, INSERT, UPDATE, DELETE
 </a></dt><!-- RDLabel: "SELECT INTO, INSERT, UPDATE, DELETE
 " -->
 <dd>
 <p>return the number of rows insered, updated, deleted, ...</p>
 </dd>
-<dt><a name="label:26" id="label:26">UTILITY
+<dt><a name="label:32" id="label:32">UTILITY
 </a></dt><!-- RDLabel: "UTILITY
 " -->
 <dd>
 <p>return TRUE</p>
 </dd>
-</dl>
-</dd>
-<dt><a name="label:27" id="label:27">prepare(string, [array])
-</a></dt><!-- RDLabel: "prepare(string, [array])
-" -->
-<dt><a name="label:28" id="label:28">spi_prepare(string, [array])
-</a></dt><!-- RDLabel: "spi_prepare(string, [array])
-" -->
+</dl></dd>
+<dt><a name="label:33" id="label:33"><code>prepare(<var>string</var>[, <var>types</var>])</code></a><!-- RDLabel: "prepare" -->
+<dt><a name="label:34" id="label:34"><code>spi_prepare(<var>string</var>[, <var>types</var>])</code></a><!-- RDLabel: "spi_prepare" -->
+<dt><a name="label:35" id="label:35"><code>prepare(<var>string</var>, "<var>types</var>" =&gt; <var>types</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>, "<var>tmp</var>" =&gt; <var>true</var>)</code></a></dt><!-- RDLabel: "prepare" -->
 <dd>
 <p>Prepares AND SAVES a query plan for later execution. It is a bit
 different from the C level SPI_prepare in that the plan is
-automatically copied to the toplevel memory context. Thus, there is
-currently no way of preparing a plan without saving it.</p>
+automatically copied to the toplevel memory context.</p>
+<p>To create a plan without saving it, give it the option
+<kbd>'tmp' =&gt; true</kbd></p>
 <p>If the query references arguments, the type names must be given as a
 Ruby array of strings. The return value from prepare is a
 <kbd>PLrubyplan</kbd> object to be used in subsequent calls to
 <kbd>PLrubyplan#exec</kbd>.</p>
-</dd>
+<p>If the hash given has the keys <kbd>count</kbd>, <kbd>output</kbd> these values
+will be given to the subsequent calls to <kbd>each</kbd></p></dd>
 </dl>
-<h3><a name="label:29" id="label:29">class PLrubyplan</a></h3><!-- RDLabel: "class PLrubyplan" -->
+<h3><a name="label:36" id="label:36">class PLrubyplan</a></h3><!-- RDLabel: "class PLrubyplan" -->
 <dl>
-<dt><a name="label:30" id="label:30">exec(values, [count [, type]])
-</a></dt><!-- RDLabel: "exec(values, [count [, type]])
-" -->
-<dt><a name="label:31" id="label:31">execp(values, [count [, type]])
-</a></dt><!-- RDLabel: "execp(values, [count [, type]])
-" -->
-<dt><a name="label:32" id="label:32">exec("values" =&gt; values, "count" =&gt; count, "output" =&gt; type)
-</a></dt><!-- RDLabel: "exec("values" => values, "count" => count, "output" => type)
-" -->
-<dt><a name="label:33" id="label:33">execp("values" =&gt; values, "count" =&gt; count, "output" =&gt; type)
-</a></dt><!-- RDLabel: "execp("values" => values, "count" => count, "output" => type)
-" -->
+<dt><a name="label:37" id="label:37"><code>exec(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a><!-- RDLabel: "exec" -->
+<dt><a name="label:38" id="label:38"><code>execp(<var>values</var>, [<var>count</var> [, <var>type</var>]])</code></a><!-- RDLabel: "execp" -->
+<dt><a name="label:39" id="label:39"><code>exec("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a><!-- RDLabel: "exec" -->
+<dt><a name="label:40" id="label:40"><code>execp("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>)</code></a></dt><!-- RDLabel: "execp" -->
 <dd>
 <p>Execute a prepared plan from <kbd>PLruby#prepare</kbd> with variable
 substitution. The optional <kbd>count</kbd> value tells
@@ -435,6 +473,7 @@ the fields selected.</p>
 <ul>
 <li>"array" return an array with the element ["name", "value", "type", "len", "typeid"]</li>
 <li>"hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}</li>
+<li>"values" return an array with all values</li>
 </ul>
 <p>Here's an example for a PL/Ruby function using a prepared plan : </p>
 <pre>CREATE FUNCTION t1_count(int4, int4) RETURNS int4 AS '
@@ -446,20 +485,11 @@ the fields selected.</p>
     end
     n = $Plans["plan"].exec([args[0], args[1]], 1)
     n["cnt"]
-' LANGUAGE 'plruby';</pre>
-</dd>
-<dt><a name="label:34" id="label:34">each(values, [count [, type ]]) { ... }
-</a></dt><!-- RDLabel: "each(values, [count [, type ]]) { ... }
-" -->
-<dt><a name="label:35" id="label:35">fetch(values, [count [, type ]]) { ... }
-</a></dt><!-- RDLabel: "fetch(values, [count [, type ]]) { ... }
-" -->
-<dt><a name="label:36" id="label:36">each("values" =&gt; values, "count" =&gt; count, "output" =&gt; type) { ... }
-</a></dt><!-- RDLabel: "each("values" => values, "count" => count, "output" => type) { ... }
-" -->
-<dt><a name="label:37" id="label:37">fetch("values" =&gt; values, "count" =&gt; count, "output" =&gt; type) { ... }
-</a></dt><!-- RDLabel: "fetch("values" => values, "count" => count, "output" => type) { ... }
-" -->
+' LANGUAGE 'plruby';</pre></dd>
+<dt><a name="label:41" id="label:41"><code>each(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a><!-- RDLabel: "each" -->
+<dt><a name="label:42" id="label:42"><code>fetch(<var>values</var>, [<var>count</var> [, <var>type</var> ]]) { ... }</code></a><!-- RDLabel: "fetch" -->
+<dt><a name="label:43" id="label:43"><code>each("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a><!-- RDLabel: "each" -->
+<dt><a name="label:44" id="label:44"><code>fetch("<var>values</var>" =&gt; <var>values</var>, "<var>count</var>" =&gt; <var>count</var>, "<var>output</var>" =&gt; <var>type</var>) { ... }</code></a></dt><!-- RDLabel: "fetch" -->
 <dd>
 <p>Same then #exec but a call to SPI_cursor_open(), SPI_cursor_fetch() is made.</p>
 <p>Can be used only with a block and a SELECT statement</p>
@@ -498,8 +528,7 @@ NOTICE:  {"skey1"=&gt;"24", "skey2"=&gt;"c", "stxt"=&gt;"d"}
  t
 (1 row)
 
-plruby_test=# </pre>
-</dd>
+plruby_test=# </pre></dd>
 </dl>
 
 </body>

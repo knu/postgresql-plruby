@@ -29,3 +29,6 @@
 
  corrected for_numvals() (Thanks  Brad Hilton <bhilton@vpop.net>)
 
+--- 0.3.2
+
+ functions returning set (PostgreSQL >= 7.3)

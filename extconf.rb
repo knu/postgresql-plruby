@@ -13,7 +13,11 @@ if srcdir = with_config("pgsql-srcinc-dir")
 end
 include_dir = ""
 if prefix = with_config("pgsql-prefix")
-   $CFLAGS += " -I#{prefix}/include -I#{prefix}/include/server"
+   if File.exist?("#{prefix}/include/server")
+      $CFLAGS += " -I#{prefix}/include -I#{prefix}/include/server"
+   else 
+      $CFLAGS += " -I#{prefix}/include -I#{prefix}/include/postgresql/server"
+   end
    $LDFLAGS += " -L#{prefix}/lib"
    include_dir = "#{prefix}/include"
 end
