@@ -69,6 +69,12 @@
 #include "catalog/pg_language.h"
 #include "catalog/pg_type.h"
 
+#if PG_PL_VERSION >= 73
+#include "nodes/makefuncs.h"
+#include "parser/parse_type.h"
+#endif
+
+
 #ifndef MAXFMGRARGS
 #define RUBY_ARGS_MAXFMGR FUNC_MAX_ARGS
 #define RUBY_TYPOID TYPEOID
@@ -166,6 +172,17 @@ static HeapTuple plruby_trigger_handler(FmgrInfo *proinfo);
 
 static VALUE plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc,
 					 int iterat, int complete);
+
+#if PG_PL_VERSION >= 73
+static void
+perm_fmgr_info(Oid functionId, FmgrInfo *finfo)
+{
+	fmgr_info_cxt(functionId, finfo, TopMemoryContext);
+}
+
+#define fmgr_info perm_fmgr_info
+
+#endif
 
 static VALUE
 plruby_protect(args)
@@ -323,6 +340,14 @@ plruby_func_handler(proinfo, proargs, isNull)
 	}
 	typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
 
+#if PG_PL_VERSION >= 73
+	if (typeStruct->typtype == 'p' && 
+	    procStruct->prorettype != VOIDOID) {
+	    rb_raise(pg_ePLruby,  "functions cannot return type %s",
+		     format_type_be(procStruct->prorettype));
+	}
+#endif
+
 	if (typeStruct->typrelid != InvalidOid)	{
 	    rb_raise(pg_ePLruby, "return types of tuples not supported yet");
 	}
@@ -343,6 +368,13 @@ plruby_func_handler(proinfo, proargs, isNull)
 		rb_raise(pg_ePLruby, "cache lookup for argument type failed");
 	    }
 	    typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
+
+#if PG_PL_VERSION >= 73
+	    if (typeStruct->typtype == 'p') { 
+		rb_raise(pg_ePLruby, "argument can't have the type %s",
+			 format_type_be(procStruct->proargtypes[i]));
+	    }
+#endif
 
 	    if (typeStruct->typrelid != InvalidOid) {
 		prodesc->arg_is_rel[i] = 1;
@@ -713,7 +745,7 @@ plruby_trigger_handler(FmgrInfo *proinfo)
 #ifdef NEW_STYLE_FUNCTION
     trigdata = (TriggerData *) fcinfo->context;
 
-    sprintf(internal_proname, "proc_%u", fcinfo->flinfo->fn_oid);
+    sprintf(internal_proname, "proc_%u_trigger", fcinfo->flinfo->fn_oid);
 #else
     trigdata = CurrentTriggerData;
     CurrentTriggerData = NULL;
@@ -721,6 +753,7 @@ plruby_trigger_handler(FmgrInfo *proinfo)
     stroid = oidout(proinfo->fn_oid);
     strcpy(internal_proname, "proc_");
     strcat(internal_proname, stroid);
+    strcat(internal_proname, "_trigger");
     pfree(stroid);
 #endif
     proname_len = strlen(internal_proname);
@@ -760,7 +793,7 @@ plruby_trigger_handler(FmgrInfo *proinfo)
 	rb_eval_string_protect(proc_internal_def, &status);
 	if (status) {
 	    VALUE s = rb_funcall(rb_gv_get("$!"), to_s_id, 0);
-	    rb_raise(pg_ePLruby, "cannot create bb internal procedure %s\n<<===%s\n===>>",
+	    rb_raise(pg_ePLruby, "cannot create internal procedure %s\n<<===%s\n===>>",
 		 RSTRING(s)->ptr, proc_internal_def);
 	}
 	prodesc->proname = malloc(strlen(internal_proname) + 1);
@@ -945,9 +978,17 @@ plruby_warn(argc, argv, obj)
 	indice  = 1;
 	switch (level = NUM2INT(argv[0])) {
 	case NOTICE:
+#ifdef DEBUG
 	case DEBUG:
+#endif
+#ifdef DEBUG1
+	case DEBUG1:
+#endif
 #ifdef NOIND
 	case NOIND:
+#endif
+#ifdef WARNING
+	case WARNING:
 #endif
 #ifdef WARN
 	case WARN:
@@ -1159,6 +1200,10 @@ plruby_SPI_prepare(int argc, VALUE *argv, VALUE obj)
  
 	for (i = 0; i < nargs; i++)	{
 	    VALUE args = rb_funcall(RARRAY(b)->ptr[i], to_s_id, 0);
+#if PG_PL_VERSION >= 73
+	    typeTup = typenameType(makeTypeName(RSTRING(args)->ptr));
+	    qdesc->argtypes[i] = HeapTupleGetOid(typeTup);
+#else
 	    typeTup = SearchSysCacheTuple(RUBY_TYPNAME,
 					  PointerGetDatum(RSTRING(args)->ptr),
 					  0, 0, 0);
@@ -1166,6 +1211,7 @@ plruby_SPI_prepare(int argc, VALUE *argv, VALUE obj)
 		rb_raise(pg_ePLruby, "Cache lookup of type '%s' failed", RSTRING(args)->ptr);
 	    }
 	    qdesc->argtypes[i] = typeTup->t_data->t_oid;
+#endif
 	    fmgr_info(((Form_pg_type) GETSTRUCT(typeTup))->typinput,
 		      &(qdesc->arginfuncs[i]));
 	    qdesc->argtypelems[i] = ((Form_pg_type) GETSTRUCT(typeTup))->typelem;
@@ -1641,7 +1687,19 @@ plruby_init_all(void)
     plruby_firstcall = 0;
     ruby_init();
     rb_define_global_const("NOTICE", INT2FIX(NOTICE));
+#ifdef DEBUG
     rb_define_global_const("DEBUG", INT2FIX(DEBUG));
+#else
+#ifdef DEBUG1
+    rb_define_global_const("DEBUG", INT2FIX(DEBUG1));
+#endif
+#endif
+#ifdef DEBUG1
+    rb_define_global_const("DEBUG1", INT2FIX(DEBUG1));
+#endif
+#ifdef WARNING
+    rb_define_global_const("WARNING", INT2FIX(WARNING));
+#endif
 #ifdef WARN
     rb_define_global_const("WARN", INT2FIX(WARN));
 #endif

@@ -96,7 +96,7 @@ create unique index PHone_name on PHone using btree (slotname varchar_ops);
 -- * AFTER UPDATE on Room
 -- *    - If room no changes let wall slots follow
 -- ************************************************************
-create function tg_room_au() returns trigger as '
+create function tg_room_au() returns opaque as '
     if !$Plans[tg["name"]]
        $Plans[tg["name"]] = PLruby.prepare("update WSlot set roomno = $1
                                               where roomno = $2",
@@ -116,7 +116,7 @@ create trigger tg_room_au after update
 -- * AFTER DELETE on Room
 -- *    - delete wall slots in this room
 -- ************************************************************
-create function tg_room_ad() returns trigger as '
+create function tg_room_ad() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = PLruby.prepare("delete from WSlot 
                                                where roomno = $1", ["varchar"])
@@ -133,7 +133,7 @@ create trigger tg_room_ad after delete
 -- * BEFORE INSERT or UPDATE on WSlot
 -- *    - Check that room exists
 -- ************************************************************
-create function tg_wslot_biu() returns trigger as '
+create function tg_wslot_biu() returns opaque as '
     if !$Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
              PLruby.prepare("select count(*) as cnt from Room 
@@ -154,7 +154,7 @@ create trigger tg_wslot_biu before insert or update
 -- * AFTER UPDATE on PField
 -- *    - Let PSlots of this field follow
 -- ************************************************************
-create function tg_pfield_au() returns trigger as '
+create function tg_pfield_au() returns opaque as '
     if !$Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
             PLruby.prepare("update PSlot set pfname = $1
@@ -174,7 +174,7 @@ create trigger tg_pfield_au after update
 -- * AFTER DELETE on PField
 -- *    - Remove all slots of this patchfield
 -- ************************************************************
-create function tg_pfield_ad() returns trigger as '
+create function tg_pfield_ad() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = PLruby.prepare("delete from PSlot 
                                              where pfname = $1", ["text"])
@@ -191,7 +191,7 @@ create trigger tg_pfield_ad after delete
 -- * BEFORE INSERT or UPDATE on PSlot
 -- *    - Ensure that our patchfield does exist
 -- ************************************************************
-create function tg_pslot_biu() returns trigger as '
+create function tg_pslot_biu() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = PLruby.prepare("select count(*) as cnt
                                              from PField where name = $1", ["text"])
@@ -210,7 +210,7 @@ create trigger tg_pslot_biu before insert or update
 -- * AFTER UPDATE on System
 -- *    - If system name changes let interfaces follow
 -- ************************************************************
-create function tg_system_au() returns trigger as '
+create function tg_system_au() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = PLruby.prepare("update IFace set sysname = $1
                                              where sysname = $2", ["text", "text"])
@@ -229,7 +229,7 @@ create trigger tg_system_au after update
 -- * BEFORE INSERT or UPDATE on IFace
 -- *    - set the slotname to IF.sysname.ifname
 -- ************************************************************
-create function tg_iface_biu() returns trigger as '
+create function tg_iface_biu() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = PLruby.prepare("select count(*) as cnt from system
                                              where name = $1", ["text"])
@@ -253,7 +253,7 @@ create trigger tg_iface_biu before insert or update
 -- * AFTER INSERT or UPDATE or DELETE on Hub
 -- *    - insert/delete/rename slots as required
 -- ************************************************************
-create function tg_hub_a() returns trigger as '
+create function tg_hub_a() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = PLruby.prepare("update HSlot set hubname = $1
                                              where hubname = $2", ["varchar", "varchar"])
@@ -280,7 +280,7 @@ create trigger tg_hub_a after insert or update or delete
 -- *    - prevent from manual manipulation
 -- *    - set the slotname to HS.hubname.slotno
 -- ************************************************************
-create function tg_hslot_biu() returns trigger as '
+create function tg_hslot_biu() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
            PLruby.prepare("select * from Hub where name = $1", ["varchar"])
@@ -310,7 +310,7 @@ create trigger tg_hslot_biu before insert or update
 -- * BEFORE DELETE on HSlot
 -- *    - prevent from manual manipulation
 -- ************************************************************
-create function tg_hslot_bd() returns trigger as '
+create function tg_hslot_bd() returns opaque as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
            PLruby.prepare("select * from Hub where name = $1", ["varchar"])
@@ -330,7 +330,7 @@ create trigger tg_hslot_bd before delete
 -- * BEFORE INSERT on all slots
 -- *    - Check name prefix
 -- ************************************************************
-create function tg_chkslotname() returns trigger as '
+create function tg_chkslotname() returns opaque as '
     if new["slotname"][0, 2] != args[0]
         raise "slotname must begin with #{args[0]}"
     end
@@ -357,7 +357,7 @@ create trigger tg_chkslotname before insert
 -- * BEFORE INSERT or UPDATE on all slots with slotlink
 -- *    - Set slotlink to empty string if NULL value given
 -- ************************************************************
-create function tg_chkslotlink() returns trigger as '
+create function tg_chkslotlink() returns opaque as '
     if ! new["slotlink"]
         new["slotlink"] = ""
         return new
@@ -385,7 +385,7 @@ create trigger tg_chkslotlink before insert or update
 -- * BEFORE INSERT or UPDATE on all slots with backlink
 -- *    - Set backlink to empty string if NULL value given
 -- ************************************************************
-create function tg_chkbacklink() returns trigger as '
+create function tg_chkbacklink() returns opaque as '
     if ! new["backlink"]
         new["backlink"] = ""
         return new
@@ -407,7 +407,7 @@ create trigger tg_chkbacklink before insert or update
 -- * BEFORE UPDATE on PSlot
 -- *    - do delete/insert instead of update if name changes
 -- ************************************************************
-create function tg_pslot_bu() returns trigger as '
+create function tg_pslot_bu() returns opaque as '
     if ! $Plans.key?("pslot_bu_del")
         $Plans["pslot_bu_del"] =
             PLruby.prepare("delete from PSlot where slotname = $1", ["varchar"])
@@ -434,7 +434,7 @@ create trigger tg_pslot_bu before update
 -- * BEFORE UPDATE on WSlot
 -- *    - do delete/insert instead of update if name changes
 -- ************************************************************
-create function tg_wslot_bu() returns trigger as '
+create function tg_wslot_bu() returns opaque as '
     if ! $Plans.key?("wslot_bu_del")
         $Plans["wslot_bu_del"] =
             PLruby.prepare("delete from WSlot where slotname = $1", ["varchar"])
@@ -461,7 +461,7 @@ create trigger tg_wslot_bu before update
 -- * BEFORE UPDATE on PLine
 -- *    - do delete/insert instead of update if name changes
 -- ************************************************************
-create function tg_pline_bu() returns trigger as '
+create function tg_pline_bu() returns opaque as '
     if ! $Plans.key?("pline_bu_del")
         $Plans["pline_bu_del"] =
             PLruby.prepare("delete from Pline where slotname = $1", ["varchar"])
@@ -488,7 +488,7 @@ create trigger tg_pline_bu before update
 -- * BEFORE UPDATE on IFace
 -- *    - do delete/insert instead of update if name changes
 -- ************************************************************
-create function tg_iface_bu() returns trigger as '
+create function tg_iface_bu() returns opaque as '
     if ! $Plans.key?("iface_bu_del")
         $Plans["iface_bu_del"] =
             PLruby.prepare("delete from Iface where slotname = $1", ["varchar"])
@@ -515,7 +515,7 @@ create trigger tg_iface_bu before update
 -- * BEFORE UPDATE on HSlot
 -- *    - do delete/insert instead of update if name changes
 -- ************************************************************
-create function tg_hslot_bu() returns trigger as '
+create function tg_hslot_bu() returns opaque as '
     if ! $Plans.key?("hslot_bu_del")
         $Plans["hslot_bu_del"] =
             PLruby.prepare("delete from Hslot where slotname = $1", ["varchar"])
@@ -542,7 +542,7 @@ create trigger tg_hslot_bu before update
 -- * BEFORE UPDATE on PHone
 -- *    - do delete/insert instead of update if name changes
 -- ************************************************************
-create function tg_phone_bu() returns trigger as '
+create function tg_phone_bu() returns opaque as '
     if ! $Plans.key?("phone_bu_del")
         $Plans["phone_bu_del"] =
             PLruby.prepare("delete from Phone where slotname = $1", ["varchar"])
@@ -568,7 +568,7 @@ create trigger tg_phone_bu before update
 -- * AFTER INSERT or UPDATE or DELETE on slot with backlink
 -- *    - Ensure that the opponent correctly points back to us
 -- ************************************************************
-create function tg_backlink_a() returns trigger as '
+create function tg_backlink_a() returns opaque as '
     case tg["op"]
     when PLruby::INSERT
         if ! new["backlink"].empty?
@@ -609,7 +609,7 @@ create trigger tg_backlink_a after insert or update or delete
 -- * AFTER INSERT or UPDATE or DELETE on slot with slotlink
 -- *    - Ensure that the opponent correctly points back to us
 -- ************************************************************
-create function tg_slotlink_a() returns trigger as '
+create function tg_slotlink_a() returns opaque as '
     case tg["op"]
     when PLruby::INSERT
         if ! new["slotlink"].empty?
