@@ -1,19 +1,23 @@
 #!/usr/bin/ruby
 require 'mkmf'
+src_dir = ""
 if srcdir = with_config("pgsql-srcinc-dir")
-    $CFLAGS = "-I#{srcdir}"
+   $CFLAGS = "-I#{srcdir}"
 else
-    srcdir = "/var/postgres/postgresl-6.5/src/include"
-    $CFLAGS = "-I/var/postgres/postgresl-6.5/src/include"
+   srcdir = "/var/postgres/postgresl-6.5/src/include"
+   $CFLAGS = "-I/var/postgres/postgresl-6.5/src/include"
 end
+include_dir = ""
 if prefix = with_config("pgsql-prefix")
-    $CFLAGS += " -I#{prefix}/include"
-    $LDFLAGS += " -L#{prefix}/lib"
+   $CFLAGS += " -I#{prefix}/include -I#{prefix}/include/server"
+   $LDFLAGS += " -L#{prefix}/lib"
+   include_dir = "#{prefix}/include"
 end
 if incdir = with_config("pgsql-include-dir")
-    $CFLAGS += " -I#{incdir}"
+   $CFLAGS += " -I#{incdir} -I#{incdir}/server"
+   include_dir = incdir
 else
-    $CFLAGS += " -I/usr/include/postgresql"
+   $CFLAGS += " -I/usr/include/postgresql -I/usr/include/postgresql/server"
 end
 if  libdir = with_config("pgsql-lib-dir")
     $LDFLAGS += " -L#{libdir}"
@@ -29,38 +33,40 @@ if ! have_library("pq", "PQsetdbLogin")
 end
 $libs = append_library($libs, "ruby")
 if ! version = with_config("pgsql-version")
-   version = nil
-   version_in = "#{srcdir}/version.h.in"
-   version_regexp = /PG_RELEASE\s+"(\d)/
-   retry_version = true
-   begin
-      IO.foreach(version_in) do |line|
-	 if version_regexp =~ line
-	    version = $1
-	    if ! version.sub!(/\./, '')
-	       version += "0"
+   for version_in in [
+	 "#{include_dir}/config.h", 
+	 "#{include_dir}/pg_config.h", 
+	 "#{srcdir}/version.h.in",
+	 "#{srcdir}/pg_config.h"
+      ]
+      version = nil
+      version_regexp = /(?:PG_RELEASE|PG_VERSION)\s+"(\d(\.\d)?)/
+      begin
+	 IO.foreach(version_in) do |line|
+	    if version_regexp =~ line
+	       version = $1
+	       if ! version.sub!(/\./, '')
+		  version += "0"
+	       end
+	       break
 	    end
-	    break
 	 end
+	 break if version
+      rescue
       end
-      raise if ! version
-   rescue
-      if retry_version
-	 version_in = "#{prefix}/include/config.h"
-	 version_regexp = /PG_VERSION\s+"(\d(\.\d)?)/
-	 retry_version = false
-	 retry
-      end
-      version = "70"
-      print <<-EOT
- ************************************************************************
- I can't find the version of PostgreSQL, the test will be make against
- the output of 7.0. If the test fail, verify the result in the directories
- test/plt and test/plp
- ************************************************************************
-      EOT
    end
 end
+unless version
+   version = "72"
+   print <<-EOT
+ ************************************************************************
+ I can't find the version of PostgreSQL, the test will be make against
+ the output of 7.2. If the test fail, verify the result in the directories
+ test/plt and test/plp
+ ************************************************************************
+   EOT
+end
+
 $CFLAGS += " -DPG_PL_VERSION=#{version}"
 create_makefile("plruby")
 version.sub!(/\.\d/, '')

@@ -16,6 +16,7 @@ test/plt/test_setup_old.sql
 test/plt/test_setup_new.sql
 test/plt/test.out
 test/plt/test.expected.70
+test/plt/test.expected.72
 test/plp/b.rb
 test/plp/runtest
 test/plp/test_setup.sql
@@ -25,3 +26,4 @@ test/plp/test.expected.71
 test/plp/test.expected.70
 test/plp/test.out
 test/plp/test.expected.65
+test/plp/test.expected.72

@@ -3,7 +3,7 @@ require 'rbconfig'
 include Config
 pwd = Dir.pwd
 pwd.sub!("[^/]+/[^/]+$", "")
-language, extension = 'C', '_old'
+language, extension, procedural = 'C', '_old', 'procedural'
 case ARGV[0].to_i
 when 70
    language = 'newC'
@@ -11,6 +11,10 @@ when 70
 when 71
    language = 'C'
    extension = "_new"
+when 72
+   language = 'C'
+   extension = "_new"
+   procedural = ""
 end
 begin
    f = File.new("test_setup.sql", "w")
@@ -23,7 +27,7 @@ create function plruby_call_handler() returns opaque
     as '#{pwd}plruby.#{CONFIG["DLEXT"]}'
    language '#{language}';
 
-create trusted procedural language 'plruby'
+   create trusted #{procedural} language 'plruby'
 	handler plruby_call_handler
 	lancompiler 'PL/Ruby';
 EOF

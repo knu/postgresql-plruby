@@ -12,7 +12,12 @@ be 'newC' in this case
 * Prerequisite
 
    ruby >= 1.4.4
-   source of postgresql (for some include files)
+   source of postgresql (for some include files). 
+
+  For PostgreSQL 7.2  the source is not required if all headers was installed.
+  Command (see INSTALL in the directory postgresql-7.2)
+
+          make install-all-headers 
 
 * Installation
 
@@ -29,8 +34,8 @@ be 'newC' in this case
   --with-pgsql-srcinc-dir=<include file *from* the source of PostgreSQL>
      pgsql-srcinc-dir must contains, for example, the file catalog/pg_proc.h
 
-  --with-pgsql-version=<release number for PostgreSQL, actually 65, 70 or 71
-                        i.e. major and minor number>
+  --with-pgsql-version=<release number for PostgreSQL, actually 65, 70, 71
+                        or 72 i.e. major and minor number>
 
  Example :
 
