@@ -44,172 +44,27 @@
  *
  **********************************************************************/
 
-#ifndef SAFE_LEVEL
-#define SAFE_LEVEL 12
-#endif
+#include "plruby.h"
 
-#ifndef MAIN_SAFE_LEVEL
-#ifdef PLRUBY_TIMEOUT
-#define MAIN_SAFE_LEVEL 3
-#else
-#define MAIN_SAFE_LEVEL SAFE_LEVEL
-#endif
-#endif
-
-#if SAFE_LEVEL <= MAIN_SAFE_LEVEL
-#define MAIN_SAFE_LEVEL SAFE_LEVEL
-#endif
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
-#include <setjmp.h>
-
-#include "executor/spi.h"
-#include "commands/trigger.h"
-#include "utils/elog.h"
-#include "utils/builtins.h"
-#include "fmgr.h"
-#include "access/heapam.h"
-
-#include "tcop/tcopprot.h"
-#include "utils/syscache.h"
-#include "catalog/pg_proc.h"
-#include "catalog/pg_language.h"
-#include "catalog/pg_type.h"
-
-#if PG_PL_VERSION >= 73
-#include "nodes/makefuncs.h"
-#include "parser/parse_type.h"
-#include "utils/lsyscache.h"
-#include "funcapi.h"
-#endif
-
-
-#ifndef MAXFMGRARGS
-#define RUBY_ARGS_MAXFMGR FUNC_MAX_ARGS
-#define RUBY_TYPOID TYPEOID
-#define RUBY_PROOID PROCOID
-#define RUBY_TYPNAME TYPENAME
-#else
-#define RUBY_ARGS_MAXFMGR MAXFMGRARGS
-#define RUBY_TYPOID TYPOID
-#define RUBY_PROOID PROOID
-#define RUBY_TYPNAME TYPNAME
-#endif
-
-#ifdef PG_FUNCTION_ARGS
-#define NEW_STYLE_FUNCTION
-#endif
-
-#if PG_PL_VERSION >= 71
-#define SearchSysCacheTuple SearchSysCache
-#endif
-
-#include <ruby.h>
-
-static int plr_in_progress = 0;
-
-#ifdef PLRUBY_TIMEOUT
-
-static int plr_interrupted = 0;
-
-#define PLRUBY_BEGIN(lvl)			\
-    do {					\
-        int in_progress = plr_in_progress;	\
-         if (plr_interrupted) {			\
-	    rb_raise(pg_ePLruby, "timeout");	\
-        }					\
-        plr_in_progress = lvl
-
-#define PLRUBY_END				\
-        plr_in_progress = in_progress;		\
-        if (plr_interrupted) {			\
-	    rb_raise(pg_ePLruby, "timeout");	\
-        }					\
-    } while (0)
-
-#else
-#define PLRUBY_BEGIN(lvl)
-#define PLRUBY_END
-#endif
-
-enum { TG_OK, TG_SKIP };
-enum { TG_BEFORE, TG_AFTER, TG_ROW, TG_STATEMENT, TG_INSERT,
-       TG_DELETE, TG_UPDATE, TG_UNKNOWN }; 
-
+static int pl_in_progress = 0;
+static int pl_interrupted = 0;
 static ID id_to_s, id_raise, id_kill, id_alive, id_value, id_call, id_thr;
 
-struct plr_thread_st {
-#ifdef NEW_STYLE_FUNCTION
-    PG_FUNCTION_ARGS;
-#else
-    FmgrInfo *proinfo;
-    FmgrValues *proargs;
-    bool *isNull;
-#endif
-    int timeout;
-};
-
-typedef struct plr_proc_desc
-{
-    char	   *proname;
-    FmgrInfo	result_in_func;
-    Oid			result_in_elem;
-    int			result_in_len;
-    int			nargs;
-    FmgrInfo	arg_out_func[RUBY_ARGS_MAXFMGR];
-    Oid			arg_out_elem[RUBY_ARGS_MAXFMGR];
-    int			arg_out_len[RUBY_ARGS_MAXFMGR];
-    int			arg_is_rel[RUBY_ARGS_MAXFMGR];
-    char result_type;
-} plr_proc_desc;
+static int	pl_firstcall = 1;
+static int	pl_call_level = 0;
+static VALUE    pl_mPL, pl_mPLtemp, pl_cPLPlan, pl_cPLCursor;
+static VALUE    pl_ePLruby, pl_eCatch;
+static VALUE    PLruby_hash;
 
 static void
-plr_proc_free(proc)
-    plr_proc_desc *proc;
+pl_proc_free(proc)
+    pl_proc_desc *proc;
 {
-    if (proc->proname)
+    if (proc->proname) {
 	free(proc->proname);
+    }
     free(proc);
 }
-
-struct portal_options {
-    VALUE argsv;
-    int count, output;
-    int block, tmp;
-};
-
-typedef struct plr_query_desc
-{
-    char qname[20];
-    void *plan;
-    int	 nargs;
-    Oid	*argtypes;
-    FmgrInfo *arginfuncs;
-    Oid *argtypelems;
-    int	*arglen;
-    int cursor;
-    struct portal_options po;
-} plr_query_desc;
-
-struct PLportal {
-    Portal portal;
-    char *nulls;
-    Datum *argvalues;
-    int *arglen;
-    int nargs;
-    struct portal_options po;
-};
-
-static int	plr_firstcall = 1;
-static int	plr_call_level = 0;
-static VALUE    pg_mPLruby, pg_mPLtemp, pg_cPLrubyPlan;
-static VALUE    pg_ePLruby, pg_eCatch, pg_cPLResult;
-static VALUE    PLruby_hash, PLruby_portal;
 
 static char *definition = "
 def PLtemp.%s(%s)
@@ -218,34 +73,29 @@ end
 ";
 
 static VALUE
-plr_to_s(VALUE obj)
+pl_to_s(VALUE obj)
 {
     if (TYPE(obj) != T_STRING) {
 	obj = rb_funcall2(obj, id_to_s, 0, 0);
     }
     if (TYPE(obj) != T_STRING || !RSTRING(obj)->ptr) {
-	rb_raise(pg_ePLruby, "Expected a String");
+	rb_raise(pl_ePLruby, "Expected a String");
     }
     return obj;
 }
-
-static VALUE plr_build_tuple(HeapTuple, TupleDesc, int);
-static Datum return_base_type(VALUE, plr_proc_desc *);
 
 static char *names = "SELECT a.attname FROM pg_class c, pg_attribute a
 WHERE c.relname = '%s' AND a.attnum > 0 AND a.attrelid = c.oid 
 ORDER BY a.attnum";
 
-static VALUE plr_SPI_exec _((int, VALUE *, VALUE));
-
 static VALUE
-plr_column_name(VALUE obj, VALUE table)
+pl_column_name(VALUE obj, VALUE table)
 {
     VALUE *query, res;
     char *tmp;
 
     if (TYPE(table) != T_STRING) {
-	rb_raise(pg_ePLruby, "expected a String");
+	rb_raise(pl_ePLruby, "expected a String");
     }
     tmp = ALLOCA_N(char, strlen(names) + RSTRING(table)->len + 1);
     sprintf(tmp, names, RSTRING(table)->ptr);
@@ -253,7 +103,7 @@ plr_column_name(VALUE obj, VALUE table)
     query[0] = rb_str_new2(tmp);
     query[1] = Qnil;
     query[2] = rb_str_new2("value");
-    res = plr_SPI_exec(3, query, pg_mPLruby);
+    res = pl_SPI_exec(3, query, pl_mPL);
     rb_funcall2(res, rb_intern("flatten!"), 0, 0);
     return res;
 }
@@ -265,13 +115,13 @@ and a.attrelid = c.oid and a.atttypid = t.oid
 ORDER BY a.attnum";
 
 static VALUE
-plr_column_type(VALUE obj, VALUE table)
+pl_column_type(VALUE obj, VALUE table)
 {
     VALUE *query, res;
     char *tmp;
 
     if (TYPE(table) != T_STRING) {
-	rb_raise(pg_ePLruby, "expected a String");
+	rb_raise(pl_ePLruby, "expected a String");
     }
     tmp = ALLOCA_N(char, strlen(types) + RSTRING(table)->len + 1);
     sprintf(tmp, types, RSTRING(table)->ptr);
@@ -279,17 +129,17 @@ plr_column_type(VALUE obj, VALUE table)
     query[0] = rb_str_new2(tmp);
     query[1] = Qnil;
     query[2] = rb_str_new2("value");
-    res = plr_SPI_exec(3, query, pg_mPLruby);
+    res = pl_SPI_exec(3, query, pl_mPL);
     rb_funcall2(res, rb_intern("flatten!"), 0, 0);
     return res;
 }
 
 #if PG_PL_VERSION >= 73
 
-struct plr_tuple {
+struct pl_tuple {
     MemoryContext cxt;
     AttInMetadata *att;
-    plr_proc_desc *pro;
+    pl_proc_desc *pro;
     TupleDesc dsc;
     Tuplestorestate *out;
 };
@@ -297,24 +147,26 @@ struct plr_tuple {
 extern int SortMem;
 
 static void
-plr_thr_mark(struct plr_tuple *tpl)
-{
-}
+pl_thr_mark(struct pl_tuple *tpl)
+{}
 
 static VALUE
-plr_query_name(VALUE obj)
+pl_query_name(VALUE obj)
 {
     VALUE res, tmp;
-    struct plr_tuple *tpl;
+    struct pl_tuple *tpl;
     char * attname;
     int i;
 
     tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
-    if (TYPE(tmp) != T_DATA || 
-	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)plr_thr_mark) {
-	rb_raise(pg_ePLruby, "invalid thread local variable");
+    if (NIL_P(tmp)) {
+	return Qnil;
     }
-    Data_Get_Struct(tmp, struct plr_tuple, tpl);
+    if (TYPE(tmp) != T_DATA || 
+	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
+    Data_Get_Struct(tmp, struct pl_tuple, tpl);
     res = rb_ary_new2(tpl->dsc->natts);
     for (i = 0; i < tpl->dsc->natts; i++) {
 	PLRUBY_BEGIN(1);
@@ -326,9 +178,9 @@ plr_query_name(VALUE obj)
 }
 
 static VALUE
-plr_query_type(VALUE obj)
+pl_query_type(VALUE obj)
 {
-    struct plr_tuple *tpl;
+    struct pl_tuple *tpl;
     VALUE res, tmp;
     char * attname;
     HeapTuple typeTup;
@@ -336,11 +188,14 @@ plr_query_type(VALUE obj)
     int i;
 
     tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
-    if (TYPE(tmp) != T_DATA || 
-	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)plr_thr_mark) {
-	rb_raise(pg_ePLruby, "invalid thread local variable");
+    if (NIL_P(tmp)) {
+	return Qnil;
     }
-    Data_Get_Struct(tmp, struct plr_tuple, tpl);
+    if (TYPE(tmp) != T_DATA || 
+	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
+    Data_Get_Struct(tmp, struct pl_tuple, tpl);
     res = rb_ary_new2(tpl->dsc->natts);
     for (i = 0; i < tpl->dsc->natts; i++) {
 	PLRUBY_BEGIN(1);
@@ -350,7 +205,7 @@ plr_query_type(VALUE obj)
 				      0, 0, 0);
 	PLRUBY_END;
 	if (!HeapTupleIsValid(typeTup))	{
-	    rb_raise(pg_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
+	    rb_raise(pl_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
 		 attname, ObjectIdGetDatum(tpl->dsc->attrs[i]->atttypid));
 	}
 	fpgt = (Form_pg_type) GETSTRUCT(typeTup);
@@ -361,35 +216,68 @@ plr_query_type(VALUE obj)
 }
 
 static VALUE
-plr_query_lgth(VALUE obj)
+pl_query_description(VALUE obj)
+{
+    VALUE name, types, res;
+    VALUE tt_virg, tt_blc;
+    int i;
+
+    tt_virg = rb_str_new2(", ");
+    tt_blc = rb_str_new2(" ");
+    name = pl_query_name(obj);
+    if (NIL_P(name)) {
+	return Qnil;
+    }
+    types = pl_query_type(obj);
+    if (TYPE(name) != T_ARRAY || TYPE(types) != T_ARRAY ||
+	RARRAY(name)->len != RARRAY(types)->len) {
+	rb_raise(pl_ePLruby, "unknown error");
+    }
+    res = rb_tainted_str_new2("");
+    for (i = 0; i < RARRAY(name)->len; ++i) {
+	rb_str_concat(res, RARRAY(name)->ptr[i]);
+	rb_str_concat(res, tt_blc);
+	rb_str_concat(res, RARRAY(types)->ptr[i]);
+	if (i != (RARRAY(name)->len - 1)) {
+	    rb_str_concat(res, tt_virg);
+	}
+    }
+    return res;
+}
+
+static VALUE
+pl_query_lgth(VALUE obj)
 {
     VALUE tmp;
-    struct plr_tuple *tpl;
+    struct pl_tuple *tpl;
 
     tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
-    if (TYPE(tmp) != T_DATA || 
-	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)plr_thr_mark) {
-	rb_raise(pg_ePLruby, "invalid thread local variable");
+    if (NIL_P(tmp)) {
+	return Qnil;
     }
-    Data_Get_Struct(tmp, struct plr_tuple, tpl);
+    if (TYPE(tmp) != T_DATA || 
+	RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
+	rb_raise(pl_ePLruby, "invalid thread local variable");
+    }
+    Data_Get_Struct(tmp, struct pl_tuple, tpl);
     return INT2NUM(tpl->dsc->natts);
 }
 
 static VALUE
-plr_tuple_s_new(PG_FUNCTION_ARGS, plr_proc_desc *prodesc)
+pl_tuple_s_new(PG_FUNCTION_ARGS, pl_proc_desc *prodesc)
 {
     VALUE res;
     ReturnSetInfo *rsi;
-    struct plr_tuple *tpl;
+    struct pl_tuple *tpl;
 
     if (!fcinfo || !fcinfo->resultinfo) {
-	rb_raise(pg_ePLruby, "no description given");
+	rb_raise(pl_ePLruby, "no description given");
     }
     rsi = (ReturnSetInfo *)fcinfo->resultinfo;
     if ((rsi->allowedModes & SFRM_Materialize) == 0 || !rsi->expectedDesc) {
-	rb_raise(pg_ePLruby, "context don't accept set");
+	rb_raise(pl_ePLruby, "context don't accept set");
     }
-    res = Data_Make_Struct(rb_cData, struct plr_tuple, plr_thr_mark, free, tpl);
+    res = Data_Make_Struct(rb_cData, struct pl_tuple, pl_thr_mark, free, tpl);
     tpl->cxt = rsi->econtext->ecxt_per_query_memory;
     tpl->dsc = rsi->expectedDesc;
     tpl->att = TupleDescGetAttInMetadata(rsi->expectedDesc);
@@ -399,16 +287,16 @@ plr_tuple_s_new(PG_FUNCTION_ARGS, plr_proc_desc *prodesc)
 }
 
 static HeapTuple
-plr_tuple_heap(VALUE c, VALUE tuple)
+pl_tuple_heap(VALUE c, VALUE tuple)
 {
     HeapTuple retval;
     VALUE res;
-    struct plr_tuple *tpl;
+    struct pl_tuple *tpl;
     char **slots;
     int i;
 
-    Data_Get_Struct(tuple, struct plr_tuple, tpl);
-    if (tpl->pro->result_type == 'b' && TYPE(c) != T_ARRAY) {
+    Data_Get_Struct(tuple, struct pl_tuple, tpl);
+    if (tpl->pro->result_type == 'b' &&	TYPE(c) != T_ARRAY) {
 	VALUE tmp;
 
 	tmp = rb_ary_new2(1);
@@ -416,11 +304,11 @@ plr_tuple_heap(VALUE c, VALUE tuple)
 	c = tmp;
     }
     if (TYPE(c) != T_ARRAY || !RARRAY(c)->ptr) {
-	rb_raise(pg_ePLruby, "expected an Array");
+	rb_raise(pl_ePLruby, "expected an Array");
     }
     if (tpl->att->tupdesc->natts != RARRAY(c)->len) {
-	rb_raise(pg_ePLruby, "Invalid number of rows(%d expected %d)",
-		 RARRAY(c)->len, tpl->att->tupdesc->natts);
+	rb_raise(pl_ePLruby, "Invalid number of rows (%d expected %d)",
+		 tpl->att->tupdesc->natts, RARRAY(c)->len);
     }
     slots = ALLOCA_N(char *, RARRAY(c)->len);
     for (i = 0; i < RARRAY(c)->len; i++) {
@@ -428,7 +316,7 @@ plr_tuple_heap(VALUE c, VALUE tuple)
 	    slots[i] = NULL;
 	}
 	else {
-	    res = plr_to_s(RARRAY(c)->ptr[i]);
+	    res = pl_to_s(RARRAY(c)->ptr[i]);
 	    slots[i] = RSTRING(res)->ptr;
 	}
     }
@@ -439,14 +327,14 @@ plr_tuple_heap(VALUE c, VALUE tuple)
 }
 
 static VALUE
-plr_tuple_put(VALUE c, VALUE tuple)
+pl_tuple_put(VALUE c, VALUE tuple)
 {
     HeapTuple retval;
     MemoryContext oldcxt;
-    struct plr_tuple *tpl;
+    struct pl_tuple *tpl;
 
-    Data_Get_Struct(tuple, struct plr_tuple, tpl);
-    retval = plr_tuple_heap(c, tuple);
+    Data_Get_Struct(tuple, struct pl_tuple, tpl);
+    retval = pl_tuple_heap(c, tuple);
     PLRUBY_BEGIN(1);
     oldcxt = MemoryContextSwitchTo(tpl->cxt);
     if (!tpl->out) {
@@ -459,66 +347,59 @@ plr_tuple_put(VALUE c, VALUE tuple)
 }
 
 static Datum
-plr_tuple_datum(VALUE c, VALUE tuple)
+pl_tuple_datum(VALUE c, VALUE tuple)
 {
     Datum retval;
-    struct plr_tuple *tpl;
+    HeapTuple tmp;
+    struct pl_tuple *tpl;
 
-    Data_Get_Struct(tuple, struct plr_tuple, tpl);
+    Data_Get_Struct(tuple, struct pl_tuple, tpl);
+    tmp = pl_tuple_heap(c, tuple);
     PLRUBY_BEGIN(1);
-    retval = TupleGetDatum(TupleDescGetSlot(tpl->att->tupdesc), 
-			   plr_tuple_heap(c, tuple));
+    retval = TupleGetDatum(TupleDescGetSlot(tpl->att->tupdesc), tmp);
     PLRUBY_END;
     return retval;
 }
 
-struct plr_arg {
+struct pl_arg {
     ID id;
     VALUE ary;
 };
 
-static VALUE
-plr_func(struct plr_arg *args)
+static void
+pl_arg_mark(struct pl_arg *args)
 {
-    return rb_funcall(pg_mPLtemp, args->id, 1, args->ary);
+    rb_gc_mark(args->ary);
 }
 
-static VALUE plr_SPI_prepare _((int, VALUE *, VALUE));
-static VALUE plr_SPI_each _((int, VALUE *, VALUE));
+static VALUE
+pl_func(VALUE arg)
+{
+    struct pl_arg *args;
+
+    Data_Get_Struct(arg, struct pl_arg, args);
+    return rb_funcall(pl_mPLtemp, args->id, 1, args->ary);
+}
+
+static VALUE pl_plan_s_new _((int, VALUE *, VALUE));
+static VALUE pl_plan_each _((int, VALUE *, VALUE));
 
 static VALUE
-plr_string(struct plr_arg *args)
+pl_string(VALUE arg)
 {
+    struct pl_arg *args;
     VALUE tmp[2], plan;
 
+    Data_Get_Struct(arg, struct pl_arg, args);
     tmp[0] = args->ary;
     tmp[1] = rb_hash_new();
-    rb_hash_aset(tmp[1], rb_str_new2("tmp"), Qtrue);
     rb_hash_aset(tmp[1], rb_str_new2("block"), INT2NUM(50));
     rb_hash_aset(tmp[1], rb_str_new2("output"), rb_str_new2("value"));
-    plan = plr_SPI_prepare(2, tmp, pg_mPLruby);
-    plr_SPI_each(0, 0, plan);
+    plan = pl_plan_s_new(2, tmp, pl_cPLPlan);
+    rb_funcall2(plan, rb_intern("each"), 0, 0);
     return Qnil;
 }
  
-#endif
-
-static void plr_init_all(void);
-
-#ifdef NEW_STYLE_FUNCTION
-#if PG_PL_VERSION >= 71
-PG_FUNCTION_INFO_V1(plruby_call_handler);
-#else
-Datum plruby_call_handler(PG_FUNCTION_ARGS);
-#endif
-static Datum plr_func_handler(PG_FUNCTION_ARGS);
-static HeapTuple plr_trigger_handler(PG_FUNCTION_ARGS);
-#else
-Datum plruby_call_handler(FmgrInfo *, FmgrValues *, bool *);
-
-static Datum plr_func_handler(FmgrInfo *, FmgrValues *, bool *);
-
-static HeapTuple plr_trigger_handler(FmgrInfo *);
 #endif
 
 #if PG_PL_VERSION >= 73
@@ -532,68 +413,67 @@ perm_fmgr_info(Oid functionId, FmgrInfo *finfo)
 
 #endif
 
+static void
+pl_result_mark(VALUE obj) {}
+
 static VALUE
-plr_protect(args)
-    VALUE *args;
+pl_protect(struct pl_thread_st *plth)
 {
     Datum retval;
+    VALUE result;
 
     if (sigsetjmp(Warn_restart, 1) != 0) {
-	return pg_eCatch;
+	return pl_eCatch;
     }
 #ifdef NEW_STYLE_FUNCTION
-    if (CALLED_AS_TRIGGER((FunctionCallInfo)args)) {
-	retval = PointerGetDatum(plr_trigger_handler((FunctionCallInfo)args));
+    if (CALLED_AS_TRIGGER(plth->fcinfo)) {
+	retval = PointerGetDatum(pl_trigger_handler(plth->fcinfo));
     }
     else {
-	retval = plr_func_handler((FunctionCallInfo)args);
+	retval = pl_func_handler(plth->fcinfo);
     }
 #else
     if (CurrentTriggerData == NULL) {
-	retval = plr_func_handler((FmgrInfo *)args[0], (FmgrValues *)args[1],
-				  (bool *)args[2]);
+	retval = pl_func_handler(plth->proinfo, plth->proargs, plth->isNull);
     }
     else {
-	retval = (Datum) plr_trigger_handler((FmgrInfo *)args[0]);
+	retval = (Datum) pl_trigger_handler(plth->proinfo);
     }
 #endif
-    return Data_Wrap_Struct(pg_cPLResult, 0, 0, (void *)retval);
+    result = Data_Wrap_Struct(rb_cObject, pl_result_mark, 0, (void *)retval);
+    return result;
 }
 
 #ifdef PLRUBY_TIMEOUT
 
 static VALUE
-plr_thread_raise(VALUE th)
+pl_thread_raise(VALUE th)
 {
-    VALUE exc = rb_exc_new2(pg_ePLruby, "timeout");
+    VALUE exc = rb_exc_new2(pl_ePLruby, "timeout");
     return rb_funcall(th, id_raise, 1, exc);
 }
 
 static VALUE
-plr_thread_kill(VALUE th)
+pl_thread_kill(VALUE th)
 {
     return rb_funcall2(th, id_kill, 0, 0);
 }
-extern VALUE rb_thread_list();
 
 static VALUE
-plr_timer(VALUE th)
+pl_timer(VALUE th)
 {
     struct timeval time;
 
     rb_thread_sleep(PLRUBY_TIMEOUT);
-    plr_interrupted = 1;
-    if (!plr_in_progress) {
-	rb_protect(plr_thread_raise, th, 0);
-    }
+    pl_interrupted = 1;
     time.tv_sec = 0;
     time.tv_usec = 50000;
     while (1) {
 	if (!RTEST(rb_funcall2(th, id_alive, 0, 0))) {
 	    return Qnil;
 	}
-	if (!plr_in_progress) {
-	    rb_protect(plr_thread_kill, th, 0);
+	if (!pl_in_progress) {
+	    rb_protect(pl_thread_raise, th, 0);
 	}
 	rb_thread_wait_for(time);
     }
@@ -601,62 +481,51 @@ plr_timer(VALUE th)
 }
 
 static VALUE
-plr_thread_value(VALUE th)
+pl_thread_value(VALUE th)
 {
     return rb_funcall2(th, id_value, 0, 0);
 }
 
 #endif
 
-static void free_args(struct PLportal *);
-
 static VALUE
-plr_error(VALUE v)
+pl_error(VALUE v)
 {
     VALUE result;
 
     result = rb_gv_get("$!");
-    if (rb_obj_is_kind_of(result, pg_eCatch)) {
-	result = pg_eCatch;
+    if (rb_obj_is_kind_of(result, pl_eCatch)) {
+	result = pl_eCatch;
     }
     else if (rb_obj_is_kind_of(result, rb_eException)) {
-	result = plr_to_s(result);
+	result = pl_to_s(result);
     }
     return result;
 }
 
 static VALUE
-plr_real_handler(struct plr_thread_st *plst)
+pl_real_handler(struct pl_thread_st *plth)
 {
-    VALUE *args, result;
+    VALUE result;
     int state;
 
-#ifdef NEW_STYLE_FUNCTION
-    args = (VALUE *)plst->fcinfo;
-#else
-    args = ALLOCA_N(VALUE, 3);
-    args[0] = (VALUE)plst->proinfo;
-    args[1] = (VALUE)plst->proargs;
-    args[2] = (VALUE)plst->isNull;
-#endif
-
 #ifdef PLRUBY_TIMEOUT
-    if (plst->timeout) {
+    if (plth->timeout) {
 	VALUE curr = rb_thread_current();
-	rb_thread_create(plr_timer, (void *)curr);
+	rb_thread_create(pl_timer, (void *)curr);
 	rb_funcall(curr, rb_intern("priority="), 1, INT2NUM(0));
 	rb_set_safe_level(SAFE_LEVEL);
     }
 #endif
 
     state = 0;
-    plr_call_level++;
-    result = rb_protect(plr_protect, (VALUE)args, &state);
-    plr_call_level--;
+    pl_call_level++;
+    result = rb_protect(pl_protect, (VALUE)plth, &state);
+    pl_call_level--;
     if (state) {
 	state = 0;
-	result = rb_protect(plr_error, 0, &state);
-	if (state || (result != pg_eCatch && TYPE(result) != T_STRING)) {
+	result = rb_protect(pl_error, 0, &state);
+	if (state || (result != pl_eCatch && TYPE(result) != T_STRING)) {
 	    result = rb_str_new2("Unknown Error");
 	}
     }
@@ -674,23 +543,25 @@ plruby_call_handler(FmgrInfo *proinfo,
 {
     VALUE result;
     sigjmp_buf save_restart;
-    int portal_len;
-    struct plr_thread_st plth;
+    struct pl_thread_st plth;
+    volatile void *tmp;
 
-    if (plr_firstcall) {
-	plr_init_all();
+    if (pl_firstcall) {
+	pl_init_all();
+    }
+    if (!pl_call_level) {
+	extern void Init_stack();
+	Init_stack(&tmp);
     }
 
-    PLRUBY_BEGIN(1);
     if (SPI_connect() != SPI_OK_CONNECT) {
-	if (plr_call_level) {
-	    rb_raise(pg_ePLruby, "cannot connect to SPI manager");
+	if (pl_call_level) {
+	    rb_raise(pl_ePLruby, "cannot connect to SPI manager");
 	}
 	else {
 	    elog(ERROR, "cannot connect to SPI manager");
 	}
     }
-    PLRUBY_END;
 
 #ifdef NEW_STYLE_FUNCTION
     plth.fcinfo = fcinfo;
@@ -701,17 +572,17 @@ plruby_call_handler(FmgrInfo *proinfo,
 #endif
     plth.timeout = 0;
 
-    portal_len = RARRAY(PLruby_portal)->len;
     memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
 #ifdef PLRUBY_TIMEOUT
-    if (!plr_call_level) {
+    if (!pl_call_level) {
 	VALUE th;
 	int state;
 
-	plr_interrupted = plr_in_progress = 0;
+	pl_interrupted = pl_in_progress = 0;
 	plth.timeout = 1;
-	th = rb_thread_create(plr_real_handler, &plth);
-	result = rb_protect(plr_thread_value, th, &state);
+	th = rb_thread_create(pl_real_handler, (void *)&plth);
+	result = rb_protect(pl_thread_value, th, &state);
+	pl_interrupted = pl_in_progress = pl_call_level = 0;
 	if (state) {
 	    result = rb_str_new2("Unknown error");
 	}
@@ -720,62 +591,49 @@ plruby_call_handler(FmgrInfo *proinfo,
 #endif
     {
 	PLRUBY_BEGIN(0);
-	result = plr_real_handler(&plth);
+	result = pl_real_handler(&plth);
 	PLRUBY_END;
     }
     memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
 
-    {
-	int in_progress = plr_in_progress;
-	plr_in_progress = 1;
-	if (portal_len != RARRAY(PLruby_portal)->len) {
-	    int i;
-	    VALUE vortal;
-	    struct PLportal *portal;
-	    
-	    for (i = RARRAY(PLruby_portal)->len; i > portal_len; --i) {
-		vortal = rb_ary_pop(PLruby_portal);
-		Data_Get_Struct(vortal, struct PLportal, portal);
-		free_args(portal);
-	    }
-	}
-
 #ifdef PLRUBY_TIMEOUT
-	if (!plr_call_level) {
-	    int i;
-	    VALUE thread, threads;
-	    VALUE main_th = rb_thread_main();
-
-	    while (1) {
-		threads = rb_thread_list();
-		if (RARRAY(threads)->len <= 1) break;
-		for (i = 0; i < RARRAY(threads)->len; i++) {
-		    thread = RARRAY(threads)->ptr[i];
-		    if (thread != main_th) {
-			rb_protect(plr_thread_kill, thread, 0);
-		    }
+    if (!pl_call_level) {
+	int i, in_progress;
+	VALUE thread, threads;
+	VALUE main_th = rb_thread_main();
+	
+        in_progress = pl_in_progress;
+        pl_in_progress = 1;
+	while (1) {
+	    threads = rb_thread_list();
+	    if (RARRAY(threads)->len <= 1) break;
+	    for (i = 0; i < RARRAY(threads)->len; i++) {
+		thread = RARRAY(threads)->ptr[i];
+		if (thread != main_th) {
+		    rb_protect(pl_thread_kill, thread, 0);
 		}
 	    }
 	}
-#endif
-	plr_in_progress = in_progress;
+	pl_call_level = 0;
+	pl_in_progress = in_progress;
     }
+#endif
 
 #if PG_PL_VERSION >= 73
     rb_thread_local_aset(rb_thread_current(), id_thr, Qnil);
 #endif
 
-    if (result == pg_eCatch) {
-	if (plr_call_level) {
-	    rb_raise(pg_eCatch, "SPI ERROR");
+    if (result == pl_eCatch) {
+	if (pl_call_level) {
+	    rb_raise(pl_eCatch, "SPI ERROR");
 	}
 	else {
 	    siglongjmp(Warn_restart, 1);
 	}
     }
-    if (TYPE(result) == T_STRING) {
-	if (plr_call_level) {
-	    rb_raise(pg_ePLruby, "%.*s", 
+    if (TYPE(result) == T_STRING && RSTRING(result)->ptr) {
+	if (pl_call_level) {
+	    rb_raise(pl_ePLruby, "%.*s", 
 		     (int)RSTRING(result)->len, RSTRING(result)->ptr);
 	}
 	else {
@@ -783,11 +641,12 @@ plruby_call_handler(FmgrInfo *proinfo,
 		 (int)RSTRING(result)->len, RSTRING(result)->ptr);
 	}
     }
-    if (TYPE(result) == T_DATA && CLASS_OF(result) == pg_cPLResult) {
+    if (TYPE(result) == T_DATA && 
+	RDATA(result)->dmark == (RUBY_DATA_FUNC)pl_result_mark) {
 	return ((Datum)DATA_PTR(result));
     }
-    if (plr_call_level) {
-	rb_raise(pg_ePLruby, "Invalid return value %d", TYPE(result));
+    if (pl_call_level) {
+	rb_raise(pl_ePLruby, "Invalid return value %d", TYPE(result));
     }
     else {
 	elog(ERROR, "Invalid return value %d", TYPE(result));
@@ -796,12 +655,12 @@ plruby_call_handler(FmgrInfo *proinfo,
 }
 
 static Datum
-return_base_type(VALUE c,  plr_proc_desc *prodesc)
+return_base_type(VALUE c,  pl_proc_desc *prodesc)
 {
     Datum retval;
     VALUE rubyret;
 
-    rubyret = plr_to_s(c);
+    rubyret = pl_to_s(c);
 
     PLRUBY_BEGIN(1);
 #ifdef NEW_STYLE_FUNCTION
@@ -819,17 +678,11 @@ return_base_type(VALUE c,  plr_proc_desc *prodesc)
     return retval;
 }
 
-#define RET_HASH      1
-#define RET_ARRAY     2
-#define RET_DESC      4
-#define RET_DESC_ARR 12
-#define RET_BASIC    16
-
 static Datum
 #ifdef NEW_STYLE_FUNCTION
-plr_func_handler(PG_FUNCTION_ARGS)
+pl_func_handler(PG_FUNCTION_ARGS)
 #else
-plr_func_handler(proinfo, proargs, isNull)
+pl_func_handler(proinfo, proargs, isNull)
     FmgrInfo *proinfo;
     FmgrValues *proargs;
     bool *isNull;
@@ -841,7 +694,7 @@ plr_func_handler(proinfo, proargs, isNull)
 #ifndef NEW_STYLE_FUNCTION
     char *stroid;
 #endif
-    plr_proc_desc *prodesc;
+    pl_proc_desc *prodesc;
     VALUE value_proc_desc;
     VALUE value_proname;
     VALUE ary, c;
@@ -868,7 +721,7 @@ plr_func_handler(proinfo, proargs, isNull)
 	char *proc_internal_def;
 	int status;
 
-	value_proc_desc = Data_Make_Struct(rb_cObject, plr_proc_desc, 0, plr_proc_free, prodesc);
+	value_proc_desc = Data_Make_Struct(rb_cObject, pl_proc_desc, 0, pl_proc_free, prodesc);
 	PLRUBY_BEGIN(1);
 #ifdef NEW_STYLE_FUNCTION
 	procTup = SearchSysCacheTuple(RUBY_PROOID,
@@ -881,7 +734,7 @@ plr_func_handler(proinfo, proargs, isNull)
 #endif
 	PLRUBY_END;
 	if (!HeapTupleIsValid(procTup))	{
-	    rb_raise(pg_ePLruby, "cache lookup from pg_proc failed");
+	    rb_raise(pl_ePLruby, "cache lookup from pg_proc failed");
 	}
 	procStruct = (Form_pg_proc) GETSTRUCT(procTup);
 	
@@ -891,7 +744,7 @@ plr_func_handler(proinfo, proargs, isNull)
 				      0, 0, 0);
 	PLRUBY_END;
 	if (!HeapTupleIsValid(typeTup))	{
-	    rb_raise(pg_ePLruby, "cache lookup for return type failed");
+	    rb_raise(pl_ePLruby, "cache lookup for return type failed");
 	}
 	typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
 
@@ -902,7 +755,7 @@ plr_func_handler(proinfo, proargs, isNull)
 	    case VOIDOID:
 		break;
 	    default:
-		rb_raise(pg_ePLruby,  "functions cannot return type %s",
+		rb_raise(pl_ePLruby,  "functions cannot return type %s",
 			 format_type_be(procStruct->prorettype));
 		break;
 	    }
@@ -911,7 +764,7 @@ plr_func_handler(proinfo, proargs, isNull)
 
 #if PG_PL_VERSION < 73
 	if (typeStruct->typrelid != InvalidOid) {
-	    rb_raise(pg_ePLruby, "return types of tuples supported only for >= 7.3");
+	    rb_raise(pl_ePLruby, "return types of tuples supported only for >= 7.3");
 	}
 #else
 	if (procStruct->proretset) {
@@ -930,7 +783,17 @@ plr_func_handler(proinfo, proargs, isNull)
 		prodesc->result_type = functyptype;
 	    }
 	    else {
-		rb_raise(pg_ePLruby, "Invalid kind of return type");
+		rb_raise(pl_ePLruby, "Invalid kind of return type");
+	    }
+	}
+	else {
+	    switch (procStruct->prorettype) {
+	    case REFCURSOROID:
+		prodesc->result_type = 'x';
+		break;
+	    case RECORDOID:
+		/* #ts: todo */
+		break;
 	    }
 	}
 #endif
@@ -955,13 +818,13 @@ plr_func_handler(proinfo, proargs, isNull)
 	    PLRUBY_END;
 
 	    if (!HeapTupleIsValid(typeTup)) {
-		rb_raise(pg_ePLruby, "cache lookup for argument type failed");
+		rb_raise(pl_ePLruby, "cache lookup for argument type failed");
 	    }
 	    typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
 
 #if PG_PL_VERSION >= 73
 	    if (typeStruct->typtype == 'p') { 
-		rb_raise(pg_ePLruby, "argument can't have the type %s",
+		rb_raise(pl_ePLruby, "argument can't have the type %s",
 			 format_type_be(procStruct->proargtypes[i]));
 	    }
 #endif
@@ -1001,11 +864,11 @@ plr_func_handler(proinfo, proargs, isNull)
 
 	rb_eval_string_protect(proc_internal_def, &status);
 	if (status) {
-	    VALUE s = plr_to_s(rb_gv_get("$!"));
-	    rb_raise(pg_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
+	    VALUE s = pl_to_s(rb_gv_get("$!"));
+	    rb_raise(pl_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
 		 RSTRING(s)->ptr, proc_internal_def);
 	}
-	prodesc->proname = malloc(strlen(internal_proname) + 1);
+	prodesc->proname = ALLOC_N(char, strlen(internal_proname) + 1);
 	strcpy(prodesc->proname, internal_proname);
 	rb_hash_aset(PLruby_hash, value_proname, value_proc_desc); 
 #if PG_PL_VERSION >= 71
@@ -1013,7 +876,7 @@ plr_func_handler(proinfo, proargs, isNull)
 #endif
     }
 
-    Data_Get_Struct(value_proc_desc, plr_proc_desc, prodesc);
+    Data_Get_Struct(value_proc_desc, pl_proc_desc, prodesc);
 
     ary = rb_ary_new2(prodesc->nargs);
     for (i = 0; i < prodesc->nargs; i++) {
@@ -1023,7 +886,7 @@ plr_func_handler(proinfo, proargs, isNull)
 #else
 	    TupleTableSlot *slot = (TupleTableSlot *) proargs->data[i];
 #endif
-	    rb_ary_push(ary, plr_build_tuple(slot->val,
+	    rb_ary_push(ary, pl_build_tuple(slot->val,
 					     slot->ttc_tupleDescriptor, 
 					     RET_HASH));
 	} 
@@ -1056,50 +919,53 @@ plr_func_handler(proinfo, proargs, isNull)
 	}
     }
 #if PG_PL_VERSION >= 73
-    if (prodesc->result_type) {
-	VALUE  tuple, res;
-	struct plr_tuple *tpl;
-	struct plr_arg args;
-	VALUE (*plr_call)(struct plr_arg *);
+    if (prodesc->result_type && prodesc->result_type != 'x') {
+	VALUE tuple, res, arg;
+	struct pl_arg *args;
+	struct pl_tuple *tpl;
+	VALUE (*pl_call)(VALUE);
 
-	tuple = plr_tuple_s_new(fcinfo, prodesc);
-	args.id = rb_intern(RSTRING(value_proname)->ptr);
-	args.ary = ary;
-	plr_call = plr_func;
-    retry:
-	res = rb_iterate(plr_func, (VALUE)&args, plr_tuple_put, tuple);
-	Data_Get_Struct(tuple, struct plr_tuple, tpl);
-	if (tpl->out) {
-	    MemoryContext oldcxt;
-
-	    PLRUBY_BEGIN(1);
-	    oldcxt = MemoryContextSwitchTo(tpl->cxt);
-	    tuplestore_donestoring(tpl->out);
-	    ((ReturnSetInfo *)fcinfo->resultinfo)->setResult = tpl->out;
-	    ((ReturnSetInfo *)fcinfo->resultinfo)->returnMode = SFRM_Materialize;
-	    MemoryContextSwitchTo(oldcxt);
-	    PLRUBY_END;
-	}
-	else if (!NIL_P(res) && plr_call == plr_func) {
-	    if (TYPE(res) != T_STRING || RSTRING(res)->ptr == 0) {
-		rb_raise(pg_ePLruby, "invalid return type for a SET");
+	tuple = pl_tuple_s_new(fcinfo, prodesc);
+	arg = Data_Make_Struct(rb_cObject, struct pl_arg, pl_arg_mark, free, args);
+	args->id = rb_intern(RSTRING(value_proname)->ptr);
+	args->ary = ary;
+	pl_call = pl_func;
+	while (1) {
+	    res = rb_iterate(pl_call, arg, pl_tuple_put, tuple);
+	    Data_Get_Struct(tuple, struct pl_tuple, tpl);
+	    if (tpl->out) {
+		MemoryContext oldcxt;
+		
+		PLRUBY_BEGIN(1);
+		oldcxt = MemoryContextSwitchTo(tpl->cxt);
+		tuplestore_donestoring(tpl->out);
+		MemoryContextSwitchTo(oldcxt);
+		PLRUBY_END;
+		((ReturnSetInfo *)fcinfo->resultinfo)->setResult = tpl->out;
+		((ReturnSetInfo *)fcinfo->resultinfo)->returnMode = SFRM_Materialize;
+		break;
 	    }
-	    args.ary = res;
-	    plr_call = plr_string;
-	    goto retry;
+	    if (NIL_P(res)) {
+		break;
+	    }
+	    if (TYPE(res) != T_STRING || RSTRING(res)->ptr == 0) {
+		rb_raise(pl_ePLruby, "invalid return type for a SET");
+	    }
+	    args->ary = res;
+	    pl_call = pl_string;
 	}
 	c = Qnil;
     }
     else
 #endif
     {
-	c = rb_funcall(pg_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+	c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
 		       1, ary);
     }
 
     PLRUBY_BEGIN(1);
     if (SPI_finish() != SPI_OK_FINISH) {
-	rb_raise(pg_ePLruby, "SPI_finish() failed");
+	rb_raise(pl_ePLruby, "SPI_finish() failed");
     }
     PLRUBY_END;
 
@@ -1116,16 +982,35 @@ plr_func_handler(proinfo, proargs, isNull)
 #if PG_PL_VERSION >= 73
     if (fcinfo->resultinfo) {
 	if (fcinfo->flinfo->fn_retset) {
-	    rb_raise(pg_ePLruby, "unknown error : set");
+	    rb_raise(pl_ePLruby, "unknown error : set");
 	}
-	return plr_tuple_datum(c, plr_tuple_s_new(fcinfo, prodesc));
+	if (!prodesc->result_type) {
+	    return return_base_type(c, prodesc);
+	}
+	return pl_tuple_datum(c, pl_tuple_s_new(fcinfo, prodesc));
     }
+    if (prodesc->result_type == 'x') {
+	struct PLportal *portal;
+	Datum retval;
+
+	if (TYPE(c) != T_DATA ||
+	    RDATA(c)->dfree != (RUBY_DATA_FUNC)portal_free) {
+	    rb_raise(pl_ePLruby, "expected a cursor");
+	}
+	GetPortal(c, portal);
+	PLRUBY_BEGIN(1);
+	retval = DirectFunctionCall1(textin, 
+				     CStringGetDatum(portal->portal->name));
+	PLRUBY_END;
+	return retval;
+    }
+	
 #endif
     return return_base_type(c, prodesc);
 }
 
 static VALUE
-plr_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
+pl_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
 {
     int	i;
     VALUE output, res;
@@ -1161,7 +1046,7 @@ plr_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
 	PLRUBY_END;
 
 	if (!HeapTupleIsValid(typeTup))	{
-	    rb_raise(pg_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
+	    rb_raise(pl_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
 		 attname, ObjectIdGetDatum(tupdesc->attrs[i]->atttypid));
 	}
 
@@ -1295,10 +1180,10 @@ plr_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
 }
 
 struct foreach_fmgr {
-    TupleDesc	tupdesc;
-    int		   *modattrs;
-    Datum	   *modvalues;
-    char	   *modnulls;
+    TupleDesc tupdesc;
+    int *modattrs;
+    Datum *modvalues;
+    char *modnulls;
 }; 
 
 static VALUE
@@ -1314,15 +1199,15 @@ for_numvals(obj, argobj)
     struct foreach_fmgr *arg;
 
     Data_Get_Struct(argobj, struct foreach_fmgr, arg);
-    key = plr_to_s(rb_ary_entry(obj, 0));
+    key = pl_to_s(rb_ary_entry(obj, 0));
     value = rb_ary_entry(obj, 1);
     if ((RSTRING(key)->ptr)[0]  == '.' || NIL_P(value)) {
 	return Qnil;
     }
-    value = plr_to_s(value);
+    value = pl_to_s(value);
     attnum = SPI_fnumber(arg->tupdesc, RSTRING(key)->ptr);
     if (attnum == SPI_ERROR_NOATTRIBUTE) {
-	rb_raise(pg_ePLruby, "invalid attribute '%s'", RSTRING(key)->ptr);
+	rb_raise(pl_ePLruby, "invalid attribute '%s'", RSTRING(key)->ptr);
     }
 
     PLRUBY_BEGIN(1);
@@ -1332,7 +1217,7 @@ for_numvals(obj, argobj)
     PLRUBY_END;
 
     if (!HeapTupleIsValid(typeTup)) {	
-	rb_raise(pg_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
+	rb_raise(pl_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
 	     RSTRING(key)->ptr,
 	     ObjectIdGetDatum(arg->tupdesc->attrs[attnum - 1]->atttypid));
     }
@@ -1379,21 +1264,21 @@ for_numvals(obj, argobj)
 
 static HeapTuple
 #ifdef NEW_STYLE_FUNCTION
-plr_trigger_handler(PG_FUNCTION_ARGS)
+pl_trigger_handler(PG_FUNCTION_ARGS)
 #else
-plr_trigger_handler(FmgrInfo *proinfo)
+pl_trigger_handler(FmgrInfo *proinfo)
 #endif
 {
     TriggerData *trigdata;
-    char		internal_proname[512];
-    char	   *stroid;
-    plr_proc_desc *prodesc;
-    TupleDesc	tupdesc;
-    volatile HeapTuple	rettup;
-    int			i;
-    int		   *modattrs;
-    Datum	   *modvalues;
-    char	   *modnulls;
+    char internal_proname[512];
+    char *stroid;
+    pl_proc_desc *prodesc;
+    TupleDesc tupdesc;
+    HeapTuple rettup;
+    int	i;
+    int *modattrs;
+    Datum *modvalues;
+    char *modnulls;
     VALUE tg_new, tg_old, args, TG, c, tmp;
     int proname_len, status;
     VALUE value_proname, value_proc_desc;
@@ -1422,7 +1307,7 @@ plr_trigger_handler(FmgrInfo *proinfo)
 	Form_pg_proc procStruct;
 	char	   *proc_source;
 	
-	value_proc_desc = Data_Make_Struct(rb_cObject, plr_proc_desc, 0, plr_proc_free, prodesc);
+	value_proc_desc = Data_Make_Struct(rb_cObject, pl_proc_desc, 0, pl_proc_free, prodesc);
 
 	PLRUBY_BEGIN(1);
 #ifdef NEW_STYLE_FUNCTION
@@ -1437,7 +1322,7 @@ plr_trigger_handler(FmgrInfo *proinfo)
 	PLRUBY_END;
 
 	if (!HeapTupleIsValid(procTup)) {
-	    rb_raise(pg_ePLruby, "cache lookup from pg_proc failed");
+	    rb_raise(pl_ePLruby, "cache lookup from pg_proc failed");
 	}
 
 	procStruct = (Form_pg_proc) GETSTRUCT(procTup);
@@ -1457,18 +1342,18 @@ plr_trigger_handler(FmgrInfo *proinfo)
 
 	rb_eval_string_protect(proc_internal_def, &status);
 	if (status) {
-	    VALUE s = plr_to_s(rb_gv_get("$!"));
-	    rb_raise(pg_ePLruby, "cannot create internal procedure %s\n<<===%s\n===>>",
+	    VALUE s = pl_to_s(rb_gv_get("$!"));
+	    rb_raise(pl_ePLruby, "cannot create internal procedure %s\n<<===%s\n===>>",
 		 RSTRING(s)->ptr, proc_internal_def);
 	}
-	prodesc->proname = malloc(strlen(internal_proname) + 1);
+	prodesc->proname = ALLOC_N(char, strlen(internal_proname) + 1);
 	strcpy(prodesc->proname, internal_proname);
 	rb_hash_aset(PLruby_hash, value_proname, value_proc_desc); 
 #if PG_PL_VERSION >= 71
 	ReleaseSysCache(procTup);
 #endif
     }
-    Data_Get_Struct(value_proc_desc, plr_proc_desc, prodesc);
+    Data_Get_Struct(value_proc_desc, pl_proc_desc, prodesc);
 
     tupdesc = trigdata->tg_relation->rd_att;
 
@@ -1479,14 +1364,17 @@ plr_trigger_handler(FmgrInfo *proinfo)
 
 #if PG_PL_VERSION > 70
     {
-	char *s = 
-	    DatumGetCString(
-		DirectFunctionCall1(nameout,
-				    NameGetDatum(
-					&(trigdata->tg_relation->rd_rel->relname))));
+	char *s;
 	
+	PLRUBY_BEGIN(1);
+	s = DatumGetCString(
+	    DirectFunctionCall1(nameout,
+				NameGetDatum(
+				    &(trigdata->tg_relation->rd_rel->relname))));
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("relname")), 
 		     rb_str_freeze(rb_tainted_str_new2(s)));
+	pfree(s);
+	PLRUBY_END;
     }
 #else
     rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("relname")), 
@@ -1527,27 +1415,27 @@ plr_trigger_handler(FmgrInfo *proinfo)
 
     if (TRIGGER_FIRED_BY_INSERT(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_INSERT));
-	tg_new = plr_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+	tg_new = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
 	tg_old = rb_ary_new2(0);
 	rettup = trigdata->tg_trigtuple;
     }
     else if (TRIGGER_FIRED_BY_DELETE(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_DELETE));
-	tg_old = plr_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+	tg_old = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
 	tg_new = rb_ary_new2(0);
 
 	rettup = trigdata->tg_trigtuple;
     }
     else if (TRIGGER_FIRED_BY_UPDATE(trigdata->tg_event)) {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_UPDATE)); 
-	tg_new = plr_build_tuple(trigdata->tg_newtuple, tupdesc, RET_HASH);
-	tg_old = plr_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+	tg_new = pl_build_tuple(trigdata->tg_newtuple, tupdesc, RET_HASH);
+	tg_old = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
 	rettup = trigdata->tg_newtuple;
     }
     else {
 	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("op")), INT2FIX(TG_UNKNOWN));
-	tg_new = plr_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-	tg_old = plr_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+	tg_new = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+	tg_old = pl_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
 	rettup = trigdata->tg_trigtuple;
     }
     rb_hash_freeze(TG);
@@ -1558,12 +1446,12 @@ plr_trigger_handler(FmgrInfo *proinfo)
     }
     rb_ary_freeze(args);
 
-    c = rb_funcall(pg_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+    c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
 		   4, tg_new, tg_old, args, TG);
 
     PLRUBY_BEGIN(1);
     if (SPI_finish() != SPI_OK_FINISH) {
-	rb_raise(pg_ePLruby, "SPI_finish() failed");
+	rb_raise(pl_ePLruby, "SPI_finish() failed");
     }
     PLRUBY_END;
 
@@ -1581,7 +1469,7 @@ plr_trigger_handler(FmgrInfo *proinfo)
 	if (NUM2INT(c) == TG_SKIP) {
 	    return (HeapTuple) NULL;
 	}
-	rb_raise(pg_ePLruby, "Invalid return code");
+	rb_raise(pl_ePLruby, "Invalid return code");
 	break;
     case T_STRING:
 	if (strcmp(RSTRING(c)->ptr, "OK") == 0) {
@@ -1590,12 +1478,12 @@ plr_trigger_handler(FmgrInfo *proinfo)
 	if (strcmp(RSTRING(c)->ptr, "SKIP") == 0) {
 	    return (HeapTuple) NULL;
 	}
-	rb_raise(pg_ePLruby, "unknown response %s", RSTRING(c)->ptr);
+	rb_raise(pl_ePLruby, "unknown response %s", RSTRING(c)->ptr);
 	break;
     case T_HASH:
 	break;
     default:
-	rb_raise(pg_ePLruby, "Invalid return value");
+	rb_raise(pl_ePLruby, "Invalid return value");
 	break;
     }
 
@@ -1627,14 +1515,14 @@ plr_trigger_handler(FmgrInfo *proinfo)
     PLRUBY_END;
     
     if (rettup == NULL) {
-	rb_raise(pg_ePLruby, "SPI_modifytuple() failed - RC = %d\n", SPI_result);
+	rb_raise(pl_ePLruby, "SPI_modifytuple() failed - RC = %d\n", SPI_result);
     }
 
     return rettup;
 }
 
 static VALUE
-plr_warn(argc, argv, obj)
+pl_warn(argc, argv, obj)
     int argc;
     VALUE *argv;
     VALUE obj;
@@ -1672,17 +1560,17 @@ plr_warn(argc, argv, obj)
 #endif
 	    break;
 	default:
-	    rb_raise(pg_ePLruby, "invalid level %d", level);
+	    rb_raise(pl_ePLruby, "invalid level %d", level);
 	}
     case 1:
 	res = argv[indice];
 	if (NIL_P(res)) {
 	    return Qnil;
 	}
-	res = plr_to_s(res);
+	res = pl_to_s(res);
 	break;
     default:
-	rb_raise(pg_ePLruby, "invalid syntax");
+	rb_raise(pl_ePLruby, "invalid syntax");
     }
     PLRUBY_BEGIN(1);
     elog(level, RSTRING(res)->ptr);
@@ -1691,15 +1579,13 @@ plr_warn(argc, argv, obj)
 }
 
 static VALUE
-plr_quote(obj, mes)
+pl_quote(obj, mes)
     VALUE obj, mes;
 {    
-    char	   *tmp;
-    char	   *cp1;
-    char	   *cp2;
+    char *tmp, *cp1, *cp2;
 
     if (TYPE(mes) != T_STRING) {
-	rb_raise(pg_ePLruby, "quote: string expected");
+	rb_raise(pl_ePLruby, "quote: string expected");
     }
     tmp = ALLOCA_N(char, RSTRING(mes)->len * 2 + 1);
     cp1 = RSTRING(mes)->ptr;
@@ -1721,7 +1607,7 @@ static void
 exec_output(VALUE option, int compose, int *result)
 {
     if (TYPE(option) != T_STRING || RSTRING(option)->ptr == 0 || !result) {
-	rb_raise(pg_ePLruby, "string expected for optional output");
+	rb_raise(pl_ePLruby, "string expected for optional output");
     }
     if (strcmp(RSTRING(option)->ptr, "array") == 0) {
 	*result = compose|RET_DESC_ARR;
@@ -1736,21 +1622,27 @@ exec_output(VALUE option, int compose, int *result)
 
 
 static VALUE
-plr_SPI_exec(argc, argv, obj)
+pl_SPI_exec(argc, argv, obj)
     int argc;
     VALUE *argv;
     VALUE obj;
 {
-    int	spi_rc;
-    volatile int count = 0;
-    volatile int array = Qnil;
-    int	i, comp;
-    int	ntuples;
+    int	spi_rc, count, array;
+    int	i, comp, ntuples;
+    struct portal_options po;
     VALUE a, b, c, result;
     HeapTuple *tuples;
     TupleDesc tupdesc = NULL;
 
+    count = 0;
     array = comp = RET_HASH;
+    if (argc && TYPE(argv[argc - 1]) == T_HASH) {
+	MEMZERO(&po, struct portal_options, 1);
+	rb_iterate(rb_each, argv[argc - 1], pl_i_each, (VALUE)&po);
+	comp = po.output;
+	count = po.count;
+	argc--;
+    }
     switch (rb_scan_args(argc, argv, "12", &a, &b, &c)) {
     case 3:
 	exec_output(c, RET_HASH, &comp);
@@ -1761,7 +1653,7 @@ plr_SPI_exec(argc, argv, obj)
 	}
     }
     if (TYPE(a) != T_STRING) {
-	rb_raise(pg_ePLruby, "exec: first argument must be a string");
+	rb_raise(pl_ePLruby, "exec: first argument must be a string");
     }
 #if PG_PL_VERSION >= 71
     array = comp;
@@ -1773,32 +1665,35 @@ plr_SPI_exec(argc, argv, obj)
 
     switch (spi_rc) {
     case SPI_OK_UTILITY:
+	SPI_freetuptable(SPI_tuptable);
 	return Qtrue;
     case SPI_OK_SELINTO:
     case SPI_OK_INSERT:
     case SPI_OK_DELETE:
     case SPI_OK_UPDATE:
+	SPI_freetuptable(SPI_tuptable);
 	return INT2NUM(SPI_processed);
     case SPI_OK_SELECT:
 	break;
     case SPI_ERROR_ARGUMENT:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_ARGUMENT");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_ARGUMENT");
     case SPI_ERROR_UNCONNECTED:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_UNCONNECTED");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_UNCONNECTED");
     case SPI_ERROR_COPY:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_COPY");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_COPY");
     case SPI_ERROR_CURSOR:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_CURSOR");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_CURSOR");
     case SPI_ERROR_TRANSACTION:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_TRANSACTION");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_TRANSACTION");
     case SPI_ERROR_OPUNKNOWN:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_OPUNKNOWN");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_OPUNKNOWN");
     default:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - unknown RC %d", spi_rc);
+	rb_raise(pl_ePLruby, "SPI_exec() failed - unknown RC %d", spi_rc);
     }
 
     ntuples = SPI_processed;
     if (ntuples <= 0) {
+	SPI_freetuptable(SPI_tuptable);
 	if (rb_block_given_p() || count == 1)
 	    return Qfalse;
 	else
@@ -1811,32 +1706,33 @@ plr_SPI_exec(argc, argv, obj)
 	    if (!(array & RET_DESC)) {
 		array |= RET_BASIC;
 	    }
-	    plr_build_tuple(tuples[0], tupdesc, array);
+	    pl_build_tuple(tuples[0], tupdesc, array);
 	}
 	else {
 	    for (i = 0; i < ntuples; i++) {
-		rb_yield(plr_build_tuple(tuples[i], tupdesc, array));
+		rb_yield(pl_build_tuple(tuples[i], tupdesc, array));
 	    }
 	}
 	result = Qtrue;
     }
     else {
 	if (count == 1) {
-	    result = plr_build_tuple(tuples[0], tupdesc, array);
+	    result = pl_build_tuple(tuples[0], tupdesc, array);
 	}
 	else {
 	    result = rb_ary_new2(ntuples);
 	    for (i = 0; i < ntuples; i++) {
-		rb_ary_push(result, plr_build_tuple(tuples[i], tupdesc, array));
+		rb_ary_push(result, pl_build_tuple(tuples[i], tupdesc, array));
 	    }
 	}
     }
+    SPI_freetuptable(SPI_tuptable);
     return result;
 }
 
 static void
-plr_query_free(qdesc)
-    plr_query_desc *qdesc;
+query_free(qdesc)
+    pl_query_desc *qdesc;
 {
     if (qdesc->argtypes) free(qdesc->argtypes);
     if (qdesc->arginfuncs) free(qdesc->arginfuncs);
@@ -1845,21 +1741,82 @@ plr_query_free(qdesc)
     free(qdesc);
 }
 
-static VALUE plr_i_each _((VALUE, struct portal_options *));
+static void
+query_mark(qdesc)
+    pl_query_desc *qdesc;
+{
+    rb_gc_mark(qdesc->po.argsv);
+}
 
 static VALUE
-plr_SPI_prepare(int argc, VALUE *argv, VALUE obj)
+pl_plan_s_new(int argc, VALUE *argv, VALUE obj)
 {
-    plr_query_desc *qdesc;
+    pl_query_desc *qdesc;
+    VALUE result;
+    
+    result = Data_Make_Struct(obj, pl_query_desc, query_mark, 
+			      query_free, qdesc);
+    rb_obj_call_init(result, argc, argv);
+    return result;
+}
+
+static VALUE
+pl_plan_prepare(int argc, VALUE *argv, VALUE obj)
+{
+    if (!argc || TYPE(argv[argc - 1]) != T_HASH) {
+	argv[argc] = rb_hash_new();
+	++argc;
+    }
+    rb_hash_aset(argv[argc - 1], rb_str_new2("save"), Qtrue);
+    return pl_plan_s_new(argc, argv, pl_cPLPlan);
+}
+
+static VALUE
+pl_plan_save(VALUE obj)
+{
+    pl_query_desc *qdesc;
+    void *tmp;
+
+    GetPlan(obj, qdesc);
+    PLRUBY_BEGIN(1);
+    tmp = qdesc->plan;
+    qdesc->plan = SPI_saveplan(tmp);
+    SPI_freeplan(tmp);
+    PLRUBY_END;
+
+    if (qdesc->plan == NULL) {
+	char buf[128];
+	char *reason;
+	    
+	switch (SPI_result) {
+	case SPI_ERROR_ARGUMENT:
+	    reason = "SPI_ERROR_ARGUMENT";
+	    break;
+	case SPI_ERROR_UNCONNECTED:
+	    reason = "SPI_ERROR_UNCONNECTED";
+	    break;
+	default:
+	    sprintf(buf, "unknown RC %d", SPI_result);
+	    reason = buf;
+	    break;
+	}
+	rb_raise(pl_ePLruby, "SPI_saveplan() failed - %s", reason);
+    }
+    return obj;
+}
+ 
+static VALUE
+pl_plan_init(int argc, VALUE *argv, VALUE obj)
+{
+    pl_query_desc *qdesc;
     void *plan;
     int	i;
-    HeapTuple	typeTup;
-    VALUE a, b, c, d, result;
+    HeapTuple typeTup;
+    VALUE a, b, c, d;
     
-    result = Data_Make_Struct(pg_cPLrubyPlan, plr_query_desc, 0, 
-			      plr_query_free, qdesc);
+    Data_Get_Struct(obj, pl_query_desc, qdesc);
     if (argc && TYPE(argv[argc - 1]) == T_HASH) {
-	rb_iterate(rb_each, argv[argc - 1], plr_i_each, (VALUE)&(qdesc->po));
+	rb_iterate(rb_each, argv[argc - 1], pl_i_each, (VALUE)&(qdesc->po));
 	argc--;
     }
     switch (rb_scan_args(argc, argv, "13", &a, &b, &c, &d)) {
@@ -1874,17 +1831,20 @@ plr_SPI_prepare(int argc, VALUE *argv, VALUE obj)
     case 2:
 	if (!NIL_P(b)) {
 	    if (TYPE(b) != T_ARRAY) {
-		rb_raise(pg_ePLruby, "second argument must be an ARRAY");
+		rb_raise(pl_ePLruby, "second argument must be an ARRAY");
 	    }
 	    qdesc->po.argsv = b;
 	}
 	break;
     }
     if (TYPE(a) != T_STRING) {
-	rb_raise(pg_ePLruby, "first argument must be a STRING");
+	rb_raise(pl_ePLruby, "first argument must be a STRING");
     }
     sprintf(qdesc->qname, "%lx", (long) qdesc);
     if (RTEST(qdesc->po.argsv)) {
+	if (TYPE(qdesc->po.argsv) != T_ARRAY) {
+	    rb_raise(pl_ePLruby, "expected an Array");
+	}
 	qdesc->nargs = RARRAY(qdesc->po.argsv)->len;
     }
     qdesc->argtypes = NULL;
@@ -1895,7 +1855,7 @@ plr_SPI_prepare(int argc, VALUE *argv, VALUE obj)
 	qdesc->arglen = ALLOC_N(int, qdesc->nargs);
  
 	for (i = 0; i < qdesc->nargs; i++)	{
-	    VALUE args = plr_to_s(RARRAY(qdesc->po.argsv)->ptr[i]);
+	    VALUE args = pl_to_s(RARRAY(qdesc->po.argsv)->ptr[i]);
 
 	    PLRUBY_BEGIN(1);
 #if PG_PL_VERSION >= 73
@@ -1906,7 +1866,7 @@ plr_SPI_prepare(int argc, VALUE *argv, VALUE obj)
 					  PointerGetDatum(RSTRING(args)->ptr),
 					  0, 0, 0);
 	    if (!HeapTupleIsValid(typeTup)) {
-		rb_raise(pg_ePLruby, "Cache lookup of type '%s' failed", RSTRING(args)->ptr);
+		rb_raise(pl_ePLruby, "Cache lookup of type '%s' failed", RSTRING(args)->ptr);
 	    }
 	    qdesc->argtypes[i] = typeTup->t_data->t_oid;
 #endif
@@ -1954,53 +1914,30 @@ plr_SPI_prepare(int argc, VALUE *argv, VALUE obj)
 	    reason = buf;
 	    break;
 	}
-	rb_raise(pg_ePLruby, "SPI_prepare() failed - %s", reason);
+	rb_raise(pl_ePLruby, "SPI_prepare() failed - %s", reason);
     }
-    if (!qdesc->po.tmp) {
-	PLRUBY_BEGIN(1);
-	qdesc->plan = SPI_saveplan(plan);
-	PLRUBY_END;
-
-	if (qdesc->plan == NULL) {
-	    char buf[128];
-	    char *reason;
-	    
-	    switch (SPI_result) {
-	    case SPI_ERROR_ARGUMENT:
-		reason = "SPI_ERROR_ARGUMENT";
-		break;
-	    case SPI_ERROR_UNCONNECTED:
-		reason = "SPI_ERROR_UNCONNECTED";
-		break;
-	    default:
-		sprintf(buf, "unknown RC %d", SPI_result);
-		reason = buf;
-		break;
-	    }
-	    rb_raise(pg_ePLruby, "SPI_saveplan() failed - %s", reason);
-	}
+    qdesc->plan = plan;
+    if (qdesc->po.save) {
+	pl_plan_save(obj);
     }
-    else {
-	qdesc->plan = plan;
-    }
-    return result;
+    return obj;
 }
 
 static void
-process_args(qdesc, portal)
-    plr_query_desc *qdesc;
-    struct PLportal *portal;
+process_args(pl_query_desc *qdesc, VALUE vortal)
 {
+    struct PLportal *portal;
     int callnargs, j;
     VALUE argsv;
 
+    Data_Get_Struct(vortal, struct PLportal, portal);
     if (qdesc->nargs > 0) {
 	argsv = portal->po.argsv;
 	if (TYPE(argsv) != T_ARRAY) {
-	    rb_raise(pg_ePLruby, "array expected for arguments");
+	    rb_raise(pl_ePLruby, "array expected for arguments");
 	}
 	if (RARRAY(argsv)->len != qdesc->nargs) {
-	    rb_raise(pg_ePLruby, "length of arguments doesn't match # of arguments");
+	    rb_raise(pl_ePLruby, "length of arguments doesn't match # of arguments");
 	}
 	callnargs = RARRAY(argsv)->len;
 	portal->nargs = callnargs;
@@ -2015,7 +1952,7 @@ process_args(qdesc, portal)
 		portal->argvalues[j] = (Datum)NULL;
 	    }
 	    else {
-		VALUE args = plr_to_s(RARRAY(argsv)->ptr[j]);
+		VALUE args = pl_to_s(RARRAY(argsv)->ptr[j]);
 		portal->nulls[j] = ' ';
 		portal->arglen[j] = qdesc->arglen[j];
 
@@ -2044,44 +1981,43 @@ free_args(struct PLportal *portal)
 {
     int j;
 
-    if (portal->nargs) {
-	for (j = 0; j < portal->nargs; j++) {
-	    if (portal->arglen[j] < 0 && 
-		portal->argvalues[j] != (Datum) NULL) {
-		pfree((char *) (portal->argvalues[j]));
-		portal->argvalues[j] = (Datum) NULL;
-	    }
+    for (j = 0; j < portal->nargs; j++) {
+	if (portal->arglen[j] < 0 && 
+	    portal->argvalues[j] != (Datum) NULL) {
+	    pfree((char *) (portal->argvalues[j]));
+	    portal->argvalues[j] = (Datum) NULL;
 	}
-	if (portal->argvalues) {
-	    free(portal->argvalues);
-	    portal->argvalues = 0;
-	}
-	if (portal->arglen) {
-	    free(portal->arglen);
-	    portal->arglen = 0;
-	}
-	if (portal->nulls) {
-	    free(portal->nulls);
-	    portal->nulls = 0;
-	}
-	portal->nargs = 0;
+    }
+    if (portal->argvalues) {
+	free(portal->argvalues);
+	portal->argvalues = 0;
+    }
+    if (portal->arglen) {
+	free(portal->arglen);
+	portal->arglen = 0;
+    }
+    if (portal->nulls) {
+	free(portal->nulls);
+	portal->nulls = 0;
     }
 }
 
 static void
 portal_free(struct PLportal *portal)
 {
-   if (portal->nargs) {
-	MEMZERO(portal->argvalues, Datum, portal->nargs);
-    }
+    portal->nargs = 0;
     free_args(portal);
     free(portal);
 }
 
+static void
+portal_mark(struct PLportal *portal)
+{
+    rb_gc_mark(portal->po.argsv);
+}
+
 static VALUE
-plr_i_each(obj, po)
-    VALUE obj;
-    struct portal_options *po;
+pl_i_each(VALUE obj, struct portal_options *po)
 {
     VALUE key, value;
     char *options;
@@ -2103,8 +2039,8 @@ plr_i_each(obj, po)
     else if (strcmp(options, "block") == 0) {
 	po->block = NUM2INT(value);
     }
-    else if (strcmp(options, "tmp") == 0) {
-	po->tmp = RTEST(value);
+    else if (strcmp(options, "save") == 0) {
+	po->save = RTEST(value);
     }
     return Qnil;
 }
@@ -2114,11 +2050,11 @@ create_vortal(int argc, VALUE *argv, VALUE obj)
 {
     VALUE vortal, argsv, countv, c;
     struct PLportal *portal;
-    plr_query_desc *qdesc;
+    pl_query_desc *qdesc;
 
-    Data_Get_Struct(obj, plr_query_desc, qdesc);
-    vortal = Data_Make_Struct(rb_cObject, struct PLportal, 0, portal_free,
-			      portal);
+    GetPlan(obj, qdesc);
+    vortal = Data_Make_Struct(pl_cPLCursor, struct PLportal, portal_mark,
+			      portal_free, portal);
 
     MEMCPY(&(portal->po), &(qdesc->po), struct portal_options, 1);
     portal->po.argsv = Qnil;
@@ -2126,7 +2062,7 @@ create_vortal(int argc, VALUE *argv, VALUE obj)
 	portal->po.output = RET_HASH;
     }
     if (argc && TYPE(argv[argc - 1]) == T_HASH) {
-	rb_iterate(rb_each, argv[argc - 1], plr_i_each, (VALUE)&portal->po);
+	rb_iterate(rb_each, argv[argc - 1], pl_i_each, (VALUE)&portal->po);
 	argc--;
     }
     switch (rb_scan_args(argc, argv, "03", &argsv, &countv, &c)) {
@@ -2144,69 +2080,70 @@ create_vortal(int argc, VALUE *argv, VALUE obj)
 #if PG_PL_VERSION < 71
     portal->po.output = RET_HASH;
 #endif
-    process_args(qdesc, portal);
-    rb_ary_push(PLruby_portal, vortal);
+    process_args(qdesc, vortal);
+    portal->po.argsv = 0;
     return vortal;
 }
 
 static VALUE
-plr_SPI_execp(argc, argv, obj)
+pl_plan_execp(argc, argv, obj)
     int argc;
     VALUE *argv;
     VALUE obj;
 {
-    int	i, spi_rc;
+    int	i, spi_rc, count, typout;
     VALUE result;
-    volatile VALUE vortal;
-    plr_query_desc *qdesc;
+    VALUE vortal;
+    pl_query_desc *qdesc;
     int	ntuples;
     HeapTuple *tuples = NULL;
     TupleDesc tupdesc = NULL;
     struct PLportal *portal;
 
-    Data_Get_Struct(obj, plr_query_desc, qdesc);
-    if (!qdesc->plan) {
-	rb_raise(pg_ePLruby, "plan was dropped during the session");
-    }
+    GetPlan(obj, qdesc);
     vortal = create_vortal(argc, argv, obj);
     Data_Get_Struct(vortal, struct PLportal, portal);
     PLRUBY_BEGIN(1);
     spi_rc = SPI_execp(qdesc->plan, portal->argvalues,
 		       portal->nulls, portal->po.count);
-    vortal = rb_ary_pop(PLruby_portal);
     free_args(portal);
     PLRUBY_END;
+    count = portal->po.count;
+    typout = portal->po.output;
 
     switch (spi_rc) {
     case SPI_OK_UTILITY:
+	SPI_freetuptable(SPI_tuptable);
 	return Qtrue;
     case SPI_OK_SELINTO:
     case SPI_OK_INSERT:
     case SPI_OK_DELETE:
     case SPI_OK_UPDATE:
+	SPI_freetuptable(SPI_tuptable);
 	return INT2NUM(SPI_processed);
     case SPI_OK_SELECT:
 	break;
 
     case SPI_ERROR_ARGUMENT:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_ARGUMENT");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_ARGUMENT");
     case SPI_ERROR_UNCONNECTED:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_UNCONNECTED");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_UNCONNECTED");
     case SPI_ERROR_COPY:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_COPY");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_COPY");
     case SPI_ERROR_CURSOR:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_CURSOR");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_CURSOR");
     case SPI_ERROR_TRANSACTION:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_TRANSACTION");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_TRANSACTION");
     case SPI_ERROR_OPUNKNOWN:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - SPI_ERROR_OPUNKNOWN");
+	rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_OPUNKNOWN");
     default:
-	rb_raise(pg_ePLruby, "SPI_exec() failed - unknown RC %d", spi_rc);
+	rb_raise(pl_ePLruby, "SPI_exec() failed - unknown RC %d", spi_rc);
     }
     
     ntuples = SPI_processed;
     if (ntuples <= 0) {
-	if (rb_block_given_p() || portal->po.count == 1) {
+	SPI_freetuptable(SPI_tuptable);
+	if (rb_block_given_p() || count == 1) {
 	    return Qfalse;
 	}
 	else {
@@ -2216,54 +2153,59 @@ plr_SPI_execp(argc, argv, obj)
     tuples = SPI_tuptable->vals;
     tupdesc = SPI_tuptable->tupdesc;
     if (rb_block_given_p()) {
-	if (portal->po.count == 1) {
-	    int form = portal->po.output;
+	if (count == 1) {
+	    int form = typout;
 	    if (!(form & RET_DESC)) {
 		form |= RET_BASIC;
 	    }
-	    plr_build_tuple(tuples[0], tupdesc, form);
+	    pl_build_tuple(tuples[0], tupdesc, form);
 	}
 	else {
 	    for (i = 0; i < ntuples; i++) {
-		rb_yield(plr_build_tuple(tuples[i], tupdesc, portal->po.output));
+		rb_yield(pl_build_tuple(tuples[i], tupdesc, typout));
 	    }
 	}
 	result = Qtrue;
     }
     else {
-	if (portal->po.count == 1) {
-	    result = plr_build_tuple(tuples[0], tupdesc, portal->po.output);
+	if (count == 1) {
+	    result = pl_build_tuple(tuples[0], tupdesc, typout);
 	}
 	else {
 	    result = rb_ary_new2(ntuples);
 	    for (i = 0; i < ntuples; i++) {
 		rb_ary_push(result, 
-			    plr_build_tuple(tuples[i], tupdesc, portal->po.output));
+			    pl_build_tuple(tuples[i], tupdesc, typout));
 	    }
 	}
     }
+    SPI_freetuptable(SPI_tuptable);
     return result;
 }
 
 static VALUE
-plr_cursor_close(portal)
-    struct PLportal *portal;
+pl_close(VALUE vortal)
 {
+    struct PLportal *portal;
+
+    GetPortal(vortal, portal);
     PLRUBY_BEGIN(1);
     SPI_cursor_close(portal->portal);
+    portal->portal = 0;
     PLRUBY_END;
     return Qnil;
 }
 
 static VALUE
-plr_cursor_fetch(portal)
-    struct PLportal *portal;
+pl_fetch(VALUE vortal)
 {
+    struct PLportal *portal;
     HeapTuple *tuples = NULL;
     TupleDesc tupdesc = NULL;
     SPITupleTable *tuptab;
     int i, proces, pcount, block, count;
 
+    GetPortal(vortal, portal);
     count = 0;
     block = portal->po.block + 1;
     if (portal->po.count) pcount = portal->po.count;
@@ -2280,7 +2222,7 @@ plr_cursor_fetch(portal)
 	tuples = tuptab->vals;
 	tupdesc = tuptab->tupdesc;
 	for (i = 0; i < proces && count != pcount; ++i, ++count) {
-	    rb_yield(plr_build_tuple(tuples[i], tupdesc, portal->po.output));
+	    rb_yield(pl_build_tuple(tuples[i], tupdesc, portal->po.output));
 	}
 	SPI_freetuptable(tuptab);
     }
@@ -2288,53 +2230,233 @@ plr_cursor_fetch(portal)
 }
 
 static VALUE
-plr_SPI_each(argc, argv, obj)
+pl_plan_each(argc, argv, obj)
     int argc;
     VALUE *argv;
     VALUE obj;
 {
     VALUE result;
-    plr_query_desc *qdesc;
+    pl_query_desc *qdesc;
     Portal pgportal;
     struct PLportal *portal;
-    VALUE volatile vortal;
+    VALUE vortal;
 
     if (!rb_block_given_p()) {
-	rb_raise(pg_ePLruby, "a block must be given");
+	rb_raise(pl_ePLruby, "a block must be given");
     }
-    Data_Get_Struct(obj, plr_query_desc, qdesc);
-    if (!qdesc->plan) {
-	rb_raise(pg_ePLruby, "plan was dropped during the session");
-    }
+    GetPlan(obj, qdesc);
     vortal = create_vortal(argc, argv, obj);
     Data_Get_Struct(vortal, struct PLportal, portal);
     PLRUBY_BEGIN(1);
     pgportal = SPI_cursor_open(NULL, qdesc->plan, 
 			       portal->argvalues, portal->nulls);
-    vortal = rb_ary_pop(PLruby_portal);
     free_args(portal);
     PLRUBY_END;
-
     if (pgportal == NULL) {
-	rb_raise(pg_ePLruby,  "SPI_cursor_open() failed");
+	rb_raise(pl_ePLruby,  "SPI_cursor_open() failed");
     }
     portal->portal = pgportal;
-    return rb_ensure(plr_cursor_fetch, (VALUE)portal,
-		     plr_cursor_close, (VALUE)portal);
+    return rb_ensure(pl_fetch, vortal, pl_close, vortal);
     return result;
 }
 
+#if PG_PL_VERSION >= 73
+
+static VALUE
+pl_plan_cursor(int argc, VALUE *argv, VALUE obj)
+{
+    char *name = NULL;
+    pl_query_desc *qdesc;
+    Portal pgportal;
+    struct PLportal *portal;
+    VALUE vortal;
+
+    GetPlan(obj, qdesc);
+    if (argc && TYPE(argv[0]) != T_HASH) {
+	if (!NIL_P(argv[0])) {
+	    if (TYPE(argv[0]) != T_STRING) {
+		rb_raise(pl_ePLruby, "invalid cursor name");
+	    }
+	    name = RSTRING(argv[0])->ptr;
+	}
+	--argc; ++argv;
+    }
+    vortal = create_vortal(argc, argv, obj);
+    Data_Get_Struct(vortal, struct PLportal, portal);
+    PLRUBY_BEGIN(1);
+    pgportal = SPI_cursor_open(name, qdesc->plan, 
+			       portal->argvalues, portal->nulls);
+    PLRUBY_END;
+    if (pgportal == NULL) {
+	rb_raise(pl_ePLruby,  "SPI_cursor_open() failed");
+    }
+    portal->portal = pgportal;
+    return vortal;
+}
+
+static VALUE
+pl_plan_release(VALUE obj)
+{
+    pl_query_desc *qdesc;
+    int spi_rc;
+
+    GetPlan(obj, qdesc);
+    PLRUBY_BEGIN(1);
+    spi_rc = SPI_freeplan(qdesc->plan);
+    qdesc->plan = 0;
+    PLRUBY_END;
+    if (spi_rc) {
+	rb_raise(pl_ePLruby, "SPI_freeplan() failed");
+    }
+    return Qnil;
+}
+
+static VALUE
+pl_cursor_move(VALUE obj, VALUE a)
+{
+    struct PLportal *portal;
+    int forward, count;
+
+    GetPortal(obj, portal);
+    count = NUM2INT(a);
+    if (count) {
+	if (count < 0) {
+	    forward = 0;
+	    count *= -1;
+	}
+	else {
+	    forward = 1;
+	}
+	PLRUBY_BEGIN(1);
+	SPI_cursor_move(portal->portal, forward, count);
+	PLRUBY_END;
+    }
+    return obj;
+}
+
+static VALUE
+pl_cursor_fetch(int argc, VALUE *argv, VALUE obj)
+{
+    struct PLportal *portal;
+    SPITupleTable *tup;
+    int proces, forward, count, i;
+    VALUE a, res;
+
+    GetPortal(obj, portal);
+    forward = count = 1;
+    if (rb_scan_args(argc, argv, "01", &a)) {
+	if (!NIL_P(a)) {
+	    count = NUM2INT(a);
+	}
+	if (count < 0) {
+	    forward = 0;
+	    count *= -1;
+	}
+    }
+    if (!count) {
+	return Qnil;
+    }
+    PLRUBY_BEGIN(1);
+    SPI_cursor_fetch(portal->portal, forward, count);
+    PLRUBY_END;
+    proces = SPI_processed;
+    tup = SPI_tuptable;
+    if (proces <= 0) {
+	return Qnil;
+    }
+    if (proces == 1) {
+	res = pl_build_tuple(tup->vals[0], tup->tupdesc, portal->po.output);
+    }
+    else {
+	res = rb_ary_new2(proces);
+	for (i = 0; i < proces; ++i) {
+	    rb_ary_push(res, pl_build_tuple(tup->vals[i], tup->tupdesc, 
+					     portal->po.output));
+	}
+    }
+    SPI_freetuptable(tup);
+    return res;
+}
+
+static VALUE
+cursor_i_fetch(VALUE obj)
+{
+    VALUE res;
+
+    while (1) {
+	res = rb_funcall2(obj, rb_intern("fetch"), 0, 0);
+	if (NIL_P(res)) break;
+	rb_yield(res);
+    }
+    return obj;
+}
+
+static VALUE
+pl_cursor_each(VALUE obj)
+{
+    if (!rb_block_given_p()) {
+	rb_raise(pl_ePLruby, "called without a block");
+    }
+    rb_iterate(cursor_i_fetch, obj, rb_yield, 0);
+    return obj;
+}
+
+static VALUE
+cursor_r_fetch(VALUE obj)
+{
+    VALUE res;
+
+    while (1) {
+	res = rb_funcall(obj, rb_intern("fetch"), 1, INT2NUM(-1));
+	if (NIL_P(res)) break;
+	rb_yield(res);
+    }
+    return obj;
+}
+
+static VALUE
+pl_cursor_rev_each(VALUE obj)
+{
+    if (!rb_block_given_p()) {
+	rb_raise(pl_ePLruby, "called without a block");
+    }
+    rb_iterate(cursor_r_fetch, obj, rb_yield, 0);
+    return obj;
+}
+
+static VALUE
+pl_cursor_rewind(VALUE obj)
+{
+    struct PLportal *portal;
+    int proces = 12;
+
+    GetPortal(obj, portal);
+    while (proces) {
+	PLRUBY_BEGIN(1);
+	SPI_cursor_move(portal->portal, 0, 12);
+	PLRUBY_END;
+	proces = SPI_processed;
+    }
+    return obj;
+}
+
+#endif
+
 static int
-plr_exist_singleton()
+pl_exist_singleton()
 {
     int spi_rc;
 
     spi_rc = SPI_exec("select 1 from pg_class where relname = 'plruby_singleton_methods'", 1);
-    if (spi_rc != SPI_OK_SELECT || SPI_processed == 0)
+    SPI_freetuptable(SPI_tuptable);
+    if (spi_rc != SPI_OK_SELECT || SPI_processed == 0) {
 	return 0;
+    }
     spi_rc = SPI_exec("select name from plruby_singleton_methods", 0);
-    if (spi_rc != SPI_OK_SELECT || SPI_processed == 0)
+    SPI_freetuptable(SPI_tuptable);
+    if (spi_rc != SPI_OK_SELECT || SPI_processed == 0) {
 	return 0;
+    }
     return SPI_processed;
 }
 
@@ -2342,14 +2464,14 @@ static char *recherche =
     "select name, args, body from plruby_singleton_methods where name = '%s'";
 
 static VALUE
-plr_each(tmp)
+pl_each(tmp)
     VALUE *tmp;
 {
-    return rb_funcall2(pg_mPLtemp, (ID)tmp[0], (int)tmp[1], (VALUE *)tmp[2]);
+    return rb_funcall2(pl_mPLtemp, (ID)tmp[0], (int)tmp[1], (VALUE *)tmp[2]);
 }
 
 static VALUE
-plr_yield(i, a)
+pl_yield(i, a)
     VALUE i, a;
 {
     rb_ary_push(a, rb_yield(i));
@@ -2357,7 +2479,7 @@ plr_yield(i, a)
 }
 
 static VALUE
-plr_load_singleton(argc, argv, obj)
+pl_load_singleton(argc, argv, obj)
     int argc;
     VALUE *argv;
     VALUE obj;
@@ -2382,21 +2504,24 @@ plr_load_singleton(argc, argv, obj)
     spi_rc = SPI_exec(buff, 0);
     PLRUBY_END;
 
-    if (spi_rc != SPI_OK_SELECT || SPI_processed == 0)
+    if (spi_rc != SPI_OK_SELECT || SPI_processed == 0) {
+	SPI_freetuptable(SPI_tuptable);
 	rb_raise(rb_eNameError, "undefined method `%s' for PLtemp:Module", nom);
+    }
     fname = SPI_fnumber(SPI_tuptable->tupdesc, "name");
     fargs = SPI_fnumber(SPI_tuptable->tupdesc, "args");
     fbody = SPI_fnumber(SPI_tuptable->tupdesc, "body");
     name = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, fname);
     args = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, fargs);
     body = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, fbody);
+    SPI_freetuptable(SPI_tuptable);
     sinm = ALLOCA_N(char, 1 + strlen(definition) + strlen(name) + 
 		    strlen(args) + strlen(body));
     sprintf(sinm, definition, name, args, body);
     rb_eval_string_protect(sinm, &status);
     if (status) {
-	VALUE s = plr_to_s(rb_gv_get("$!"));
-	rb_raise(pg_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
+	VALUE s = pl_to_s(rb_gv_get("$!"));
+	rb_raise(pl_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
 		 RSTRING(s)->ptr, sinm);
     }
     if (rb_block_given_p()) {
@@ -2405,23 +2530,23 @@ plr_load_singleton(argc, argv, obj)
 	tmp[1] = (VALUE)argc;
 	tmp[2] = (VALUE)argv;
 	res = rb_ary_new();
-	rb_iterate(plr_each, (VALUE)tmp, plr_yield, res);
+	rb_iterate(pl_each, (VALUE)tmp, pl_yield, res);
 	return res;
     }
     else {
-	return rb_funcall2(pg_mPLtemp, id, argc, argv);
+	return rb_funcall2(pl_mPLtemp, id, argc, argv);
     }
 }
 
 static VALUE plans;
 
 static void
-plr_init_all(void)
+pl_init_all(void)
 {
-    if (!plr_firstcall) {
+    if (!pl_firstcall) {
 	return;
     }
-    plr_firstcall = 0;
+    pl_firstcall = 0;
     ruby_init();
     if (MAIN_SAFE_LEVEL < 3) {
 	ruby_init_loadpath();
@@ -2452,51 +2577,66 @@ plr_init_all(void)
 #ifdef NOIND
     rb_define_global_const("NOIND", INT2FIX(NOIND));
 #endif
-    if (rb_const_defined_at(rb_cObject, rb_intern("PLruby")) ||
-	rb_const_defined_at(rb_cObject, rb_intern("PLrubyError")) ||
-	rb_const_defined_at(rb_cObject, rb_intern("PLrubyCatch")) ||
-	rb_const_defined_at(rb_cObject, rb_intern("PLrubyPlan")) ||
-	rb_const_defined_at(rb_cObject, rb_intern("PLResult")) ||
+    if (rb_const_defined_at(rb_cObject, rb_intern("PL")) ||
 	rb_const_defined_at(rb_cObject, rb_intern("PLtemp"))) {
-	elog(ERROR, "class already defined");
+	elog(ERROR, "module already defined");
     }
-    pg_mPLruby = rb_define_module("PLruby");
-    pg_ePLruby = rb_define_class("PLrubyError", rb_eStandardError);
-    pg_eCatch = rb_define_class("PLrubyCatch", rb_eStandardError);
-    rb_define_global_function("warn", plr_warn, -1);
-    rb_define_module_function(pg_mPLruby, "quote", plr_quote, 1);
-    rb_define_module_function(pg_mPLruby, "spi_exec", plr_SPI_exec, -1);
-    rb_define_module_function(pg_mPLruby, "exec", plr_SPI_exec, -1);
-    rb_define_module_function(pg_mPLruby, "column_name", plr_column_name, 1);
-    rb_define_module_function(pg_mPLruby, "column_type", plr_column_type, 1);
+    pl_mPL = rb_define_module("PL");
+    rb_const_set(rb_cObject, rb_intern("PLruby"), pl_mPL);
+    rb_define_const(pl_mPL, "OK", INT2FIX(TG_OK));
+    rb_define_const(pl_mPL, "SKIP", INT2FIX(TG_SKIP));
+    rb_define_const(pl_mPL, "BEFORE", INT2FIX(TG_BEFORE)); 
+    rb_define_const(pl_mPL, "AFTER", INT2FIX(TG_AFTER)); 
+    rb_define_const(pl_mPL, "ROW", INT2FIX(TG_ROW)); 
+    rb_define_const(pl_mPL, "STATEMENT", INT2FIX(TG_STATEMENT)); 
+    rb_define_const(pl_mPL, "INSERT", INT2FIX(TG_INSERT));
+    rb_define_const(pl_mPL, "DELETE", INT2FIX(TG_DELETE)); 
+    rb_define_const(pl_mPL, "UPDATE", INT2FIX(TG_UPDATE));
+    rb_define_const(pl_mPL, "UNKNOWN", INT2FIX(TG_UNKNOWN));
+    rb_define_global_function("warn", pl_warn, -1);
+    rb_define_module_function(pl_mPL, "quote", pl_quote, 1);
+    rb_define_module_function(pl_mPL, "spi_exec", pl_SPI_exec, -1);
+    rb_define_module_function(pl_mPL, "exec", pl_SPI_exec, -1);
+    rb_define_module_function(pl_mPL, "column_name", pl_column_name, 1);
+    rb_define_module_function(pl_mPL, "column_type", pl_column_type, 1);
 #if PG_PL_VERSION >= 73
-    rb_define_module_function(pg_mPLruby, "result_name", plr_query_name, 0);
-    rb_define_module_function(pg_mPLruby, "result_type", plr_query_type, 0);
-    rb_define_module_function(pg_mPLruby, "result_size", plr_query_lgth, 0);
+    rb_define_module_function(pl_mPL, "result_name", pl_query_name, 0);
+    rb_define_module_function(pl_mPL, "result_type", pl_query_type, 0);
+    rb_define_module_function(pl_mPL, "result_size", pl_query_lgth, 0);
+    rb_define_module_function(pl_mPL, "result_description", pl_query_description, 0);
 #endif
-    rb_define_const(pg_mPLruby, "OK", INT2FIX(TG_OK));
-    rb_define_const(pg_mPLruby, "SKIP", INT2FIX(TG_SKIP));
-    rb_define_const(pg_mPLruby, "BEFORE", INT2FIX(TG_BEFORE)); 
-    rb_define_const(pg_mPLruby, "AFTER", INT2FIX(TG_AFTER)); 
-    rb_define_const(pg_mPLruby, "ROW", INT2FIX(TG_ROW)); 
-    rb_define_const(pg_mPLruby, "STATEMENT", INT2FIX(TG_STATEMENT)); 
-    rb_define_const(pg_mPLruby, "INSERT", INT2FIX(TG_INSERT));
-    rb_define_const(pg_mPLruby, "DELETE", INT2FIX(TG_DELETE)); 
-    rb_define_const(pg_mPLruby, "UPDATE", INT2FIX(TG_UPDATE));
-    rb_define_const(pg_mPLruby, "UNKNOWN", INT2FIX(TG_UNKNOWN));
-    pg_cPLResult = rb_define_class("PLResult", rb_cObject);
-    rb_undef_method(CLASS_OF(pg_cPLResult), "new");
-    pg_cPLrubyPlan = rb_define_class("PLrubyPlan", rb_cObject);
-    rb_undef_method(CLASS_OF(pg_cPLrubyPlan), "new");
-    rb_include_module(pg_cPLrubyPlan, rb_mEnumerable);
-    rb_define_module_function(pg_mPLruby, "spi_prepare", plr_SPI_prepare, -1);
-    rb_define_module_function(pg_mPLruby, "prepare", plr_SPI_prepare, -1);
-    rb_define_method(pg_cPLrubyPlan, "spi_execp", plr_SPI_execp, -1);
-    rb_define_method(pg_cPLrubyPlan, "execp", plr_SPI_execp, -1);
-    rb_define_method(pg_cPLrubyPlan, "exec", plr_SPI_execp, -1);
-    rb_define_method(pg_cPLrubyPlan, "spi_fetch", plr_SPI_each, -1);
-    rb_define_method(pg_cPLrubyPlan, "each", plr_SPI_each, -1);
-    rb_define_method(pg_cPLrubyPlan, "fetch", plr_SPI_each, -1);
+    /* deprecated */
+    rb_define_module_function(pl_mPL, "spi_prepare", pl_plan_prepare, -1);
+    rb_define_module_function(pl_mPL, "prepare", pl_plan_prepare, -1);
+    /* ... */
+    pl_ePLruby = rb_define_class_under(pl_mPL, "Error", rb_eStandardError);
+    pl_eCatch = rb_define_class_under(pl_mPL, "Catch", rb_eStandardError);
+    pl_cPLPlan = rb_define_class_under(pl_mPL, "Plan", rb_cObject);
+    rb_include_module(pl_cPLPlan, rb_mEnumerable);
+    rb_const_set(rb_cObject, rb_intern("PLrubyPlan"), pl_cPLPlan);
+    rb_define_singleton_method(pl_cPLPlan, "new", pl_plan_s_new, -1);
+    rb_define_private_method(pl_cPLPlan, "initialize", pl_plan_init, -1);
+    rb_define_method(pl_cPLPlan, "save", pl_plan_save, 0);
+    rb_define_method(pl_cPLPlan, "spi_execp", pl_plan_execp, -1);
+    rb_define_method(pl_cPLPlan, "execp", pl_plan_execp, -1);
+    rb_define_method(pl_cPLPlan, "exec", pl_plan_execp, -1);
+    rb_define_method(pl_cPLPlan, "spi_fetch", pl_plan_each, -1);
+    rb_define_method(pl_cPLPlan, "each", pl_plan_each, -1);
+    rb_define_method(pl_cPLPlan, "fetch", pl_plan_each, -1);
+#if PG_PL_VERSION >= 73
+    rb_define_method(pl_cPLPlan, "cursor", pl_plan_cursor, -1);
+    rb_define_method(pl_cPLPlan, "release", pl_plan_release, 0);
+    pl_cPLCursor = rb_define_class_under(pl_mPL, "Cursor", rb_cObject);
+    rb_include_module(pl_cPLCursor, rb_mEnumerable);
+    rb_undef_method(CLASS_OF(pl_cPLCursor), "new");
+    rb_define_method(pl_cPLCursor, "each", pl_cursor_each, 0);
+    rb_define_method(pl_cPLCursor, "reverse_each", pl_cursor_rev_each, 0);
+    rb_define_method(pl_cPLCursor, "close", pl_close, 0);
+    rb_define_method(pl_cPLCursor, "fetch", pl_cursor_fetch, -1);
+    rb_define_method(pl_cPLCursor, "row", pl_cursor_fetch, -1);
+    rb_define_method(pl_cPLCursor, "move", pl_cursor_move, 1);
+    rb_define_method(pl_cPLCursor, "rewind", pl_cursor_rewind, 0);
+#endif
     id_to_s = rb_intern("to_s");
     id_raise = rb_intern("raise");
     id_kill = rb_intern("kill");
@@ -2514,16 +2654,14 @@ plr_init_all(void)
     rb_set_safe_level(MAIN_SAFE_LEVEL);
     plans = rb_hash_new();
     rb_define_variable("$Plans", &plans);
-    pg_mPLtemp = rb_define_module("PLtemp");
+    pl_mPLtemp = rb_define_module("PLtemp");
     PLruby_hash = rb_hash_new();
     rb_global_variable(&PLruby_hash);
-    PLruby_portal = rb_ary_new();
-    rb_global_variable(&PLruby_portal);
     if (SPI_connect() != SPI_OK_CONNECT) {
 	elog(ERROR, "plruby_singleton_methods : SPI_connect failed");
     }
-    if (plr_exist_singleton()) {
-	rb_define_module_function(pg_mPLtemp, "method_missing", plr_load_singleton, -1);
+    if (pl_exist_singleton()) {
+	rb_define_module_function(pl_mPLtemp, "method_missing", pl_load_singleton, -1);
     }
     if (SPI_finish() != SPI_OK_FINISH) {
 	elog(ERROR, "plruby_singleton_methods : SPI_finish failed");

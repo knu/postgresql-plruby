@@ -27,9 +27,9 @@ create table T_dta2 (
 --
 create function check_pkey1_exists(int4, varchar) returns bool as '
     if ! $Plans.key?("plan")
-        $Plans["plan"] = PLruby.prepare("select 1 from T_pkey1
-                                         where key1 = $1 and key2 = $2",
-                                         ["int4", "varchar"])
+        $Plans["plan"] = PL::Plan.new("select 1 from T_pkey1
+                                       where key1 = $1 and key2 = $2",
+                                       ["int4", "varchar"]).save
     end
     if $Plans["plan"].exec(args, 1)
        return true
@@ -44,22 +44,22 @@ create function check_pkey1_exists(int4, varchar) returns bool as '
 --
 create function trig_pkey1_before() returns trigger as '
     if ! $Plans.key?("plan_pkey1")
-        $Plans["plan_pkey1"] = PLruby.prepare("select check_pkey1_exists($1, $2) as ret",
-                                              ["int4", "varchar"])
-        $Plans["plan_dta1"] = PLruby.prepare("select 1 from T_dta1
-                                              where ref1 = $1 and ref2 = $2",
-                                              ["int4", "varchar"])
+        $Plans["plan_pkey1"] = PL::Plan.new("select check_pkey1_exists($1, $2) as ret",
+                                            ["int4", "varchar"]).save
+        $Plans["plan_dta1"] = PL::Plan.new("select 1 from T_dta1
+                                            where ref1 = $1 and ref2 = $2",
+                                            ["int4", "varchar"]).save
     end        
     check_old_ref = false
     check_new_dup = false
 
     case tg["op"]
-    when PLruby::INSERT
+    when PL::INSERT
         check_new_dup = true
-    when PLruby::UPDATE
+    when PL::UPDATE
         check_old_ref = new["key1"] != old["key1"] || new["key2"] != old["key2"]
         check_new_dup = true
-    when PLruby::DELETE
+    when PL::DELETE
         check_old_ref = true
     end
     if check_new_dup
@@ -74,7 +74,7 @@ create function trig_pkey1_before() returns trigger as '
              raise "key ''#{old[''key1'']}'', ''#{old[''key2'']}'' referenced by T_dta1"
          end
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger pkey1_before before insert or update or delete on T_pkey1
@@ -88,9 +88,9 @@ create trigger pkey1_before before insert or update or delete on T_pkey1
 --
 create function trig_pkey2_before() returns trigger as '
     if ! $Plans.key?("plan_pkey2")
-        $Plans["plan_pkey2"] = PLruby.prepare("select 1 from T_pkey2
-                                               where key1 = $1 and key2 = $2",
-                                              ["int4", "varchar"])
+        $Plans["plan_pkey2"] = PL::Plan.new("select 1 from T_pkey2
+                                             where key1 = $1 and key2 = $2",
+                                             ["int4", "varchar"]).save
     end
     new["key2"] = new["key2"].sub(/^\\s*/, "").sub(/\\s*$/, "").upcase
     if $Plans["plan_pkey2"].exec([new["key1"], new["key2"]], 1)
@@ -113,25 +113,25 @@ create trigger pkey2_before before insert or update on T_pkey2
 create function trig_pkey2_after() returns trigger as '
     if ! $Plans["plan_dta2_upd"]
         $Plans["plan_dta2_upd"] = 
-             PLruby.prepare("update T_dta2 
-                             set ref1 = $3, ref2 = $4
-                             where ref1 = $1 and ref2 = $2",
-                            ["int4", "varchar", "int4", "varchar" ])
+             PL::Plan.new("update T_dta2 
+                           set ref1 = $3, ref2 = $4
+                           where ref1 = $1 and ref2 = $2",
+                          ["int4", "varchar", "int4", "varchar" ]).save
         $Plans["plan_dta2_del"] = 
-             PLruby.prepare("delete from T_dta2 
-                             where ref1 = $1 and ref2 = $2", 
-                            ["int4", "varchar"])
+             PL::Plan.new("delete from T_dta2 
+                           where ref1 = $1 and ref2 = $2", 
+                          ["int4", "varchar"]).save
     end
 
     old_ref_follow = false
     old_ref_delete = false
 
     case tg["op"]
-    when PLruby::UPDATE
+    when PL::UPDATE
         new["key2"] = new["key2"].upcase
         old_ref_follow = (new["key1"] != old["key1"]) || 
                          (new["key2"] != old["key2"])
-    when PLruby::DELETE
+    when PL::DELETE
         old_ref_delete = true
     end
 
@@ -145,7 +145,7 @@ create function trig_pkey2_after() returns trigger as '
         warn "deleted #{n} entries from T_dta2" if n != 0
     end
 
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 
@@ -172,11 +172,11 @@ create function check_primkey() returns trigger as '
             key = key.downcase
             query << "#{qual} #{key} = $#{idx}"
             qual = " and"
-            n = PLruby.exec("select T.typname as typname
+            n = PL.exec("select T.typname as typname
          from pg_type T, pg_attribute A, pg_class C
-         where C.relname  = ''#{PLruby.quote(keyrel)}''
+         where C.relname  = ''#{PL.quote(keyrel)}''
          and C.oid      = A.attrelid 
-         and A.attname  = ''#{PLruby.quote(key)}''
+         and A.attname  = ''#{PL.quote(key)}''
          and A.atttypid = T.oid", 1)
             if ! n
                 raise "table #{keyrel} doesn''t have a field named #{key}"
@@ -184,8 +184,8 @@ create function check_primkey() returns trigger as '
             typlist.push(n["typname"])
             idx += 1
         end
-        $Plans[plankey] = PLruby.prepare(query, typlist)
-        $Plans[planrel] = PLruby.exec("select relname from pg_class
+        $Plans[plankey] = PL::Plan.new(query, typlist).save
+        $Plans[planrel] = PL.exec("select relname from pg_class
                                        where oid = ''#{tg[''relid'']}''::oid", 1)
     end
     values = []
@@ -194,7 +194,7 @@ create function check_primkey() returns trigger as '
     if ! n
         raise "key for #{$Plans[planrel][''relname'']} not in #{keyrel}"
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 

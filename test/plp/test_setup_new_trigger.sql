@@ -98,14 +98,14 @@ create unique index PHone_name on PHone using btree (slotname varchar_ops);
 -- ************************************************************
 create function tg_room_au() returns trigger as '
     if !$Plans[tg["name"]]
-       $Plans[tg["name"]] = PLruby.prepare("update WSlot set roomno = $1
+       $Plans[tg["name"]] = PL::Plan.new("update WSlot set roomno = $1
                                               where roomno = $2",
-                                              ["varchar", "varchar"])
+                                              ["varchar", "varchar"]).save
     end
     if new["roomno"] != old["roomno"]
         $Plans[tg["name"]].exec(new["roomno"], old["roomno"])
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_room_au after update
@@ -118,11 +118,12 @@ create trigger tg_room_au after update
 -- ************************************************************
 create function tg_room_ad() returns trigger as '
     if ! $Plans.key?(tg["name"])
-        $Plans[tg["name"]] = PLruby.prepare("delete from WSlot 
-                                               where roomno = $1", ["varchar"])
+        $Plans[tg["name"]] = PL::Plan.new("delete from WSlot 
+                                               where roomno = $1", 
+                                          ["varchar"]).save
     end
     $Plans[tg["name"]].exec([old["roomno"]])
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_room_ad after delete
@@ -136,14 +137,14 @@ create trigger tg_room_ad after delete
 create function tg_wslot_biu() returns trigger as '
     if !$Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
-             PLruby.prepare("select count(*) as cnt from Room 
-                             where roomno = $1", ["varchar"])
+             PL::Plan.new("select count(*) as cnt from Room 
+                             where roomno = $1", ["varchar"]).save
     end
     n = $Plans[tg["name"]].exec([new["roomno"]], 1)
     if ! n["cnt"]
         raise "Room #{new[''roomno'']} does not exist"
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_wslot_biu before insert or update
@@ -157,13 +158,13 @@ create trigger tg_wslot_biu before insert or update
 create function tg_pfield_au() returns trigger as '
     if !$Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
-            PLruby.prepare("update PSlot set pfname = $1
-                            where pfname = $2", ["text", "text"]);
+            PL::Plan.new("update PSlot set pfname = $1
+                            where pfname = $2", ["text", "text"]).save
     end
     if new["name"] != old["name"]
         $Plans[tg["name"]].exec([new["name"], old["name"]])
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_pfield_au after update
@@ -176,11 +177,12 @@ create trigger tg_pfield_au after update
 -- ************************************************************
 create function tg_pfield_ad() returns trigger as '
     if ! $Plans.key?(tg["name"])
-        $Plans[tg["name"]] = PLruby.prepare("delete from PSlot 
-                                             where pfname = $1", ["text"])
+        $Plans[tg["name"]] = PL::Plan.new("delete from PSlot 
+                                             where pfname = $1", 
+                                          ["text"]).save
     end
     $Plans[tg["name"]].exec([old["name"]])
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_pfield_ad after delete
@@ -193,13 +195,14 @@ create trigger tg_pfield_ad after delete
 -- ************************************************************
 create function tg_pslot_biu() returns trigger as '
     if ! $Plans.key?(tg["name"])
-        $Plans[tg["name"]] = PLruby.prepare("select count(*) as cnt
-                                             from PField where name = $1", ["text"])
+        $Plans[tg["name"]] = PL::Plan.new("select count(*) as cnt
+                                             from PField where name = $1", 
+                                          ["text"]).save
     end
     if ! $Plans[tg["name"]].exec([new["name"]], 1)["cnt"]
         raise "Patchfield #{new[''name'']} does not exist"
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_pslot_biu before insert or update
@@ -212,13 +215,14 @@ create trigger tg_pslot_biu before insert or update
 -- ************************************************************
 create function tg_system_au() returns trigger as '
     if ! $Plans.key?(tg["name"])
-        $Plans[tg["name"]] = PLruby.prepare("update IFace set sysname = $1
-                                             where sysname = $2", ["text", "text"])
+        $Plans[tg["name"]] = PL::Plan.new("update IFace set sysname = $1
+                                             where sysname = $2", 
+                                          ["text", "text"]).save
     end
     if new["name"] != old["name"]
         $Plans[tg["name"]].exec([new["name"], old["name"]])
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_system_au after update
@@ -231,8 +235,8 @@ create trigger tg_system_au after update
 -- ************************************************************
 create function tg_iface_biu() returns trigger as '
     if ! $Plans.key?(tg["name"])
-        $Plans[tg["name"]] = PLruby.prepare("select count(*) as cnt from system
-                                             where name = $1", ["text"])
+        $Plans[tg["name"]] = PL::Plan.new("select count(*) as cnt from system
+                                             where name = $1", ["text"]).save
     end
     if ! $Plans[tg["name"]].exec([new["sysname"]], 1)["cnt"]
         raise "system #{new[''sysname'']} does not exist"
@@ -255,21 +259,22 @@ create trigger tg_iface_biu before insert or update
 -- ************************************************************
 create function tg_hub_a() returns trigger as '
     if ! $Plans.key?(tg["name"])
-        $Plans[tg["name"]] = PLruby.prepare("update HSlot set hubname = $1
-                                             where hubname = $2", ["varchar", "varchar"])
+        $Plans[tg["name"]] = PL::Plan.new("update HSlot set hubname = $1
+                                             where hubname = $2", 
+                                          ["varchar", "varchar"]).save
     end
     case tg["op"]
-    when PLruby::INSERT
+    when PL::INSERT
         hub_adjustslots(new["name"], 0, new["nslots"].to_i)
-    when PLruby::UPDATE
+    when PL::UPDATE
         if old["name"] != new["name"]
             $Plans[tg["name"]].exec([new["name"], old["name"]])
         end
         hub_adjustslots(new["name"], old["nslots"].to_i, new["nslots"].to_i)
-    when PLruby::DELETE
+    when PL::DELETE
         hub_adjustslots(old["name"], old["nslots"].to_i, 0)
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_hub_a after insert or update or delete
@@ -283,14 +288,14 @@ create trigger tg_hub_a after insert or update or delete
 create function tg_hslot_biu() returns trigger as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
-           PLruby.prepare("select * from Hub where name = $1", ["varchar"])
+           PL::Plan.new("select * from Hub where name = $1", ["varchar"]).save
     end
     hubrec = $Plans[tg["name"]].exec([new["hubname"]],1)
     if !hubrec || new["slotno"].to_i < 1 || 
        new["slotno"].to_i > hubrec["nslots"].to_i
         raise "no manual manipulation of HSlot"
     end
-    if (tg["og"] == PLruby::UPDATE) && (new["hubname"] != old["hubname"]) &&
+    if (tg["og"] == PL::UPDATE) && (new["hubname"] != old["hubname"]) &&
        $Plans[tg["name"]].exec([old["hubname"]], 1)
         raise "no manual manipulation of HSlot"
     end
@@ -313,11 +318,11 @@ create trigger tg_hslot_biu before insert or update
 create function tg_hslot_bd() returns trigger as '
     if ! $Plans.key?(tg["name"])
         $Plans[tg["name"]] = 
-           PLruby.prepare("select * from Hub where name = $1", ["varchar"])
+           PL::Plan.new("select * from Hub where name = $1", ["varchar"]).save
     end
     hubrec = $Plans[tg["name"]].exec([old["hubname"]],1)
     if !hubrec || old["slotno"].to_i > hubrec["nslots"].to_i
-        return PLruby::OK
+        return PL::OK
     end
     raise "no manual manipulation of HSlot"
 ' language 'plruby';
@@ -334,7 +339,7 @@ create function tg_chkslotname() returns trigger as '
     if new["slotname"][0, 2] != args[0]
         raise "slotname must begin with #{args[0]}"
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_chkslotname before insert
@@ -362,7 +367,7 @@ create function tg_chkslotlink() returns trigger as '
         new["slotlink"] = ""
         return new
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_chkslotlink before insert or update
@@ -390,7 +395,7 @@ create function tg_chkbacklink() returns trigger as '
         new["backlink"] = ""
         return new
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_chkbacklink before insert or update
@@ -410,20 +415,21 @@ create trigger tg_chkbacklink before insert or update
 create function tg_pslot_bu() returns trigger as '
     if ! $Plans.key?("pslot_bu_del")
         $Plans["pslot_bu_del"] =
-            PLruby.prepare("delete from PSlot where slotname = $1", ["varchar"])
+            PL::Plan.new("delete from PSlot where slotname = $1", 
+                         ["varchar"]).save
         $Plans["pslot_bu_ins"] =
-            PLruby.prepare("insert into PSlot
+            PL::Plan.new("insert into PSlot
                             (slotname, pfname, slotlink, backlink)
                             values ($1, $2, $3, $4)",
-                           ["varchar", "varchar", "varchar", "varchar"])
+                           ["varchar", "varchar", "varchar", "varchar"]).save
     end
     if new["slotname"] != old["slotname"]
        $Plans["pslot_bu_del"].exec([old["slotname"]])
        $Plans["pslot_bu_ins"].exec([new["slotname"], new["pfname"],
                                     new["slotlink"], new["backlink"]])
-       return PLruby::SKIP
+       return PL::SKIP
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_pslot_bu before update
@@ -437,20 +443,21 @@ create trigger tg_pslot_bu before update
 create function tg_wslot_bu() returns trigger as '
     if ! $Plans.key?("wslot_bu_del")
         $Plans["wslot_bu_del"] =
-            PLruby.prepare("delete from WSlot where slotname = $1", ["varchar"])
+            PL::Plan.new("delete from WSlot where slotname = $1", 
+                         ["varchar"]).save
         $Plans["wslot_bu_ins"] =
-            PLruby.prepare("insert into WSlot
+            PL::Plan.new("insert into WSlot
                             (slotname, roomno, slotlink, backlink)
                             values ($1, $2, $3, $4)",
-                           ["varchar", "int4", "varchar", "varchar"])
+                           ["varchar", "int4", "varchar", "varchar"]).save
     end
     if new["slotname"] != old["slotname"]
        $Plans["wslot_bu_del"].exec([old["slotname"]])
        $Plans["wslot_bu_ins"].exec([new["slotname"], new["roomno"],
                                     new["slotlink"], new["backlink"]])
-       return PLruby::SKIP
+       return PL::SKIP
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_wslot_bu before update
@@ -464,20 +471,21 @@ create trigger tg_wslot_bu before update
 create function tg_pline_bu() returns trigger as '
     if ! $Plans.key?("pline_bu_del")
         $Plans["pline_bu_del"] =
-            PLruby.prepare("delete from Pline where slotname = $1", ["varchar"])
+            PL::Plan.new("delete from Pline where slotname = $1", 
+                         ["varchar"]).save
         $Plans["pline_bu_ins"] =
-            PLruby.prepare("insert into Pline
+            PL::Plan.new("insert into Pline
                             (slotname, phonenumber, comment, backlink)
                             values ($1, $2, $3, $4)",
-                           ["varchar", "int4", "varchar", "varchar"])
+                           ["varchar", "int4", "varchar", "varchar"]).save
     end
     if new["slotname"] != old["slotname"]
        $Plans["pline_bu_del"].exec([old["slotname"]])
        $Plans["pline_bu_ins"].exec([new["slotname"], new["phonenumber"],
                                     new["comment"], new["backlink"]])
-       return PLruby::SKIP
+       return PL::SKIP
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_pline_bu before update
@@ -491,20 +499,21 @@ create trigger tg_pline_bu before update
 create function tg_iface_bu() returns trigger as '
     if ! $Plans.key?("iface_bu_del")
         $Plans["iface_bu_del"] =
-            PLruby.prepare("delete from Iface where slotname = $1", ["varchar"])
+            PL::Plan.new("delete from Iface where slotname = $1", 
+                         ["varchar"]).save
         $Plans["iface_bu_ins"] =
-            PLruby.prepare("insert into Iface
+            PL::Plan.new("insert into Iface
                             (slotname, sysname, ifname, slotlink)
                             values ($1, $2, $3, $4)",
-                           ["varchar", "varchar", "varchar", "varchar"])
+                           ["varchar", "varchar", "varchar", "varchar"]).save
     end
     if new["slotname"] != old["slotname"]
        $Plans["iface_bu_del"].exec([old["slotname"]])
        $Plans["iface_bu_ins"].exec([new["slotname"], new["sysname"],
                                     new["ifname"], new["slotlink"]])
-       return PLruby::SKIP
+       return PL::SKIP
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_iface_bu before update
@@ -518,20 +527,21 @@ create trigger tg_iface_bu before update
 create function tg_hslot_bu() returns trigger as '
     if ! $Plans.key?("hslot_bu_del")
         $Plans["hslot_bu_del"] =
-            PLruby.prepare("delete from Hslot where slotname = $1", ["varchar"])
+            PL::Plan.new("delete from Hslot where slotname = $1", 
+                         ["varchar"]).save
         $Plans["hslot_bu_ins"] =
-            PLruby.prepare("insert into Hslot
+            PL::Plan.new("insert into Hslot
                             (slotname, hubname, slotno, slotlink)
                             values ($1, $2, $3, $4)",
-                           ["varchar", "varchar", "int4", "varchar"])
+                           ["varchar", "varchar", "int4", "varchar"]).save
     end
     if new["slotname"] != old["slotname"]
        $Plans["hslot_bu_del"].exec([old["slotname"]])
        $Plans["hslot_bu_ins"].exec([new["slotname"], new["hubname"],
                                     new["slotno"], new["slotlink"]])
-       return PLruby::SKIP
+       return PL::SKIP
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 create trigger tg_hslot_bu before update
@@ -545,18 +555,19 @@ create trigger tg_hslot_bu before update
 create function tg_phone_bu() returns trigger as '
     if ! $Plans.key?("phone_bu_del")
         $Plans["phone_bu_del"] =
-            PLruby.prepare("delete from Phone where slotname = $1", ["varchar"])
+            PL::Plan.new("delete from Phone where slotname = $1", 
+                         ["varchar"]).save
         $Plans["phone_bu_ins"] =
-            PLruby.prepare("insert into Phone
+            PL::Plan.new("insert into Phone
                             (slotname, comment, slotlink)
                             values ($1, $2, $3)",
-                           ["varchar", "varchar", "varchar"])
+                           ["varchar", "varchar", "varchar"]).save
     end
     if new["slotname"] != old["slotname"]
        $Plans["phone_bu_del"].exec([old["slotname"]])
        $Plans["phone_bu_ins"].exec([new["slotname"], new["comment"],
                                     new["slotlink"]])
-       return PLruby::SKIP
+       return PL::SKIP
     end
 ' language 'plruby';
 
@@ -570,11 +581,11 @@ create trigger tg_phone_bu before update
 -- ************************************************************
 create function tg_backlink_a() returns trigger as '
     case tg["op"]
-    when PLruby::INSERT
+    when PL::INSERT
         if ! new["backlink"].empty?
             backlink_set(new["backlink"], new["slotname"])
         end
-    when PLruby::UPDATE
+    when PL::UPDATE
         if new["backlink"] != old["backlink"]
             if ! old["backlink"].empty?
                 backlink_unset(old["backlink"], old["slotname"])
@@ -587,12 +598,12 @@ create function tg_backlink_a() returns trigger as '
                 slotlink_set(new["backlink"], new["slotname"])
             end
         end
-    when PLruby::DELETE
+    when PL::DELETE
         if ! old["backlink"].empty?
             backlink_unset(old["backlink"], old["slotname"]);
         end
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 
@@ -611,11 +622,11 @@ create trigger tg_backlink_a after insert or update or delete
 -- ************************************************************
 create function tg_slotlink_a() returns trigger as '
     case tg["op"]
-    when PLruby::INSERT
+    when PL::INSERT
         if ! new["slotlink"].empty?
             slotlink_set(new["slotlink"], new["slotname"])
         end
-    when PLruby::UPDATE
+    when PL::UPDATE
         if new["slotlink"] != old["slotlink"]
             if ! old["slotlink"].empty?
                 stlotlink_unset(old["slotlink"], old["slotname"])
@@ -628,12 +639,12 @@ create function tg_slotlink_a() returns trigger as '
                 slotlink_set(new["slotlink"], new["slotname"])
             end
         end
-    when PLruby::DELETE
+    when PL::DELETE
         if ! old["slotlink"].empty?
             stlotlink_unset(old["slotlink"], old["slotname"])
         end
     end
-    PLruby::OK
+    PL::OK
 ' language 'plruby';
 
 
@@ -659,7 +670,8 @@ create function pslot_backlink_view(varchar)
 returns text as '
     if ! $Plans.key?("pslot_view")
         $Plans["pslot_view"] =
-          PLruby.prepare("select * from PSlot where slotname = $1", ["varchar"])
+          PL::Plan.new("select * from PSlot where slotname = $1", 
+                       ["varchar"]).save
     end
     rec = $Plans["pslot_view"].exec([args[0]], 1)
     return "" if ! rec
@@ -667,17 +679,17 @@ returns text as '
     bltype = rec["backlink"][0, 2]
     case bltype
     when "PL"
-        rec = PLruby.exec("select * from PLine where slotname = ''#{rec[''backlink'']}''", 1)
+        rec = PL.exec("select * from PLine where slotname = ''#{rec[''backlink'']}''", 1)
         retval = "Phone line #{rec[''phonenumber''].strip}"
         if ! rec["comment"].empty?
             retval << " (#{rec[''comment'']})"
         end
         return retval
     when "WS"
-        rec = PLruby.exec("select * from WSlot where slotname = ''#{rec[''backlink'']}''", 1)
+        rec = PL.exec("select * from WSlot where slotname = ''#{rec[''backlink'']}''", 1)
         retval = "#{rec[''slotname''].strip} in room "
         retval << rec["roomno"].strip + " -> "
-        rec = PLruby.exec("select wslot_slotlink_view(''#{rec[''slotname'']}''::varchar) as ws_result", 1)
+        rec = PL.exec("select wslot_slotlink_view(''#{rec[''slotname'']}''::varchar) as ws_result", 1)
         return retval + rec["ws_result"]
     end
     rec["backlink"]
@@ -691,7 +703,8 @@ create function pslot_slotlink_view(varchar)
 returns text as '
     if ! $Plans.key?("pslot_view")
         $Plans["pslot_view"] =
-          PLruby.prepare("select * from PSlot where slotname = $1", ["varchar"])
+          PL::Plan.new("select * from PSlot where slotname = $1", 
+                       ["varchar"]).save
     end
     rec = $Plans["pslot_view"].exec([args[0]], 1)
     return "" if ! rec
@@ -699,10 +712,10 @@ returns text as '
     case rec["slotlink"][0, 2]
     when "PS"
         retval = rec["slotlink"].strip + " -> "
-        rec = PLruby.exec("select pslot_backlink_view(''#{rec[''slotlink'']}''::varchar) as bac", 1)
+        rec = PL.exec("select pslot_backlink_view(''#{rec[''slotlink'']}''::varchar) as bac", 1)
         return retval + rec["bac"]
     when "HS"
-        comm = PLruby.exec("select comment from Hub H, HSlot HS
+        comm = PL.exec("select comment from Hub H, HSlot HS
                 where HS.slotname = ''#{rec[''slotlink'']}''
                             and H.name = HS.hubname", 1)
         retval = ""
@@ -710,7 +723,7 @@ returns text as '
             retval << comm["comment"]
         end
         retval << " slot "
-        comm = PLruby.exec("select slotno from HSlot
+        comm = PL.exec("select slotno from HSlot
                             where slotname = ''#{rec[''slotlink'']}''", 1)
         return retval + comm["slotno"]
     end
@@ -725,22 +738,23 @@ create function wslot_slotlink_view(varchar)
 returns text as '
     if ! $Plans.key?("wslot_view")
         $Plans["wslot_view"] =
-          PLruby.prepare("select * from WSlot where slotname = $1", ["varchar"])
+          PL::Plan.new("select * from WSlot where slotname = $1", 
+                       ["varchar"]).save
     end
     rec = $Plans["wslot_view"].exec([args[0]], 1)
     return "" if ! rec
     return "-" if rec["slotlink"].empty?
     case rec["slotlink"][0, 2]
     when "PH"
-        rec = PLruby.exec("select * from PHone where slotname = ''#{rec[''slotlink'']}''", 1)
+        rec = PL.exec("select * from PHone where slotname = ''#{rec[''slotlink'']}''", 1)
         retval = "Phone " + rec["slotname"].strip
         if ! rec["comment"].empty?
             retval << " (#{rec[''comment'']})"
         end
         return retval
     when "IF"
-        ifrow = PLruby.exec("select * from IFace where slotname = ''#{rec[''slotlink'']}''", 1)
-        syrow = PLruby.exec("select * from System where name = ''#{ifrow[''sysname'']}''", 1)
+        ifrow = PL.exec("select * from IFace where slotname = ''#{rec[''slotlink'']}''", 1)
+        syrow = PL.exec("select * from System where name = ''#{ifrow[''sysname'']}''", 1)
         retval = syrow["name"] + " IF " + ifrow["ifname"]
         if ! syrow["comment"].empty?
             retval << " (#{syrow[''comment'']})"
@@ -779,13 +793,13 @@ insert into plruby_singleton_methods values
 ('hub_adjustslots', 'name, oldsl, newsl', '
     if ! $Plans.key?("hub_adjust_del")
         $Plans["hub_adjust_del"] = 
-            PLruby.prepare("delete from HSlot 
+            PL::Plan.new("delete from HSlot 
                             where hubname = $1 and slotno > $2",
-                           ["varchar", "int4"])
+                           ["varchar", "int4"]).save
         $Plans["hub_adjust_ins"] =
-            PLruby.prepare("insert into HSlot (slotname, hubname, slotno, slotlink)
+            PL::Plan.new("insert into HSlot (slotname, hubname, slotno, slotlink)
                             values ($1, $2, $3, $4)",
-                            ["varchar", "varchar", "int4", "varchar"])
+                            ["varchar", "varchar", "int4", "varchar"]).save
     end
     return if oldsl == newsl
     if newsl < oldsl
@@ -817,12 +831,12 @@ insert into plruby_singleton_methods values
           else
               raise "illegal backlink beginning with #{mytype}"
           end
-    rec = PLruby.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
+    rec = PL.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
     if ! rec
         raise "#{myname} does not exist in #{rel}"
     end
     if rec["backlink"] != blname
-       PLruby.exec("update #{rel} set backlink = ''#{blname}''
+       PL.exec("update #{rel} set backlink = ''#{blname}''
                     where slotname = ''#{myname}''")
     end
 ', ' Support function to set the opponents backlink field
@@ -840,10 +854,10 @@ insert into plruby_singleton_methods values
           else
               raise "illegal backlink beginning with #{myname[0, 2]}"
           end
-    rec = PLruby.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
+    rec = PL.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
     return if ! rec
     if rec["backlink"] == blname
-       PLruby.exec("update #{rel} set backlink = ''''
+       PL.exec("update #{rel} set backlink = ''''
                     where slotname = ''#{myname}''")
     end
 ', ' Support function to clear out the backlink field if
@@ -879,12 +893,12 @@ insert into plruby_singleton_methods values
           else
               raise "illegal slotlink beginning with <#{mytype}>"
           end
-    rec = PLruby.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
+    rec = PL.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
     if ! rec
         raise "#{myname} does not exists in #{rel}"
     end
     if rec["slotlink"] != blname
-       PLruby.exec("update #{rel} set slotlink = ''#{blname}''
+       PL.exec("update #{rel} set slotlink = ''#{blname}''
                     where slotname = ''#{myname}''")
     end
 ', ' Support function to set the opponents slotlink field
@@ -906,10 +920,10 @@ insert into plruby_singleton_methods values
           else
               raise "illegal slotlink beginning with #{myname[0, 2]}"
           end
-    rec = PLruby.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
+    rec = PL.exec("select * from #{rel} where slotname = ''#{myname}''", 1)
     return if ! rec
     if rec["slotlink"] == blname
-       PLruby.exec("update #{rel} set slotlink = ''''
+       PL.exec("update #{rel} set slotlink = ''''
                     where slotname = ''#{myname}''")
     end
 ', ' Support function to clear out the slotlink field if

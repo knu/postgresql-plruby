@@ -1,6 +1,6 @@
  
 create function plruby_call_handler() returns language_handler
-    as '/h/nblg/ts/ruby/perso/plruby-0.3.2/plruby.so'
+    as '/h/nblg/ts/ruby/perso/plruby-0.3.3/plruby.so'
    language 'C';
  
 create trusted procedural language 'plruby'

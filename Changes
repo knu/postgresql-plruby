@@ -32,3 +32,10 @@
 --- 0.3.2
 
  functions returning set (PostgreSQL >= 7.3)
+
+--- 0.3.3
+
+ corrected timeout
+ corrected bug with GC
+ new classes PL::Plan, PL::Cursor
+

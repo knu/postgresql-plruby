@@ -63,10 +63,10 @@ For example to concatenate 2 rows create the function
 
    plruby_test=# CREATE FUNCTION tu(varchar) RETURNS setof record
    plruby_test-# AS '
-   plruby_test'#    size = PLruby.column_name(args[0]).size
+   plruby_test'#    size = PL.column_name(args[0]).size
    plruby_test'#    res = nil
-   plruby_test'#    PLruby.prepare("select * from #{args[0]}", 
-   plruby_test'#                   "block" => 50, "tmp" => true).each do |row|
+   plruby_test'#    PL::Plan.new("select * from #{args[0]}", 
+   plruby_test'#                 "block" => 50).each do |row|
    plruby_test'#       if res.nil?
    plruby_test'#          res = row.values
    plruby_test'#       else
@@ -133,23 +133,23 @@ called with 4 arguments :
     An array containing the name of the tables field.
 
   :when
-     The constant ((%PLruby::BEFORE%)), ((%PLruby::AFTER%)) or
-     ((%PLruby::UNKNOWN%)) depending on the event of the trigger call.
+     The constant ((%PL::BEFORE%)), ((%PL::AFTER%)) or
+     ((%PL::UNKNOWN%)) depending on the event of the trigger call.
 
   :level
-    The constant ((%PLruby::ROW%)) or ((%PLruby::STATEMENT%))
+    The constant ((%PL::ROW%)) or ((%PL::STATEMENT%))
     depending on the event of the trigger call.
 
   :op
-    The constant ((%PLruby::INSERT%)), ((%PLruby::UPDATE%)) or 
-    ((%PLruby::DELETE%)) depending on the event of the trigger call.
+    The constant ((%PL::INSERT%)), ((%PL::UPDATE%)) or 
+    ((%PL::DELETE%)) depending on the event of the trigger call.
 
 
 The return value from a trigger procedure is one of the constant
-((%PLruby::OK%)) or ((%PLruby::SKIP%)), or an hash. If the
-return value is ((%PLruby::OK%)), the normal operation
+((%PL::OK%)) or ((%PL::SKIP%)), or an hash. If the
+return value is ((%PL::OK%)), the normal operation
 (INSERT/UPDATE/DELETE) that fired this trigger will take
-place. Obviously, ((%PLruby::SKIP%)) tells the trigger manager to
+place. Obviously, ((%PL::SKIP%)) tells the trigger manager to
 silently suppress the operation. The hash tells
 PL/Ruby to return a modified row to the trigger manager that will be
 inserted instead of the one given in ((%new%)) (INSERT/UPDATE
@@ -163,12 +163,12 @@ then incremented on every update operation :
 
     CREATE FUNCTION trigfunc_modcount() RETURNS OPAQUE AS '
         case tg["op"]
-        when PLruby::INSERT
+        when PL::INSERT
             new[args[0]] = 0
-          when PLruby::UPDATE
+          when PL::UPDATE
               new[args[0]] = old[args[0]].to_i + 1
           else
-              return PLruby::OK
+              return PL::OK
           end
           new
       ' LANGUAGE 'plruby';
@@ -187,25 +187,25 @@ plan
    create function trig_pkey2_after() returns opaque as '
       if ! $Plans.key?("plan_dta2_upd")
           $Plans["plan_dta2_upd"] = 
-               PLruby.prepare("update T_dta2 
-                               set ref1 = $3, ref2 = $4
-                               where ref1 = $1 and ref2 = $2",
-                              ["int4", "varchar", "int4", "varchar" ])
+               PL::Plan.new("update T_dta2 
+                             set ref1 = $3, ref2 = $4
+                             where ref1 = $1 and ref2 = $2",
+                            ["int4", "varchar", "int4", "varchar" ]).save
           $Plans["plan_dta2_del"] = 
-               PLruby.prepare("delete from T_dta2 
-                               where ref1 = $1 and ref2 = $2", 
-                              ["int4", "varchar"])
+               PL::Plan.new("delete from T_dta2 
+                             where ref1 = $1 and ref2 = $2", 
+                            ["int4", "varchar"]).save
       end
 
       old_ref_follow = false
       old_ref_delete = false
 
       case tg["op"]
-      when PLruby::UPDATE
+      when PL::UPDATE
           new["key2"] = new["key2"].upcase
           old_ref_follow = (new["key1"] != old["key1"]) || 
                            (new["key2"] != old["key2"])
-      when PLruby::DELETE
+      when PL::DELETE
           old_ref_delete = true
       end
 
@@ -220,7 +220,7 @@ plan
           warn "deleted #{n} entries from T_dta2" if n != 0
       end
 
-      PLruby::OK
+      PL::OK
    ' language 'plruby';
 
    create trigger pkey2_after after update or delete on T_pkey2
@@ -304,13 +304,20 @@ The previous example can be written (you have a more complete example in ???)
 --- $Plans (hash, tainted)
     can be used to store prepared plans.
  
-=== module PLruby
+=== module PL
 
 --- column_name(table)
     Return the name of the columns for the table
 
 --- column_type(table)
     return the type of the columns for the table
+
+--- quote(string)
+ 
+    Duplicates all occurences of single quote and backslash
+    characters. It should be used when variables are used in the query
+    string given to spi_exec or spi_prepare (not for the value list on
+    execp).
 
 --- result_name
     Return the name of the columns for a function returning a SETOF
@@ -321,12 +328,8 @@ The previous example can be written (you have a more complete example in ???)
 --- result_size
     Return the number of columns  for a function returning a SETOF
 
---- quote(string)
- 
-    Duplicates all occurences of single quote and backslash
-    characters. It should be used when variables are used in the query
-    string given to spi_exec or spi_prepare (not for the value list on
-    execp).
+--- result_description
+    Return the table description given to a function returning a SETOF
 
 --- exec(string [, count [, type]])
 --- spi_exec(string [, count [, type]])
@@ -368,15 +371,15 @@ The previous example can be written (you have a more complete example in ???)
             
           create function toto() returns bool as '
              warn("=======")
-             PLruby.exec("select * from T_pkey1", 1, "hash") do |a|
+             PL.exec("select * from T_pkey1", 1, "hash") do |a|
                 warn(a.inspect)
              end
              warn("=======")
-             PLruby.exec("select * from T_pkey1", 1, "array") do |a|
+             PL.exec("select * from T_pkey1", 1, "array") do |a|
                 warn(a.inspect)
              end
              warn("=======")
-             PLruby.exec("select * from T_pkey1", 1) do |a|
+             PL.exec("select * from T_pkey1", 1) do |a|
                 warn(a.inspect)
              end
              warn("=======")
@@ -414,7 +417,7 @@ The previous example can be written (you have a more complete example in ???)
     
     
            CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
-              PLruby.exec("select * from pg_class", 1) { |y, z|
+              PL.exec("select * from pg_class", 1) { |y, z|
                  warn "name = #{y} -- value = #{z}"
              }
              return 1
@@ -430,60 +433,85 @@ The previous example can be written (you have a more complete example in ???)
 --- spi_prepare(string[, types])
 --- prepare(string, "types" => types, "count" => count, "output" => type, "tmp" => true)
 
+    Deprecated : See ((%PL::Plan::new%)) and ((%PL::Plan#save%))
+
     Prepares AND SAVES a query plan for later execution. It is a bit
     different from the C level SPI_prepare in that the plan is
     automatically copied to the toplevel memory context.
 
-    To create a plan without saving it, give it the option
-    ((%'tmp' => true%))
-
     If the query references arguments, the type names must be given as a
     Ruby array of strings. The return value from prepare is a
-    ((%PLrubyplan%)) object to be used in subsequent calls to
-    ((%PLrubyplan#exec%)).
+    ((%PL::Plan%)) object to be used in subsequent calls to
+    ((%PL::Plan#exec%)).
 
     If the hash given has the keys ((%count%)), ((%output%)) these values
     will be given to the subsequent calls to ((%each%))
 
-=== class PLrubyplan
+=== class PL::Plan
+
+--- initialize(string, "types" => types, "count" => count, "output" => type, "save" => false)
+
+    Prepares a query plan for later execution.
+
+    If the query references arguments, the type names must be given as a
+    Ruby array of strings.
+
+    If the hash given has the keys ((%output%)), ((%count%)) these values
+    will be given to the subsequent calls to ((%each%))
+
+    If ((%"save"%)) as a true value, the plan will be saved 
+
 
 --- exec(values, [count [, type]])
 --- execp(values, [count [, type]])
 --- exec("values" => values, "count" => count, "output" => type)
 --- execp("values" => values, "count" => count, "output" => type)
 
-    Execute a prepared plan from ((%PLruby#prepare%)) with variable
+    Execute a prepared plan from ((%PL::PLan::new%)) with variable
     substitution. The optional ((%count%)) value tells
-    ((%PLrubyplan#exec%)) the maximum number of rows to be processed by the
+    ((%PL::Plan#exec%)) the maximum number of rows to be processed by the
     query.
 
-    If there was a typelist given to ((%PLruby#prepare%)), an array
+    If there was a typelist given to ((%PL::Plan::new%)), an array
     of ((%values%)) of exactly the same length must be given to
-    ((%PLrubyplan#exec%)) as first argument. If the type list on
-    ((%PLruby#prepare%)) was empty, this argument must be omitted.
+    ((%PL::Plan#exec%)) as first argument. If the type list on
+    ((%PL::Plan::new%)) was empty, this argument must be omitted.
 
     If the query is a SELECT statement, the same as described for
-    ((%PLruby#exec%)) happens for the loop-body and the variables for
+    ((%PL#exec%)) happens for the loop-body and the variables for
     the fields selected.
 
     If type is specified it can take the values
        * "array" return an array with the element ["name", "value", "type", "len", "typeid"]
-       *  "hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}
-       * "values" return an array with all values
+       * "hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}
+       * "value" return an array with all values
 
     Here's an example for a PL/Ruby function using a prepared plan : 
 
         CREATE FUNCTION t1_count(int4, int4) RETURNS int4 AS '
             if ! $Plans.key?("plan")
                 # prepare the saved plan on the first call
-                $Plans["plan"] = PLruby.prepare("SELECT count(*) AS cnt FROM t1 
-                                                  WHERE num >= $1 AND num <= $2",
-                                                 ["int4", "int4"])
+                $Plans["plan"] = PL::Plan.new("SELECT count(*) AS cnt FROM t1 
+                                               WHERE num >= $1 AND num <= $2",
+                                              ["int4", "int4"]).save
             end
             n = $Plans["plan"].exec([args[0], args[1]], 1)
             n["cnt"]
         ' LANGUAGE 'plruby';
+
+--- cursor(name = nil, "values" => values, "output" => type)
  
+    Create a new object PL::Cursor
+
+    If output is specified it can take the values
+       * "array" return an array with the element ["name", "value", "type", "len", "typeid"]
+       *  "hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}
+       * "value" return an array with all values
+
+    If there was a typelist given to ((%PL::Plan::new%)), an array
+    of ((%values%)) of exactly the same length must be given to
+    ((%PL::Plan#cursor%))
+
 --- each(values, [count [, type ]]) { ... }
 --- fetch(values, [count [, type ]]) { ... }
 --- each("values" => values, "count" => count, "output" => type) { ... }
@@ -494,7 +522,7 @@ The previous example can be written (you have a more complete example in ???)
     Can be used only with a block and a SELECT statement
     
         create function toto() returns bool as '
-               plan = PLruby.prepare("select * from T_pkey1")
+               plan = PL::Plan.new("select * from T_pkey1")
                warn "=====> ALL"
                plan.each do |x|
                   warn(x.inspect)
@@ -529,5 +557,43 @@ The previous example can be written (you have a more complete example in ???)
         (1 row)
         
         plruby_test=# 
+
+--- release
+
+    Release a query plan
+
+--- save
+  
+    Save a query plan for later execution. The plan is copied to the
+    toplevel memory context.
+
+=== class PL::Cursor
+
+--- close
+
+    Closes a cursor
+
+--- each {|row| ... }
+ 
+    Iterate over all rows (forward)
+
+--- fetch(count = 1)
+--- row(count = 1)
+
+    Fetches some rows from a cursor
+
+    if count > 0 fetch forward else backward
+
+--- move(count)
+
+    Move a cursor : if count > 0 move forward else backward
+
+--- reverse_each {|row| ... }
+
+    Iterate over all rows (backward)
+
+--- rewind
+
+    Positions the cursor at the beginning of the table
 
 =end
