@@ -19,14 +19,17 @@ extern VALUE plruby_s_new _((int, VALUE *, VALUE));
 extern VALUE plruby_clone _((VALUE));
 #endif
 
+extern Oid plruby_datum_oid _((VALUE, int *));
+extern VALUE plruby_datum_set _((VALUE, Datum));
+extern VALUE plruby_datum_get _((VALUE, Oid *));
+
 static VALUE
-pl_fixnum_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_fixnum_s_datum(VALUE obj, VALUE a)
 {
     Oid typoid;
     Datum value;
 
-    typoid = NUM2INT(b);
-    value = (Datum)RDATA(a)->data;
+    value = plruby_datum_get(a, &typoid);
     switch (typoid) {
     case OIDOID:
 	return INT2NUM(DatumGetObjectId(value));
@@ -41,21 +44,20 @@ pl_fixnum_s_datum(VALUE obj, VALUE a, VALUE b)
 	return INT2NUM(DatumGetInt64(value));
 	break;
     default:
-	raise(rb_eArgError, "unknown OID type %d", typoid);
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
     }
     return Qnil;
 }
 
 static VALUE
-pl_fixnum_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_fixnum_to_datum(VALUE obj, VALUE a)
 {
     int typoid, typlen;
     int value;
     Datum d;
 
     value = NUM2INT(obj);
-    typoid = NUM2INT(a);
-    typlen = NUM2INT(b);
+    typoid = plruby_datum_oid(a, &typlen);
     switch (typoid) {
     case OIDOID:
     case INT2OID:
@@ -70,17 +72,16 @@ pl_fixnum_to_datum(VALUE obj, VALUE a, VALUE b)
     else {
 	d = Int32GetDatum(value);
     }
-    return Data_Wrap_Struct(rb_cData, 0, 0, (void *)d);
+    return plruby_datum_set(a, d);
 }
 
 static VALUE
-pl_float_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_float_s_datum(VALUE obj, VALUE a)
 {
     Oid typoid;
     Datum value;
 
-    typoid = NUM2INT(b);
-    value = (Datum)RDATA(a)->data;
+    value = plruby_datum_get(a, &typoid);
     switch (typoid) {
     case FLOAT4OID:
 	return rb_float_new(DatumGetFloat4(value));
@@ -95,20 +96,19 @@ pl_float_s_datum(VALUE obj, VALUE a, VALUE b)
 	return rb_float_new(DatumGetFloat8(DFC1(numeric_float8, value)));
 	break;
     default:
-	raise(rb_eArgError, "unknown OID type %d", typoid);
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
     }
     return Qnil;
 }
 
 static VALUE
-pl_float_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_float_to_datum(VALUE obj, VALUE a)
 {
     int typoid, typlen;
     double value;
     Datum d;
 
-    typoid = NUM2INT(a);
-    typlen = NUM2INT(b);
+    typoid = plruby_datum_oid(a, &typlen);
     switch (typoid) {
     case FLOAT4OID:
     case FLOAT8OID:
@@ -124,18 +124,17 @@ pl_float_to_datum(VALUE obj, VALUE a, VALUE b)
     else {
 	d = Float8GetDatum((float8)RFLOAT(obj)->value);
     }
-    return Data_Wrap_Struct(rb_cData, 0, 0, (void *)d);
+    return plruby_datum_set(a, d);
 }
 
 static VALUE
-pl_time_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_time_s_datum(VALUE obj, VALUE a)
 {
     Oid typoid;
     Datum value;
     VALUE result = Qnil;
 
-    typoid = NUM2INT(b);
-    value = (Datum)RDATA(a)->data;
+    value = plruby_datum_get(a, &typoid);
     switch (typoid) {
     case TIMESTAMPOID:
 	result = rb_dbl2big(DatumGetTimestamp(value));
@@ -170,7 +169,7 @@ pl_time_s_datum(VALUE obj, VALUE a, VALUE b)
 	result = rb_funcall(rb_cTime, rb_intern("at"), 1, result);
 	break;
     default:
-	raise(rb_eArgError, "unknown OID type %d", typoid);
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
     }
     return result;
 }
@@ -237,12 +236,16 @@ pl_tint_s_from_string(VALUE obj, VALUE str)
 }
 
 static VALUE
-pl_tint_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_tint_s_datum(VALUE obj, VALUE a)
 {
     TimeIntervalData *interval;
+    Oid typoid;
     VALUE tmp, res;
 
-    Data_Get_Struct(a, TimeIntervalData, interval);
+    interval = (TimeIntervalData *)plruby_datum_get(a, &typoid);
+    if (typoid != TINTERVALOID) {
+        rb_raise(rb_eArgError, "invalid argument");
+    }
     res = rb_ary_new2(2);
     tmp = rb_dbl2big(DatumGetTimestamp(DFC1(abstime_timestamp, 
 					    interval->data[0])));
@@ -366,11 +369,11 @@ pl_tint_init_copy(VALUE copy, VALUE orig)
 
 void Init_plruby_basic()
 {
-    rb_define_singleton_method(rb_cFixnum, "from_datum", pl_fixnum_s_datum, 2);
-    rb_define_method(rb_cFixnum, "to_datum", pl_fixnum_to_datum, 2);
-    rb_define_singleton_method(rb_cFloat, "from_datum", pl_float_s_datum, 2);
-    rb_define_method(rb_cFloat, "to_datum", pl_float_to_datum, 2);
-    rb_define_singleton_method(rb_cTime, "from_datum", pl_time_s_datum, 2);
+    rb_define_singleton_method(rb_cFixnum, "from_datum", pl_fixnum_s_datum, 1);
+    rb_define_method(rb_cFixnum, "to_datum", pl_fixnum_to_datum, 1);
+    rb_define_singleton_method(rb_cFloat, "from_datum", pl_float_s_datum, 1);
+    rb_define_method(rb_cFloat, "to_datum", pl_float_to_datum, 1);
+    rb_define_singleton_method(rb_cTime, "from_datum", pl_time_s_datum, 1);
     pl_cTinter = rb_define_class("Tinterval", rb_cObject);
 #if HAVE_RB_DEFINE_ALLOC_FUNC
     rb_define_alloc_func(pl_cTinter, pl_tint_s_alloc);
@@ -379,7 +382,7 @@ void Init_plruby_basic()
 #endif
     rb_define_singleton_method(pl_cTinter, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cTinter, "from_string", pl_tint_s_from_string, 1);
-    rb_define_singleton_method(pl_cTinter, "from_datum", pl_tint_s_datum, 2);
+    rb_define_singleton_method(pl_cTinter, "from_datum", pl_tint_s_datum, 1);
     rb_define_method(pl_cTinter, "initialize", pl_tint_init, 2);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cTinter, "clone", plruby_clone, 0);

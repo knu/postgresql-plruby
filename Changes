@@ -75,3 +75,7 @@
 
  --enable-shared
  array for trigger
+
+--- 0.4.1
+
+ add bitstring

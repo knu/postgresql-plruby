@@ -1,7 +1,7 @@
 {
     VALUE pl_cTint;
 
-#if SAFE_LEVEL >= 3
+#if MAIN_SAFE_LEVEL >= 3 && !defined(PLRUBY_ENABLE_AUTOLOAD)
     {
 	extern void Init_plruby_basic();
 
@@ -11,7 +11,11 @@
     {
         extern void plruby_require(char *);
 
+#ifdef PLRUBY_ENABLE_AUTOLOAD
+        plruby_require("plruby_basic");
+#else
         plruby_require("plruby/plruby_basic");
+#endif
     }
 #endif
 

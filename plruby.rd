@@ -11,6 +11,7 @@
   * ((<module PL>)) : general module
   * ((<class PL::Plan>)) : class for prepared plans
   * ((<class PL::Cursor>)) : class for cursors
+  * ((<class BitString>)) : only if compiled with --enable-bitstring
   * ((<class Tinterval>)) : only if compiled with --enable-conversion
   * ((<class NetAddr>)) : only if compiled with --enable-network
   * ((<class MacAddr>)) : only if compiled with --enable-network
@@ -429,6 +430,11 @@ made
                   INTERVALOID            Time
                   TINTERVALOID           Tinterval (new Ruby class)
 
+The following conversions are added when compiled with --enable-bitstring
+
+                  BITOID                 BitString (new Ruby class)
+                  VARBITOID              BitString (new Ruby class)
+
 The following conversions are added when compiled with --enable-network
 
                   INETOID                NetAddr (new Ruby class)
@@ -439,7 +445,6 @@ The following conversions are added when compiled with --enable-geometry
 
                   POINTOID               Point   (new Ruby class)
                   LSEGOID                Segment (new Ruby class)
-                  LINEOID                Line    (new Ruby class)
                   BOXOID                 Box     (new Ruby class)
                   PATHOID                Path    (new Ruby class)
                   POLYGONOID             Polygon (new Ruby class)
@@ -774,6 +779,129 @@ all others OID are converted to a String object
 --- rewind
 
     Positions the cursor at the beginning of the table
+
+=== class BitString
+
+The class BitString implement the PostgreSQL type ((|bit|))
+and ((|bit varying|))
+
+only available if PL/Ruby was compiled with ((|--enable-bitstring|))
+
+The modules Comparable and Enumerable are included
+
+--- from_string(string, length = strlen(string))
+
+    Convert a ((|String|)) to a ((|BitString|))
+
+--- <=>(other)
+
+    comparison function for 2 ((|BitString|)) objects
+   
+    All bits are considered and additional zero bits may make one string
+    smaller/larger than the other, even if their zero-padded values would
+    be the same.
+
+--- +(other)
+
+    Concatenate ((|self|)) and ((|other|))
+
+--- &(other)
+
+    AND operator
+
+--- |(other)
+
+    OR operator
+
+--- ^(other)
+
+    XOR operator
+
+--- ~
+
+    NOT operator
+
+--- <<(lshft)
+
+    LEFT SHIFT operator
+
+--- >>(rshft)
+
+    RIGHT SHIFT operator
+
+--- [](*args)
+
+    Element reference with the same syntax that for a ((|String|)) object
+   
+    Return a ((|BitString|)) or a ((|Fixnum|)) 0, 1
+   
+      bitstring[fixnum]
+      bitstring[fixnum, fixnum]
+      bitstring[range]
+      bitstring[regexp]
+      bitstring[regexp, fixnum]
+      bitstring[string]
+      bitstring[other_bitstring]
+
+--- []=(*args)
+
+    Element assignment with the same syntax that for a ((|String|)) object
+   
+      bitstring[fixnum] = fixnum
+      bitstring[fixnum] = string_or_bitstring
+      bitstring[fixnum, fixnum] = string_or_bitstring
+      bitstring[range] = string_or_bitstring
+      bitstring[regexp] = string_or_bitstring
+      bitstring[regexp, fixnum] = string_or_bitstring
+      bitstring[other_str] = string_or_bitstring
+
+--- concat(other)
+
+    append ((|other|)) to ((|self|))
+
+--- each
+
+    iterate other each bit
+
+--- include?(other)
+
+    return ((|true|)) if ((|other|)) is included in ((|self|))
+
+--- index(other)
+
+    return the position of ((|other|)) in ((|self|))
+   
+    return ((|nil|)) if ((|other|)) is not included in ((|self|))
+
+--- initialize(init, nbits = -1)
+
+    create a new ((|BitString|)) object with ((|nbits|)) bits
+   
+    ((|init|)) can be a ((|Fixnum|)) or a ((|String|))
+   
+    For a ((|String|)) the first character can be 'x', 'X' for and
+    hexadecimal representation, or 'b', 'B' for a binary representation. 
+    The default is a binary representation
+
+--- length
+
+    return the length of ((|self|)) in bits
+
+--- octet_length
+
+    return the length of ((|self|)) in octets
+
+--- push(other)
+
+    append ((|other|)) to ((|self|))
+
+--- to_i
+
+    convert ((|self|)) to a ((|Fixnum|))
+
+--- to_s
+
+    convert ((|self|)) to a ((|String|))
 
 === class NetAddr
 
@@ -1141,7 +1269,7 @@ The module Comparable is included
 --- on?(other)
      return true if ((|self|)) is on ((|other|))
      
-     ((|other|)) can be Point, Line, Segment, Box or Path object
+     ((|other|)) can be Point, Segment, Box or Path object
 
 --- right?(other)
      return true if ((|self|)) is at the right of ((|other|)),

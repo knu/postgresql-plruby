@@ -4,10 +4,6 @@
 system  that enable the Ruby language to create functions and trigger
 procedures
 
- This version can be compiled for the new interface of fmgr
-(Postgresql > 7.0.2 : postgresql.snapshot.tar.gz). The language must
-be 'newC' in this case
- 
 
 * Prerequisite
 
@@ -45,12 +41,26 @@ be 'newC' in this case
     false, Time, Tinterval or String depending of the internal type.
 
   --enable-geometry
-    add the classes Point, Segment, Line, Box, Path, Polygon, Circle to
+    add the classes Point, Segment, Box, Path, Polygon, Circle to
     plruby (--enable-conversion is automatically added)
 
   --enable-network
     add the classes NetAddr, MacAddr to plruby  (--enable-conversion
     is automatically added)
+
+  --enable-bitstring
+    add the class BitString to plruby  (--enable-conversion is automatically
+    added)
+
+  --enable-all-conversions
+    enable all conversions (...)
+
+  --enable-autoload
+    ruby will use autoload for the classes Point, Segment, Box, Path, Polygon,
+    Circle, NetAddr, MacAddr, BitString even when it's compiled with
+    $SAFE >= 4
+
+    **WARNING** work only with ruby >= 1.8.1
 
   --with_suffix=<suffix to add>
 

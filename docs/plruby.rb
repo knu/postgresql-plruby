@@ -54,6 +54,8 @@
 #
 # * PLRuby::PL::Cursor
 #
+# * PLRuby::BitString (only with <em>--enable-bitstring</em>)
+#
 # * PLRuby::Tinterval (only with <em>--enable-conversion</em>)
 #
 # * PLRuby::NetAddr (only with <em>--enable-network</em>)
@@ -532,6 +534,12 @@ end
 #                  TINTERVALOID           Tinterval (new Ruby class)
 #
 #The following conversions are added when compiled with 
+#<em>--enable-bitstring</em>
+#
+#                  BITOID                 BitString (new Ruby class)
+#                  VARBITOID              BitString (new Ruby class)
+#
+#The following conversions are added when compiled with 
 #<em>--enable-network</em>
 #
 #                  INETOID                NetAddr (new Ruby class)
@@ -932,6 +940,134 @@ class PLRuby::PL::Cursor
    def  reverse_each 
       yield row
    end
+end
+
+#
+# The class PLRuby::BitString implement the PostgreSQL type <em>bit</em>
+# and <em>bit varying</em>
+#
+# only available if PL/Ruby was compiled with <em>--enable-bitstring</em>
+class PLRuby::BitString
+   include Comparable
+   include Enumerable
+
+   class << self
+
+      # Convert a <em>String</em> to a <em>BitString</em>
+      def from_string(string, length = strlen(string))
+      end
+   end
+
+   # comparison function for 2 <em>BitString</em> objects
+   #
+   # All bits are considered and additional zero bits may make one string
+   # smaller/larger than the other, even if their zero-padded values would
+   # be the same.
+   def <=>(other)
+   end
+
+   # Concatenate <em>self</em> and <em>other</em>
+   def +(other)
+   end
+
+   # AND operator
+   def &(other)
+   end
+
+   # OR operator
+   def |(other)
+   end
+
+   # XOR operator
+   def ^(other)
+   end
+
+   # NOT operator
+   def ~()
+   end
+
+   # LEFT SHIFT operator
+   def <<(lshft)
+   end
+
+   # RIGHT SHIFT operator
+   def >>(rshft)
+   end
+
+   # Element reference with the same syntax that for a <em>String</em> object
+   #
+   # Return a <em>BitString</em> or a <em>Fixnum</em> 0, 1
+   #
+   #   bitstring[fixnum]
+   #   bitstring[fixnum, fixnum]
+   #   bitstring[range]
+   #   bitstring[regexp]
+   #   bitstring[regexp, fixnum]
+   #   bitstring[string]
+   #   bitstring[other_bitstring]
+   def [](*args)
+   end
+
+   # Element assignment with the same syntax that for a <em>String</em> object
+   #
+   #   bitstring[fixnum] = fixnum
+   #   bitstring[fixnum] = string_or_bitstring
+   #   bitstring[fixnum, fixnum] = string_or_bitstring
+   #   bitstring[range] = string_or_bitstring
+   #   bitstring[regexp] = string_or_bitstring
+   #   bitstring[regexp, fixnum] = string_or_bitstring
+   #   bitstring[other_str] = string_or_bitstring
+   def []=(*args)
+   end
+
+   # append <em>other</em> to <em>self</em>
+   def concat(other)
+   end
+
+   # iterate other each bit
+   def each
+   end
+
+   # return <em>true</em> if <em>other</em> is included in <em>self</em>
+   def include?(other)
+   end
+
+   # return the position of <em>other</em> in <em>self</em>
+   #
+   # return <em>nil</em> if <em>other</em> is not included in <em>self</em>
+   def index(other)
+   end
+
+   # create a new <em>BitString</em> object with <em>nbits</em> bits
+   #
+   # <em>init</em> can be a <em>Fixnum</em> or a <em>String</em>
+   #
+   # For a <em>String</em> the first character can be 'x', 'X' for and
+   # hexadecimal representation, or 'b', 'B' for a binary representation. 
+   # The default is a binary representation
+   def initialize(init, nbits = -1)
+   end
+
+   # return the length of <em>self</em> in bits
+   def length
+   end
+
+   # return the length of <em>self</em> in octets
+   def octet_length
+   end
+
+   # append <em>other</em> to <em>self</em>
+   def push(other)
+   end
+
+   # convert <em>self</em> to a <em>Fixnum</em>
+   def to_i
+   end
+
+   # convert <em>self</em> to a <em>String</em>
+   def to_s
+   end
+
 end
 
 #
@@ -1414,7 +1550,7 @@ class PLRuby::Point
 
    # return true if <em>self</em> is on <em>other</em>
    # 
-   # <em>other</em> can be Point, Line, Segment, Box or Path object
+   # <em>other</em> can be Point, Segment, Box or Path object
    def on?(other)
    end
 

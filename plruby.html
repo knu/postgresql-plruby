@@ -20,15 +20,16 @@
 <li><a href="#label-24">module PL</a> : general module</li>
 <li><a href="#label-43">class PL::Plan</a> : class for prepared plans</li>
 <li><a href="#label-56">class PL::Cursor</a> : class for cursors</li>
-<li><a href="#label-90">class Tinterval</a> : only if compiled with --enable-conversion</li>
-<li><a href="#label-64">class NetAddr</a> : only if compiled with --enable-network</li>
-<li><a href="#label-84">class MacAddr</a> : only if compiled with --enable-network</li>
-<li><a href="#label-98">class Box</a> : only if compiled with --enable-geometry</li>
-<li><a href="#label-203">class Circle</a> : only if compiled with --enable-geometry</li>
-<li><a href="#label-130">class Path</a> : only if compiled with --enable-geometry</li>
-<li><a href="#label-146">class Point</a> : only if compiled with --enable-geometry</li>
-<li><a href="#label-184">class Polygon</a> : only if compiled with --enable-geometry</li>
-<li><a href="#label-169">class Segment</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-64">class BitString</a> : only if compiled with --enable-bitstring</li>
+<li><a href="#label-112">class Tinterval</a> : only if compiled with --enable-conversion</li>
+<li><a href="#label-86">class NetAddr</a> : only if compiled with --enable-network</li>
+<li><a href="#label-106">class MacAddr</a> : only if compiled with --enable-network</li>
+<li><a href="#label-120">class Box</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-225">class Circle</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-152">class Path</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-168">class Point</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-206">class Polygon</a> : only if compiled with --enable-geometry</li>
+<li><a href="#label-191">class Segment</a> : only if compiled with --enable-geometry</li>
 </ul></li>
 </ul>
 <p>PL/Ruby is a loadable procedural language for the Postgres database
@@ -403,6 +404,9 @@ TIMESTAMPTZOID         Time
 DATEOID                Time
 INTERVALOID            Time
 TINTERVALOID           Tinterval (new Ruby class)</pre>
+<p>The following conversions are added when compiled with --enable-bitstring</p>
+<pre>BITOID                 BitString (new Ruby class)
+VARBITOID              BitString (new Ruby class)</pre>
 <p>The following conversions are added when compiled with --enable-network</p>
 <pre>INETOID                NetAddr (new Ruby class)
 CIDROID                NetAddr (new Ruby class)
@@ -410,7 +414,6 @@ MACADDROID             MacAddr (new Ruby class)</pre>
 <p>The following conversions are added when compiled with --enable-geometry</p>
 <pre>POINTOID               Point   (new Ruby class)
 LSEGOID                Segment (new Ruby class)
-LINEOID                Line    (new Ruby class)
 BOXOID                 Box     (new Ruby class)
 PATHOID                Path    (new Ruby class)
 POLYGONOID             Polygon (new Ruby class)
@@ -709,382 +712,475 @@ Iterate over all rows (backward)</dd>
 <dd>
 Positions the cursor at the beginning of the table</dd>
 </dl>
-<h3><a name="label-64" id="label-64">class NetAddr</a></h3><!-- RDLabel: "class NetAddr" -->
+<h3><a name="label-64" id="label-64">class BitString</a></h3><!-- RDLabel: "class BitString" -->
+<p>The class BitString implement the PostgreSQL type <var>bit</var>
+and <var>bit varying</var></p>
+<p>only available if PL/Ruby was compiled with <var>--enable-bitstring</var></p>
+<p>The modules Comparable and Enumerable are included</p>
+<dl>
+<dt><a name="label-65" id="label-65"><code>from_string(<var>string</var>, <var>length</var> = <var>strlen</var>(<var>string</var>))</code></a></dt><!-- RDLabel: "from_string" -->
+<dd>
+Convert a <var>String</var> to a <var>BitString</var></dd>
+<dt><a name="label-66" id="label-66"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dd>
+<p>comparison function for 2 <var>BitString</var> objects</p>
+<p>All bits are considered and additional zero bits may make one string
+smaller/larger than the other, even if their zero-padded values would
+be the same.</p></dd>
+<dt><a name="label-67" id="label-67"><code>+(<var>other</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dd>
+Concatenate <var>self</var> and <var>other</var></dd>
+<dt><a name="label-68" id="label-68"><code>&amp;(<var>other</var>)</code></a></dt><!-- RDLabel: "&" -->
+<dd>
+AND operator</dd>
+<dt><a name="label-69" id="label-69"><code>|(<var>other</var>)</code></a></dt><!-- RDLabel: "|" -->
+<dd>
+OR operator</dd>
+<dt><a name="label-70" id="label-70"><code>^(<var>other</var>)</code></a></dt><!-- RDLabel: "^" -->
+<dd>
+XOR operator</dd>
+<dt><a name="label-71" id="label-71"><code>~</code></a></dt><!-- RDLabel: "~" -->
+<dd>
+NOT operator</dd>
+<dt><a name="label-72" id="label-72"><code>&lt;&lt;(<var>lshft</var>)</code></a></dt><!-- RDLabel: "<<" -->
+<dd>
+LEFT SHIFT operator</dd>
+<dt><a name="label-73" id="label-73"><code>&gt;&gt;(<var>rshft</var>)</code></a></dt><!-- RDLabel: ">>" -->
+<dd>
+RIGHT SHIFT operator</dd>
+<dt><a name="label-74" id="label-74"><code>[*<var>args</var>]</code></a></dt><!-- RDLabel: "[]" -->
+<dd>
+<p>Element reference with the same syntax that for a <var>String</var> object</p>
+<p>Return a <var>BitString</var> or a <var>Fixnum</var> 0, 1</p>
+<pre>bitstring[fixnum]
+bitstring[fixnum, fixnum]
+bitstring[range]
+bitstring[regexp]
+bitstring[regexp, fixnum]
+bitstring[string]
+bitstring[other_bitstring]</pre></dd>
+<dt><a name="label-75" id="label-75"><code>[*<var>args</var>] = <var>val</var></code></a></dt><!-- RDLabel: "[]=" -->
+<dd>
+<p>Element assignment with the same syntax that for a <var>String</var> object</p>
+<pre>bitstring[fixnum] = fixnum
+bitstring[fixnum] = string_or_bitstring
+bitstring[fixnum, fixnum] = string_or_bitstring
+bitstring[range] = string_or_bitstring
+bitstring[regexp] = string_or_bitstring
+bitstring[regexp, fixnum] = string_or_bitstring
+bitstring[other_str] = string_or_bitstring</pre></dd>
+<dt><a name="label-76" id="label-76"><code>concat(<var>other</var>)</code></a></dt><!-- RDLabel: "concat" -->
+<dd>
+append <var>other</var> to <var>self</var></dd>
+<dt><a name="label-77" id="label-77"><code>each</code></a></dt><!-- RDLabel: "each" -->
+<dd>
+iterate other each bit</dd>
+<dt><a name="label-78" id="label-78"><code>include?(<var>other</var>)</code></a></dt><!-- RDLabel: "include?" -->
+<dd>
+return <var>true</var> if <var>other</var> is included in <var>self</var></dd>
+<dt><a name="label-79" id="label-79"><code>index(<var>other</var>)</code></a></dt><!-- RDLabel: "index" -->
+<dd>
+<p>return the position of <var>other</var> in <var>self</var></p>
+<p>return <var>nil</var> if <var>other</var> is not included in <var>self</var></p></dd>
+<dt><a name="label-80" id="label-80"><code>initialize(<var>init</var>, <var>nbits</var> = -<var>1</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dd>
+<p>create a new <var>BitString</var> object with <var>nbits</var> bits</p>
+<p><var>init</var> can be a <var>Fixnum</var> or a <var>String</var></p>
+<p>For a <var>String</var> the first character can be 'x', 'X' for and
+hexadecimal representation, or 'b', 'B' for a binary representation. 
+The default is a binary representation</p></dd>
+<dt><a name="label-81" id="label-81"><code>length</code></a></dt><!-- RDLabel: "length" -->
+<dd>
+return the length of <var>self</var> in bits</dd>
+<dt><a name="label-82" id="label-82"><code>octet_length</code></a></dt><!-- RDLabel: "octet_length" -->
+<dd>
+return the length of <var>self</var> in octets</dd>
+<dt><a name="label-83" id="label-83"><code>push(<var>other</var>)</code></a></dt><!-- RDLabel: "push" -->
+<dd>
+append <var>other</var> to <var>self</var></dd>
+<dt><a name="label-84" id="label-84"><code>to_i</code></a></dt><!-- RDLabel: "to_i" -->
+<dd>
+convert <var>self</var> to a <var>Fixnum</var></dd>
+<dt><a name="label-85" id="label-85"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
+<dd>
+convert <var>self</var> to a <var>String</var></dd>
+</dl>
+<h3><a name="label-86" id="label-86">class NetAddr</a></h3><!-- RDLabel: "class NetAddr" -->
 <p>The class NetAddr implement the PostgreSQL type <var>inet</var>
 and <var>cidr</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-network</var></p>
 <p>The module Comparable is included</p>
 <dl>
-<dt><a name="label-65" id="label-65"><code>from_string(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-87" id="label-87"><code>from_string(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> to a <var>NetAddr</var></dd>
-<dt><a name="label-66" id="label-66"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dt><a name="label-88" id="label-88"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
 <dd>
 <p>comparison function for 2 <var>NetAddr</var> objects</p>
 <p>comparison is first on the common bits of the network part, then on
 the length of the network part, and then on the whole unmasked address.</p></dd>
-<dt><a name="label-67" id="label-67"><code>abbrev</code></a></dt><!-- RDLabel: "abbrev" -->
+<dt><a name="label-89" id="label-89"><code>abbrev</code></a></dt><!-- RDLabel: "abbrev" -->
 <dd>
 return the abbreviated display format as a <var>String</var> object</dd>
-<dt><a name="label-68" id="label-68"><code>broadcast</code></a></dt><!-- RDLabel: "broadcast" -->
+<dt><a name="label-90" id="label-90"><code>broadcast</code></a></dt><!-- RDLabel: "broadcast" -->
 <dd>
 return the broadcast address from the network</dd>
-<dt><a name="label-69" id="label-69"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dt><a name="label-91" id="label-91"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
 <dd>
 return true if <var>other</var> is included in <var>self</var></dd>
-<dt><a name="label-70" id="label-70"><code>contain_or_equal?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain_or_equal?" -->
+<dt><a name="label-92" id="label-92"><code>contain_or_equal?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain_or_equal?" -->
 <dd>
 return true if <var>other</var> is included in <var>self</var>, or equal</dd>
-<dt><a name="label-71" id="label-71"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dt><a name="label-93" id="label-93"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
 <dd>
 return true if <var>self</var> is included in <var>other</var></dd>
-<dt><a name="label-72" id="label-72"><code>contained_or_equal?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained_or_equal?" -->
+<dt><a name="label-94" id="label-94"><code>contained_or_equal?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained_or_equal?" -->
 <dd>
 return true if <var>self</var> is included in <var>other</var>, or equal</dd>
-<dt><a name="label-73" id="label-73"><code>family</code></a></dt><!-- RDLabel: "family" -->
+<dt><a name="label-95" id="label-95"><code>family</code></a></dt><!-- RDLabel: "family" -->
 <dd>
 return the String "AF_INET" or "AF_INET6"</dd>
-<dt><a name="label-74" id="label-74"><code>first</code></a></dt><!-- RDLabel: "first" -->
+<dt><a name="label-96" id="label-96"><code>first</code></a></dt><!-- RDLabel: "first" -->
 <dd>
 return the first address in the network</dd>
-<dt><a name="label-75" id="label-75"><code>host</code></a></dt><!-- RDLabel: "host" -->
+<dt><a name="label-97" id="label-97"><code>host</code></a></dt><!-- RDLabel: "host" -->
 <dd>
 extract the IP address and return it as a <var>String</var> </dd>
-<dt><a name="label-76" id="label-76"><code>hostmask</code></a></dt><!-- RDLabel: "hostmask" -->
+<dt><a name="label-98" id="label-98"><code>hostmask</code></a></dt><!-- RDLabel: "hostmask" -->
 <dd>
 return the host mask for network</dd>
-<dt><a name="label-77" id="label-77"><code>initialize(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-99" id="label-99"><code>initialize(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 create a <var>NetAddr</var> from a <var>String</var></dd>
-<dt><a name="label-78" id="label-78"><code>last</code></a></dt><!-- RDLabel: "last" -->
+<dt><a name="label-100" id="label-100"><code>last</code></a></dt><!-- RDLabel: "last" -->
 <dd>
 return the last address in the network</dd>
-<dt><a name="label-79" id="label-79"><code>masklen</code></a></dt><!-- RDLabel: "masklen" -->
+<dt><a name="label-101" id="label-101"><code>masklen</code></a></dt><!-- RDLabel: "masklen" -->
 <dd>
 return the length of the netmask</dd>
-<dt><a name="label-80" id="label-80"><code>netmask</code></a></dt><!-- RDLabel: "netmask" -->
+<dt><a name="label-102" id="label-102"><code>netmask</code></a></dt><!-- RDLabel: "netmask" -->
 <dd>
 return the netmask for the network</dd>
-<dt><a name="label-81" id="label-81"><code>network</code></a></dt><!-- RDLabel: "network" -->
+<dt><a name="label-103" id="label-103"><code>network</code></a></dt><!-- RDLabel: "network" -->
 <dd>
 return the network part of the address</dd>
-<dt><a name="label-82" id="label-82"><code>set_masklen(<var>len</var>)</code></a></dt><!-- RDLabel: "set_masklen" -->
+<dt><a name="label-104" id="label-104"><code>set_masklen(<var>len</var>)</code></a></dt><!-- RDLabel: "set_masklen" -->
 <dd>
 return a new <var>NetAddr</var> with netmask length <var>len</var></dd>
-<dt><a name="label-83" id="label-83"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
+<dt><a name="label-105" id="label-105"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
 <dd>
 return the string representation of the address</dd>
 </dl>
-<h3><a name="label-84" id="label-84">class MacAddr</a></h3><!-- RDLabel: "class MacAddr" -->
+<h3><a name="label-106" id="label-106">class MacAddr</a></h3><!-- RDLabel: "class MacAddr" -->
 <p>The MacAddr implement the PostgreSQL type <var>macaddr</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-network</var></p>
 <p>The module Comparable is included</p>
 <dl>
-<dt><a name="label-85" id="label-85"><code>from_string(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-107" id="label-107"><code>from_string(<var>string</var>, <var>cidr</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> to a <var>MacAddr</var></dd>
-<dt><a name="label-86" id="label-86"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dt><a name="label-108" id="label-108"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
 <dd>
 comparison function for 2 <var>MacAddr</var> objects</dd>
-<dt><a name="label-87" id="label-87"><code>initialize(<var>string</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-109" id="label-109"><code>initialize(<var>string</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 create a <var>MacAddr</var> from a <var>String</var></dd>
-<dt><a name="label-88" id="label-88"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
+<dt><a name="label-110" id="label-110"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
 <dd>
 return the string representation of the MAC address</dd>
-<dt><a name="label-89" id="label-89"><code>truncate</code></a></dt><!-- RDLabel: "truncate" -->
+<dt><a name="label-111" id="label-111"><code>truncate</code></a></dt><!-- RDLabel: "truncate" -->
 <dd>
 return a new object with the last 3 bytes set to zero</dd>
 </dl>
-<h3><a name="label-90" id="label-90">class Tinterval</a></h3><!-- RDLabel: "class Tinterval" -->
+<h3><a name="label-112" id="label-112">class Tinterval</a></h3><!-- RDLabel: "class Tinterval" -->
 <p>The Tinterval implement the PostgreSQL type <var>tinterval</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-conversion</var></p>
 <dl>
-<dt><a name="label-91" id="label-91"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-113" id="label-113"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> (PostgreSQL representation)
 to a <var>Tinterval</var></dd>
-<dt><a name="label-92" id="label-92"><code>high</code></a></dt><!-- RDLabel: "high" -->
+<dt><a name="label-114" id="label-114"><code>high</code></a></dt><!-- RDLabel: "high" -->
 <dd>
 return a <var>Time</var> which is the high value of the interval</dd>
-<dt><a name="label-93" id="label-93"><code>high=(<var>time</var>)</code></a></dt><!-- RDLabel: "high=" -->
+<dt><a name="label-115" id="label-115"><code>high=(<var>time</var>)</code></a></dt><!-- RDLabel: "high=" -->
 <dd>
 set the high value for the interval</dd>
-<dt><a name="label-94" id="label-94"><code>initialize(<var>low</var>, <var>high</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-116" id="label-116"><code>initialize(<var>low</var>, <var>high</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 create a <var>Tinterval</var> with the 2 <var>Time</var> objects
 <var>low</var> and <var>high</var></dd>
-<dt><a name="label-95" id="label-95"><code>low</code></a></dt><!-- RDLabel: "low" -->
+<dt><a name="label-117" id="label-117"><code>low</code></a></dt><!-- RDLabel: "low" -->
 <dd>
 return a <var>Time</var> which is the low value of the interval</dd>
-<dt><a name="label-96" id="label-96"><code>low=(<var>time</var>)</code></a></dt><!-- RDLabel: "low=" -->
+<dt><a name="label-118" id="label-118"><code>low=(<var>time</var>)</code></a></dt><!-- RDLabel: "low=" -->
 <dd>
 set the low value for the interval</dd>
-<dt><a name="label-97" id="label-97"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
+<dt><a name="label-119" id="label-119"><code>to_s</code></a></dt><!-- RDLabel: "to_s" -->
 <dd>
 return the string representation of the object</dd>
 </dl>
-<h3><a name="label-98" id="label-98">class Box</a></h3><!-- RDLabel: "class Box" -->
+<h3><a name="label-120" id="label-120">class Box</a></h3><!-- RDLabel: "class Box" -->
 <p>The Box implement the PostgreSQL type <var>box</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
 <p>The module Comparable is included</p>
 <dl>
-<dt><a name="label-99" id="label-99"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-121" id="label-121"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> (PostgreSQL representation)
 to a <var>Box</var> object</dd>
-<dt><a name="label-100" id="label-100"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dt><a name="label-122" id="label-122"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
 <dd>
 translate (right, up) <var>self</var></dd>
-<dt><a name="label-101" id="label-101"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dt><a name="label-123" id="label-123"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
 <dd>
 translate (left, down) <var>self</var></dd>
-<dt><a name="label-102" id="label-102"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dt><a name="label-124" id="label-124"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-103" id="label-103"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dt><a name="label-125" id="label-125"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-104" id="label-104"><code>===(<var>other</var>)</code></a></dt><!-- RDLabel: "===" -->
+<dt><a name="label-126" id="label-126"><code>===(<var>other</var>)</code></a></dt><!-- RDLabel: "===" -->
 <dd>
 return true if the 2 boxes <var>self</var> and <var>other</var> are identical</dd>
-<dt><a name="label-105" id="label-105"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dt><a name="label-127" id="label-127"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
 <dd>
 comparison operator for 2 Box based on the area of the 2 objects, i.e.
 self.area &lt;=&gt; box.area</dd>
-<dt><a name="label-106" id="label-106"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
+<dt><a name="label-128" id="label-128"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
 <dd>
 return true if  <var>self</var> is above <var>other</var></dd>
-<dt><a name="label-107" id="label-107"><code>area</code></a></dt><!-- RDLabel: "area" -->
+<dt><a name="label-129" id="label-129"><code>area</code></a></dt><!-- RDLabel: "area" -->
 <dd>
 return the area of the Box</dd>
-<dt><a name="label-108" id="label-108"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
+<dt><a name="label-130" id="label-130"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
 <dd>
 return true if  <var>self</var> is below <var>other</var></dd>
-<dt><a name="label-109" id="label-109"><code>center</code></a></dt><!-- RDLabel: "center" -->
+<dt><a name="label-131" id="label-131"><code>center</code></a></dt><!-- RDLabel: "center" -->
 <dd>
 return the center point of the Box</dd>
-<dt><a name="label-110" id="label-110"><code>closest(<var>other</var>)</code></a></dt><!-- RDLabel: "closest" -->
+<dt><a name="label-132" id="label-132"><code>closest(<var>other</var>)</code></a></dt><!-- RDLabel: "closest" -->
 <dd>
 <p>closest point to <var>other</var></p>
 <p><var>other</var> can be a Point, or Segment</p></dd>
-<dt><a name="label-111" id="label-111"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dt><a name="label-133" id="label-133"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
 <dd>
 return true if  <var>self</var> contain <var>other</var></dd>
-<dt><a name="label-112" id="label-112"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dt><a name="label-134" id="label-134"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
 <dd>
 return true if  <var>self</var> is contained by <var>other</var></dd>
-<dt><a name="label-113" id="label-113"><code>diagonal</code></a></dt><!-- RDLabel: "diagonal" -->
+<dt><a name="label-135" id="label-135"><code>diagonal</code></a></dt><!-- RDLabel: "diagonal" -->
 <dd>
 return a line Segment which happens to be the
 positive-slope diagonal of Box</dd>
-<dt><a name="label-114" id="label-114"><code>height</code></a></dt><!-- RDLabel: "height" -->
+<dt><a name="label-136" id="label-136"><code>height</code></a></dt><!-- RDLabel: "height" -->
 <dd>
 return the height of the Box (vertical magnitude)</dd>
-<dt><a name="label-115" id="label-115"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
+<dt><a name="label-137" id="label-137"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
 <dd>
 return true if  <var>self</var> is contained by <var>other</var></dd>
-<dt><a name="label-116" id="label-116"><code>initialize(*<var>args</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-138" id="label-138"><code>initialize(*<var>args</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 <p>create a new Box object</p>
 <p><var>args</var> can be 2 Point objects (low, high) or 4 Float objects
 (low.x, low.y, high.x, high.y)</p></dd>
-<dt><a name="label-117" id="label-117"><code>intersection(<var>other</var>)</code></a></dt><!-- RDLabel: "intersection" -->
+<dt><a name="label-139" id="label-139"><code>intersection(<var>other</var>)</code></a></dt><!-- RDLabel: "intersection" -->
 <dd>
 returns the overlapping portion of two boxes,
 or <var>nil</var> if they do not intersect.</dd>
-<dt><a name="label-118" id="label-118"><code>intersect?(<var>segment</var>)</code></a></dt><!-- RDLabel: "intersect?" -->
+<dt><a name="label-140" id="label-140"><code>intersect?(<var>segment</var>)</code></a></dt><!-- RDLabel: "intersect?" -->
 <dd>
 <p>returns  true if the Segment <var>segment</var>
 intersect with the Box</p>
 <p>Segment completely inside box counts as intersection.
 If you want only segments crossing box boundaries,
 try converting Box to Path first.</p></dd>
-<dt><a name="label-119" id="label-119"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dt><a name="label-141" id="label-141"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
 <dd>
 return true if <var>self</var> is strictly left of <var>other</var></dd>
-<dt><a name="label-120" id="label-120"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
+<dt><a name="label-142" id="label-142"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
 <dd>
 return true if <var>self</var> overlap <var>other</var></dd>
-<dt><a name="label-121" id="label-121"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
+<dt><a name="label-143" id="label-143"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
 <dd>
 return true if the right edge of <var>self</var> is to the left of
 the right edge of <var>other</var></dd>
-<dt><a name="label-122" id="label-122"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
+<dt><a name="label-144" id="label-144"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
 <dd>
 return true if the left edge of <var>self</var> is to the right of
 the left edge of <var>other</var></dd>
-<dt><a name="label-123" id="label-123"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<dt><a name="label-145" id="label-145"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
 <dd>
 return true if <var>self</var> is strictly right of <var>other</var></dd>
-<dt><a name="label-124" id="label-124"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
+<dt><a name="label-146" id="label-146"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
 <dd>
 return true if the 2 boxes <var>self</var> and <var>other</var> are identical</dd>
-<dt><a name="label-125" id="label-125"><code>to_circle</code></a></dt><!-- RDLabel: "to_circle" -->
+<dt><a name="label-147" id="label-147"><code>to_circle</code></a></dt><!-- RDLabel: "to_circle" -->
 <dd>
 convert a Box to a Circle</dd>
-<dt><a name="label-126" id="label-126"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dt><a name="label-148" id="label-148"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
 <dd>
 return the center Point of the Box</dd>
-<dt><a name="label-127" id="label-127"><code>to_polygon</code></a></dt><!-- RDLabel: "to_polygon" -->
+<dt><a name="label-149" id="label-149"><code>to_polygon</code></a></dt><!-- RDLabel: "to_polygon" -->
 <dd>
 convert a Box to a Polygon</dd>
-<dt><a name="label-128" id="label-128"><code>to_segment</code></a></dt><!-- RDLabel: "to_segment" -->
+<dt><a name="label-150" id="label-150"><code>to_segment</code></a></dt><!-- RDLabel: "to_segment" -->
 <dd>
 return a line Segment which happens to be the
 positive-slope diagonal of Box</dd>
-<dt><a name="label-129" id="label-129"><code>width</code></a></dt><!-- RDLabel: "width" -->
+<dt><a name="label-151" id="label-151"><code>width</code></a></dt><!-- RDLabel: "width" -->
 <dd>
 return the width of the Box (horizontal magnitude)</dd>
 </dl>
-<h3><a name="label-130" id="label-130">class Path</a></h3><!-- RDLabel: "class Path" -->
+<h3><a name="label-152" id="label-152">class Path</a></h3><!-- RDLabel: "class Path" -->
 <p>The Path implement the PostgreSQL type <var>path</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
 <p>The module Comparable is included</p>
 <dl>
-<dt><a name="label-131" id="label-131"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-153" id="label-153"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> (PostgreSQL representation)
 to a <var>Path</var></dd>
-<dt><a name="label-132" id="label-132"><code>&lt;&lt;(<var>path</var>)</code></a></dt><!-- RDLabel: "<<" -->
+<dt><a name="label-154" id="label-154"><code>&lt;&lt;(<var>path</var>)</code></a></dt><!-- RDLabel: "<<" -->
 <dd>
 concatenate the two paths (only if they are both open)</dd>
-<dt><a name="label-133" id="label-133"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dt><a name="label-155" id="label-155"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
 <dd>
 translate (right, up) <var>self</var></dd>
-<dt><a name="label-134" id="label-134"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dt><a name="label-156" id="label-156"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
 <dd>
 translate (left, down) <var>self</var></dd>
-<dt><a name="label-135" id="label-135"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dt><a name="label-157" id="label-157"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-136" id="label-136"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dt><a name="label-158" id="label-158"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-137" id="label-137"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dt><a name="label-159" id="label-159"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
 <dd>
 comparison function based on the path cardinality, i.e.
 self.npoints &lt;=&gt; other.npoints</dd>
-<dt><a name="label-138" id="label-138"><code>close</code></a></dt><!-- RDLabel: "close" -->
+<dt><a name="label-160" id="label-160"><code>close</code></a></dt><!-- RDLabel: "close" -->
 <dd>
 make a closed path</dd>
-<dt><a name="label-139" id="label-139"><code>closed?</code></a></dt><!-- RDLabel: "closed?" -->
+<dt><a name="label-161" id="label-161"><code>closed?</code></a></dt><!-- RDLabel: "closed?" -->
 <dd>
 return true if <var>self</var> is a closed path</dd>
-<dt><a name="label-140" id="label-140"><code>concat(<var>path</var>)</code></a></dt><!-- RDLabel: "concat" -->
+<dt><a name="label-162" id="label-162"><code>concat(<var>path</var>)</code></a></dt><!-- RDLabel: "concat" -->
 <dd>
 concatenate the two paths (only if they are both open)</dd>
-<dt><a name="label-141" id="label-141"><code>initialize(<var>points</var>, <var>closed</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-163" id="label-163"><code>initialize(<var>points</var>, <var>closed</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 create a new Path object from the Array of Point <var>points</var></dd>
-<dt><a name="label-142" id="label-142"><code>length</code></a></dt><!-- RDLabel: "length" -->
+<dt><a name="label-164" id="label-164"><code>length</code></a></dt><!-- RDLabel: "length" -->
 <dd>
 return the length of <var>self</var></dd>
-<dt><a name="label-143" id="label-143"><code>npoints</code></a></dt><!-- RDLabel: "npoints" -->
+<dt><a name="label-165" id="label-165"><code>npoints</code></a></dt><!-- RDLabel: "npoints" -->
 <dd>
 return the path cardinality</dd>
-<dt><a name="label-144" id="label-144"><code>open</code></a></dt><!-- RDLabel: "open" -->
+<dt><a name="label-166" id="label-166"><code>open</code></a></dt><!-- RDLabel: "open" -->
 <dd>
 make an open path</dd>
-<dt><a name="label-145" id="label-145"><code>to_polygon</code></a></dt><!-- RDLabel: "to_polygon" -->
+<dt><a name="label-167" id="label-167"><code>to_polygon</code></a></dt><!-- RDLabel: "to_polygon" -->
 <dd>
 convert <var>self</var> to a Polygon object</dd>
 </dl>
-<h3><a name="label-146" id="label-146">class Point</a></h3><!-- RDLabel: "class Point" -->
+<h3><a name="label-168" id="label-168">class Point</a></h3><!-- RDLabel: "class Point" -->
 <p>The Point implement the PostgreSQL type <var>point</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
 <p>The module Comparable is included</p>
 <dl>
-<dt><a name="label-147" id="label-147"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-169" id="label-169"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> (PostgreSQL representation)
 to a <var>Point</var></dd>
-<dt><a name="label-148" id="label-148"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dt><a name="label-170" id="label-170"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
 <dd>
 translate (right, up) <var>self</var></dd>
-<dt><a name="label-149" id="label-149"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dt><a name="label-171" id="label-171"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
 <dd>
 translate (left, down) <var>self</var></dd>
-<dt><a name="label-150" id="label-150"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dt><a name="label-172" id="label-172"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-151" id="label-151"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dt><a name="label-173" id="label-173"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-152" id="label-152"><code>[<var>indice</var>]</code></a></dt><!-- RDLabel: "[]" -->
+<dt><a name="label-174" id="label-174"><code>[<var>indice</var>]</code></a></dt><!-- RDLabel: "[]" -->
 <dd>
 <p>return the coordinate</p>
 <p><var>indice</var> can have the value 0 or 1</p></dd>
-<dt><a name="label-153" id="label-153"><code>[<var>indice</var>] = <var>value</var></code></a></dt><!-- RDLabel: "[]=" -->
+<dt><a name="label-175" id="label-175"><code>[<var>indice</var>] = <var>value</var></code></a></dt><!-- RDLabel: "[]=" -->
 <dd>
 <p>set the coordinate</p>
 <p><var>indice</var> can have the value 0 or 1</p></dd>
-<dt><a name="label-154" id="label-154"><code>==(<var>other</var>)</code></a></dt><!-- RDLabel: "==" -->
+<dt><a name="label-176" id="label-176"><code>==(<var>other</var>)</code></a></dt><!-- RDLabel: "==" -->
 <dd>
 return true if <var>self</var> and <var>other</var> are the same,
 i.e. self.x == other.x &amp;&amp; self.y == other.y</dd>
-<dt><a name="label-155" id="label-155"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
+<dt><a name="label-177" id="label-177"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
 <dd>
 return true if <var>self</var> is above <var>other</var>,
 i.e. self.y &gt; other.y</dd>
-<dt><a name="label-156" id="label-156"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
+<dt><a name="label-178" id="label-178"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
 <dd>
 return true if <var>self</var> is below <var>other</var>,
 i.e. self.y &lt; other.y</dd>
-<dt><a name="label-157" id="label-157"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dt><a name="label-179" id="label-179"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
 <dd>
 <p>return true if <var>self</var> is contained in <var>other</var></p>
 <p><var>other</var> can be Point, Polygon or a Circle object</p></dd>
-<dt><a name="label-158" id="label-158"><code>horizontal?(<var>other</var>)</code></a></dt><!-- RDLabel: "horizontal?" -->
+<dt><a name="label-180" id="label-180"><code>horizontal?(<var>other</var>)</code></a></dt><!-- RDLabel: "horizontal?" -->
 <dd>
 return true if <var>self</var> and <var>other</var> are horizontal,
 i.e. self.y == other.y</dd>
-<dt><a name="label-159" id="label-159"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
+<dt><a name="label-181" id="label-181"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
 <dd>
 <p>return true if <var>self</var> is contained in <var>other</var></p>
 <p><var>other</var> can be Point, Polygon or a Circle object</p></dd>
-<dt><a name="label-160" id="label-160"><code>initialize(<var>x</var>, <var>y</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-182" id="label-182"><code>initialize(<var>x</var>, <var>y</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 create a Point with the 2 Float object (x, y)</dd>
-<dt><a name="label-161" id="label-161"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dt><a name="label-183" id="label-183"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
 <dd>
 return true if <var>self</var> is at the left of <var>other</var>,
 i.e. self.x &lt; other.x</dd>
-<dt><a name="label-162" id="label-162"><code>on?(<var>other</var>)</code></a></dt><!-- RDLabel: "on?" -->
+<dt><a name="label-184" id="label-184"><code>on?(<var>other</var>)</code></a></dt><!-- RDLabel: "on?" -->
 <dd>
 <p>return true if <var>self</var> is on <var>other</var></p>
-<p><var>other</var> can be Point, Line, Segment, Box or Path object</p></dd>
-<dt><a name="label-163" id="label-163"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<p><var>other</var> can be Point, Segment, Box or Path object</p></dd>
+<dt><a name="label-185" id="label-185"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
 <dd>
 return true if <var>self</var> is at the right of <var>other</var>,
 i.e. self.x &gt; other.x</dd>
-<dt><a name="label-164" id="label-164"><code>vertical?(<var>other</var>)</code></a></dt><!-- RDLabel: "vertical?" -->
+<dt><a name="label-186" id="label-186"><code>vertical?(<var>other</var>)</code></a></dt><!-- RDLabel: "vertical?" -->
 <dd>
 return true if <var>self</var> and <var>other</var> are vertical,
 i.e. self.x == other.x</dd>
-<dt><a name="label-165" id="label-165"><code>x</code></a></dt><!-- RDLabel: "x" -->
+<dt><a name="label-187" id="label-187"><code>x</code></a></dt><!-- RDLabel: "x" -->
 <dd>
 return <var>x</var> for <var>self</var></dd>
-<dt><a name="label-166" id="label-166"><code>x=(<var>value</var>)</code></a></dt><!-- RDLabel: "x=" -->
+<dt><a name="label-188" id="label-188"><code>x=(<var>value</var>)</code></a></dt><!-- RDLabel: "x=" -->
 <dd>
 set the <var>x</var> value for <var>self</var></dd>
-<dt><a name="label-167" id="label-167"><code>y</code></a></dt><!-- RDLabel: "y" -->
+<dt><a name="label-189" id="label-189"><code>y</code></a></dt><!-- RDLabel: "y" -->
 <dd>
 return <var>y</var> for <var>self</var></dd>
-<dt><a name="label-168" id="label-168"><code>y=(<var>value</var>)</code></a></dt><!-- RDLabel: "y=" -->
+<dt><a name="label-190" id="label-190"><code>y=(<var>value</var>)</code></a></dt><!-- RDLabel: "y=" -->
 <dd>
 set the <var>y</var> value for <var>self</var></dd>
 </dl>
-<h3><a name="label-169" id="label-169">class Segment</a></h3><!-- RDLabel: "class Segment" -->
+<h3><a name="label-191" id="label-191">class Segment</a></h3><!-- RDLabel: "class Segment" -->
 <p>The Segment implement the PostgreSQL type <var>lseg</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
 <p>The module Comparable is included</p>
 <dl>
-<dt><a name="label-170" id="label-170"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-192" id="label-192"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> (PostgreSQL representation)
 to a <var>Segment</var></dd>
-<dt><a name="label-171" id="label-171"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dt><a name="label-193" id="label-193"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
 <dd>
 <p>comparison function for the 2 segments, returns</p>
 <pre>0  if self[0] == other[0] &amp;&amp; self[1] == other[1]
@@ -1092,10 +1188,10 @@ to a <var>Segment</var></dd>
 1  if distance(self[0], self[1]) &gt; distance(other[0], other[1]) 
 
 -1 if distance(self[0], self[1]) &lt; distance(other[0], other[1]) </pre></dd>
-<dt><a name="label-172" id="label-172"><code>center</code></a></dt><!-- RDLabel: "center" -->
+<dt><a name="label-194" id="label-194"><code>center</code></a></dt><!-- RDLabel: "center" -->
 <dd>
 return the center of the segment</dd>
-<dt><a name="label-173" id="label-173"><code>closest(<var>other</var>)</code></a></dt><!-- RDLabel: "closest" -->
+<dt><a name="label-195" id="label-195"><code>closest(<var>other</var>)</code></a></dt><!-- RDLabel: "closest" -->
 <dd>
 <p>closest point to other</p>
 <p><var>other</var> can be a Point, Segment or Box</p>
@@ -1103,193 +1199,193 @@ return the center of the segment</dd>
 if the point is left, right, above, or below the segment, otherwise 
 find the intersection point of the segment and its perpendicular through
 the point.</p></dd>
-<dt><a name="label-174" id="label-174"><code>horizontal?</code></a></dt><!-- RDLabel: "horizontal?" -->
+<dt><a name="label-196" id="label-196"><code>horizontal?</code></a></dt><!-- RDLabel: "horizontal?" -->
 <dd>
 returns true if <var>self</var> is a horizontal Segment</dd>
-<dt><a name="label-175" id="label-175"><code>initialize(<var>point0</var>, <var>point1</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-197" id="label-197"><code>initialize(<var>point0</var>, <var>point1</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 create a Segment from the 2 Point p0, p1</dd>
-<dt><a name="label-176" id="label-176"><code>intersect?(<var>other</var>)</code></a></dt><!-- RDLabel: "intersect?" -->
+<dt><a name="label-198" id="label-198"><code>intersect?(<var>other</var>)</code></a></dt><!-- RDLabel: "intersect?" -->
 <dd>
 returns true if <var>self</var> and <var>other</var> intersect</dd>
-<dt><a name="label-177" id="label-177"><code>intersection(<var>other</var>)</code></a></dt><!-- RDLabel: "intersection" -->
+<dt><a name="label-199" id="label-199"><code>intersection(<var>other</var>)</code></a></dt><!-- RDLabel: "intersection" -->
 <dd>
 returns the Point where the 2 Segment <var>self</var> and <var>other</var>
 intersect or nil</dd>
-<dt><a name="label-178" id="label-178"><code>length</code></a></dt><!-- RDLabel: "length" -->
+<dt><a name="label-200" id="label-200"><code>length</code></a></dt><!-- RDLabel: "length" -->
 <dd>
 return the length of <var>self</var>, i.e. the distnace between the 2 points</dd>
-<dt><a name="label-179" id="label-179"><code>on?(<var>other</var>)</code></a></dt><!-- RDLabel: "on?" -->
+<dt><a name="label-201" id="label-201"><code>on?(<var>other</var>)</code></a></dt><!-- RDLabel: "on?" -->
 <dd>
 <p>return true if <var>self</var> is on <var>other</var></p>
 <p><var>other</var> can be a Segment, or a Box object</p></dd>
-<dt><a name="label-180" id="label-180"><code>parallel?(<var>other</var>)</code></a></dt><!-- RDLabel: "parallel?" -->
+<dt><a name="label-202" id="label-202"><code>parallel?(<var>other</var>)</code></a></dt><!-- RDLabel: "parallel?" -->
 <dd>
 returns true if the 2 Segment <var>self</var> and <var>other</var> 
 are parallel</dd>
-<dt><a name="label-181" id="label-181"><code>perpendicular?(<var>other</var>)</code></a></dt><!-- RDLabel: "perpendicular?" -->
+<dt><a name="label-203" id="label-203"><code>perpendicular?(<var>other</var>)</code></a></dt><!-- RDLabel: "perpendicular?" -->
 <dd>
 returns true if <var>self</var> is perpendicular to <var>other</var></dd>
-<dt><a name="label-182" id="label-182"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dt><a name="label-204" id="label-204"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
 <dd>
 conversion function to a Point, return the center of the segment</dd>
-<dt><a name="label-183" id="label-183"><code>vertical?</code></a></dt><!-- RDLabel: "vertical?" -->
+<dt><a name="label-205" id="label-205"><code>vertical?</code></a></dt><!-- RDLabel: "vertical?" -->
 <dd>
 returns true if <var>self</var> is a vertical Segment</dd>
 </dl>
-<h3><a name="label-184" id="label-184">class Polygon</a></h3><!-- RDLabel: "class Polygon" -->
+<h3><a name="label-206" id="label-206">class Polygon</a></h3><!-- RDLabel: "class Polygon" -->
 <p>The Polygon implement the PostgreSQL type <var>polygon</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
 <dl>
-<dt><a name="label-185" id="label-185"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-207" id="label-207"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> (PostgreSQL representation)
 to a <var>Polygon</var></dd>
-<dt><a name="label-186" id="label-186"><code>==(<var>other</var>)</code></a></dt><!-- RDLabel: "==" -->
+<dt><a name="label-208" id="label-208"><code>==(<var>other</var>)</code></a></dt><!-- RDLabel: "==" -->
 <dd>
 return true if <var>self</var> is the same as <var>other</var>, i.e. all
 the points are the same</dd>
-<dt><a name="label-187" id="label-187"><code>center</code></a></dt><!-- RDLabel: "center" -->
+<dt><a name="label-209" id="label-209"><code>center</code></a></dt><!-- RDLabel: "center" -->
 <dd>
 return the center of <var>self</var>, i.e. create a circle and return its 
 center</dd>
-<dt><a name="label-188" id="label-188"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dt><a name="label-210" id="label-210"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
 <dd>
 <p>return true if <var>self</var> contains <var>other</var></p>
 <p><var>other</var> can be a Point or a Polygon</p></dd>
-<dt><a name="label-189" id="label-189"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dt><a name="label-211" id="label-211"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
 <dd>
 return true if <var>self</var> is contained in <var>other</var> by determining
 if <var>self</var> bounding box is contained by <var>other</var>'s bounding box.</dd>
-<dt><a name="label-190" id="label-190"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
+<dt><a name="label-212" id="label-212"><code>in?(<var>other</var>)</code></a></dt><!-- RDLabel: "in?" -->
 <dd>
 return true if <var>self</var> is contained in <var>other</var> by determining
 if <var>self</var> bounding box is contained by <var>other</var>'s bounding box.</dd>
-<dt><a name="label-191" id="label-191"><code>initialize(<var>points</var>, <var>closed</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-213" id="label-213"><code>initialize(<var>points</var>, <var>closed</var> = <var>false</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 create a new Polygon object from the Array of Point <var>points</var></dd>
-<dt><a name="label-192" id="label-192"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dt><a name="label-214" id="label-214"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
 <dd>
 return true if <var>self</var> is strictly left of <var>other</var>, i.e.
 the right most point of <var>self</var> is left of the left
 most point of <var>other</var></dd>
-<dt><a name="label-193" id="label-193"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
+<dt><a name="label-215" id="label-215"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
 <dd>
 return true if <var>self</var> is overlapping or left of <var>other</var>,
 i.e. the left most point of <var>self</var> is left of the right
 most point of <var>other</var></dd>
-<dt><a name="label-194" id="label-194"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
+<dt><a name="label-216" id="label-216"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
 <dd>
 return true if <var>self</var> is overlapping or right of <var>other</var>,
 i.e. the right most point of <var>self</var> is right of the left
 most point of <var>other</var></dd>
-<dt><a name="label-195" id="label-195"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
+<dt><a name="label-217" id="label-217"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
 <dd>
 return true if <var>self</var> and <var>other</var> overlap by determining if
 their bounding boxes overlap.</dd>
-<dt><a name="label-196" id="label-196"><code>npoints</code></a></dt><!-- RDLabel: "npoints" -->
+<dt><a name="label-218" id="label-218"><code>npoints</code></a></dt><!-- RDLabel: "npoints" -->
 <dd>
 return the number of points in <var>self</var></dd>
-<dt><a name="label-197" id="label-197"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<dt><a name="label-219" id="label-219"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
 <dd>
 return true if <var>self</var> is strictly right of <var>other</var>, i.e.
 the left most point of <var>self</var> is right of the left
 most point of <var>other</var></dd>
-<dt><a name="label-198" id="label-198"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
+<dt><a name="label-220" id="label-220"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
 <dd>
 return true if <var>self</var> is the same as <var>other</var>, i.e. all 
 the points are the same</dd>
-<dt><a name="label-199" id="label-199"><code>to_box</code></a></dt><!-- RDLabel: "to_box" -->
+<dt><a name="label-221" id="label-221"><code>to_box</code></a></dt><!-- RDLabel: "to_box" -->
 <dd>
 convert <var>self</var> to a Box</dd>
-<dt><a name="label-200" id="label-200"><code>to_circle</code></a></dt><!-- RDLabel: "to_circle" -->
+<dt><a name="label-222" id="label-222"><code>to_circle</code></a></dt><!-- RDLabel: "to_circle" -->
 <dd>
 convert <var>self</var> to a Circle</dd>
-<dt><a name="label-201" id="label-201"><code>to_path</code></a></dt><!-- RDLabel: "to_path" -->
+<dt><a name="label-223" id="label-223"><code>to_path</code></a></dt><!-- RDLabel: "to_path" -->
 <dd>
 convert <var>self</var> to a Path</dd>
-<dt><a name="label-202" id="label-202"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dt><a name="label-224" id="label-224"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
 <dd>
 convert <var>self</var> to a Point by returning its center</dd>
 </dl>
-<h3><a name="label-203" id="label-203">class Circle</a></h3><!-- RDLabel: "class Circle" -->
+<h3><a name="label-225" id="label-225">class Circle</a></h3><!-- RDLabel: "class Circle" -->
 <p>The Circle implement the PostgreSQL type <var>circle</var></p>
 <p>only available if PL/Ruby was compiled with <var>--enable-geometry</var></p>
 <p>The module Comparable is included</p>
 <dl>
-<dt><a name="label-204" id="label-204"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
+<dt><a name="label-226" id="label-226"><code>from_string(<var>string</var>)</code></a></dt><!-- RDLabel: "from_string" -->
 <dd>
 Convert a <var>String</var> (PostgreSQL representation)
 to a <var>Circle</var></dd>
-<dt><a name="label-205" id="label-205"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
+<dt><a name="label-227" id="label-227"><code>+(<var>point</var>)</code></a></dt><!-- RDLabel: "+" -->
 <dd>
 translate (right, up) <var>self</var></dd>
-<dt><a name="label-206" id="label-206"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
+<dt><a name="label-228" id="label-228"><code>-(<var>point</var>)</code></a></dt><!-- RDLabel: "-" -->
 <dd>
 translate (left, down) <var>self</var></dd>
-<dt><a name="label-207" id="label-207"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
+<dt><a name="label-229" id="label-229"><code>*(<var>point</var>)</code></a></dt><!-- RDLabel: "*" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-208" id="label-208"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
+<dt><a name="label-230" id="label-230"><code>/(<var>point</var>)</code></a></dt><!-- RDLabel: "/" -->
 <dd>
 scale and rotate <var>self</var></dd>
-<dt><a name="label-209" id="label-209"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
+<dt><a name="label-231" id="label-231"><code>&lt;=&gt;(<var>other</var>)</code></a></dt><!-- RDLabel: "<=>" -->
 <dd>
 comparison function based on area,
 i.e. self.area &lt;=&gt; other.area</dd>
-<dt><a name="label-210" id="label-210"><code>area</code></a></dt><!-- RDLabel: "area" -->
+<dt><a name="label-232" id="label-232"><code>area</code></a></dt><!-- RDLabel: "area" -->
 <dd>
 return the area</dd>
-<dt><a name="label-211" id="label-211"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
+<dt><a name="label-233" id="label-233"><code>above?(<var>other</var>)</code></a></dt><!-- RDLabel: "above?" -->
 <dd>
 return true if <var>self</var> is entirely above <var>other</var></dd>
-<dt><a name="label-212" id="label-212"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
+<dt><a name="label-234" id="label-234"><code>below?(<var>other</var>)</code></a></dt><!-- RDLabel: "below?" -->
 <dd>
 return true if <var>self</var> is entirely below <var>other</var></dd>
-<dt><a name="label-213" id="label-213"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
+<dt><a name="label-235" id="label-235"><code>contain?(<var>other</var>)</code></a></dt><!-- RDLabel: "contain?" -->
 <dd>
 return true if <var>self</var> contain <var>other</var></dd>
-<dt><a name="label-214" id="label-214"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
+<dt><a name="label-236" id="label-236"><code>contained?(<var>other</var>)</code></a></dt><!-- RDLabel: "contained?" -->
 <dd>
 return true if <var>self</var> is contained in <var>other</var></dd>
-<dt><a name="label-215" id="label-215"><code>diameter</code></a></dt><!-- RDLabel: "diameter" -->
+<dt><a name="label-237" id="label-237"><code>diameter</code></a></dt><!-- RDLabel: "diameter" -->
 <dd>
 return the diameter</dd>
-<dt><a name="label-216" id="label-216"><code>initialize(<var>center</var>, <var>radius</var>)</code></a></dt><!-- RDLabel: "initialize" -->
+<dt><a name="label-238" id="label-238"><code>initialize(<var>center</var>, <var>radius</var>)</code></a></dt><!-- RDLabel: "initialize" -->
 <dd>
 <p>create a Circle object with <var>center</var> and <var>radius</var></p>
 <p><var>center</var> can be a Point or an Array [x, y]</p></dd>
-<dt><a name="label-217" id="label-217"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
+<dt><a name="label-239" id="label-239"><code>overlap?(<var>other</var>)</code></a></dt><!-- RDLabel: "overlap?" -->
 <dd>
 return true if <var>self</var> overlap <var>other</var></dd>
-<dt><a name="label-218" id="label-218"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
+<dt><a name="label-240" id="label-240"><code>overleft?(<var>other</var>)</code></a></dt><!-- RDLabel: "overleft?" -->
 <dd>
 return true if the right edge of <var>self</var> is to the left of
 the right edge of <var>other</var></dd>
-<dt><a name="label-219" id="label-219"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
+<dt><a name="label-241" id="label-241"><code>left?(<var>other</var>)</code></a></dt><!-- RDLabel: "left?" -->
 <dd>
 return true if <var>self</var> is strictly left of <var>other</var></dd>
-<dt><a name="label-220" id="label-220"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
+<dt><a name="label-242" id="label-242"><code>overright?(<var>other</var>)</code></a></dt><!-- RDLabel: "overright?" -->
 <dd>
 return true if the left edge of <var>self</var> is to the right of
 the left edge of <var>other</var></dd>
-<dt><a name="label-221" id="label-221"><code>radius</code></a></dt><!-- RDLabel: "radius" -->
+<dt><a name="label-243" id="label-243"><code>radius</code></a></dt><!-- RDLabel: "radius" -->
 <dd>
 return the radius</dd>
-<dt><a name="label-222" id="label-222"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
+<dt><a name="label-244" id="label-244"><code>right?(<var>other</var>)</code></a></dt><!-- RDLabel: "right?" -->
 <dd>
 return true if <var>self</var> is strictly right of <var>other</var></dd>
-<dt><a name="label-223" id="label-223"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
+<dt><a name="label-245" id="label-245"><code>same?(<var>other</var>)</code></a></dt><!-- RDLabel: "same?" -->
 <dd>
 return true if <var>self</var> is the same than <var>other</var>, i.e.
 self.center == other.center &amp;&amp; self.radius == other.radius</dd>
-<dt><a name="label-224" id="label-224"><code>to_box</code></a></dt><!-- RDLabel: "to_box" -->
+<dt><a name="label-246" id="label-246"><code>to_box</code></a></dt><!-- RDLabel: "to_box" -->
 <dd>
 convert <var>self</var> to a Box</dd>
-<dt><a name="label-225" id="label-225"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
+<dt><a name="label-247" id="label-247"><code>to_point</code></a></dt><!-- RDLabel: "to_point" -->
 <dd>
 convert <var>self</var> to a Point by returning its center</dd>
-<dt><a name="label-226" id="label-226"><code>to_polygon(<var>npts</var>)</code></a></dt><!-- RDLabel: "to_polygon" -->
+<dt><a name="label-248" id="label-248"><code>to_polygon(<var>npts</var>)</code></a></dt><!-- RDLabel: "to_polygon" -->
 <dd>
 convert <var>self</var> to a Polygon with <var>npts</var> Points</dd>
 </dl>

@@ -125,6 +125,15 @@ extern int SortMem;
 
 static void pl_thr_mark(struct pl_tuple *tpl) {}
 
+#define GetTuple(tmp_, tpl_) do {                               \
+    if (TYPE(tmp_) != T_DATA ||                                 \
+        RDATA(tmp_)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {    \
+        rb_raise(pl_ePLruby, "invalid thread local variable");  \
+    }                                                           \
+    Data_Get_Struct(tmp_, struct pl_tuple, tpl_);               \
+} while(0)
+
+
 static VALUE
 pl_query_name(VALUE obj)
 {
@@ -137,11 +146,7 @@ pl_query_name(VALUE obj)
     if (NIL_P(tmp)) {
         return Qnil;
     }
-    if (TYPE(tmp) != T_DATA || 
-        RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    GetTuple(tmp, tpl);
     if (!tpl->dsc) {
         return Qnil;
     }
@@ -169,11 +174,7 @@ pl_query_type(VALUE obj)
     if (NIL_P(tmp)) {
         return Qnil;
     }
-    if (TYPE(tmp) != T_DATA || 
-        RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    GetTuple(tmp, tpl);
     if (!tpl->dsc) {
         PLRUBY_BEGIN(1);
         typeTup = SearchSysCacheTuple(RUBY_TYPOID,
@@ -248,11 +249,7 @@ pl_query_lgth(VALUE obj)
     if (NIL_P(tmp)) {
         return Qnil;
     }
-    if (TYPE(tmp) != T_DATA || 
-        RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    GetTuple(tmp, tpl);
     if (!tpl->dsc) {
         return Qnil;
     }
@@ -272,11 +269,7 @@ pl_args_type(VALUE obj)
     if (NIL_P(tmp)) {
         return Qnil;
     }
-    if (TYPE(tmp) != T_DATA || 
-        RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    GetTuple(tmp, tpl);
     res = rb_ary_new2(tpl->pro->nargs);
     for (i = 0; i < tpl->pro->nargs; i++) {
         PLRUBY_BEGIN(1);
@@ -313,11 +306,7 @@ pl_context_get(VALUE obj)
     if (NIL_P(tmp)) {
         return Qnil;
     }
-    if (TYPE(tmp) != T_DATA || 
-        RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    GetTuple(tmp, tpl);
     if (!tpl->fcinfo || !tpl->fcinfo->context || 
         !IsA(tpl->fcinfo->context, Invalid)) {
         return Qnil;
@@ -332,11 +321,7 @@ pl_context_set(VALUE obj, VALUE a)
     VALUE tmp;
 
     tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
-    if (TYPE(tmp) != T_DATA || 
-        RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    GetTuple(tmp, tpl);
     if (tpl->fcinfo && tpl->fcinfo->context) {
         if (!IsA(tpl->fcinfo->context, Invalid)) {
             rb_raise(pl_ePLruby, "trying to change a valid context");
@@ -361,11 +346,7 @@ pl_context_remove()
     VALUE tmp;
 
     tmp = rb_thread_local_aref(rb_thread_current(), id_thr);
-    if (TYPE(tmp) != T_DATA || 
-        RDATA(tmp)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tmp, struct pl_tuple, tpl);
+    GetTuple(tmp, tpl);
     if (tpl->fcinfo && tpl->fcinfo->context) {
         rb_hash_delete(PLcontext, ((struct PL_node *)tpl->fcinfo->context)->value);
         pfree(tpl->fcinfo->context);
@@ -390,17 +371,64 @@ pl_tuple_s_new(PG_FUNCTION_ARGS, pl_proc_desc *prodesc)
     if (NIL_P(res)) {
         res = Data_Make_Struct(rb_cData, struct pl_tuple, pl_thr_mark, free, tpl);
     }
-    if (TYPE(res) != T_DATA || 
-        RDATA(res)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(res, struct pl_tuple, tpl);
+    GetTuple(res, tpl);
     tpl->cxt = rsi->econtext->ecxt_per_query_memory;
     tpl->dsc = rsi->expectedDesc;
     tpl->att = TupleDescGetAttInMetadata(rsi->expectedDesc);
     tpl->pro = prodesc;
     rb_thread_local_aset(rb_thread_current(), id_thr, res);
     return res;
+}
+
+#endif
+
+#ifdef PLRUBY_ENABLE_CONVERSION
+
+struct datum_value {
+    Datum d;
+    Oid typoid;
+    int typlen;
+};
+
+static void pl_conv_mark() {}
+
+Oid plruby_datum_oid(VALUE obj, int *typlen)
+{
+    struct datum_value *dv;
+
+    if (TYPE(obj) != T_DATA ||
+        RDATA(obj)->dmark != (RUBY_DATA_FUNC)pl_conv_mark) {
+        rb_raise(pl_ePLruby, "invalid Datum value");
+    }
+    Data_Get_Struct(obj, struct datum_value, dv);
+    if (typlen) *typlen = dv->typlen;
+    return dv->typoid;
+}
+
+VALUE plruby_datum_set(VALUE obj, Datum d)
+{
+    struct datum_value *dv;
+
+    if (TYPE(obj) != T_DATA ||
+        RDATA(obj)->dmark != (RUBY_DATA_FUNC)pl_conv_mark) {
+        rb_raise(pl_ePLruby, "invalid Datum value");
+    }
+    Data_Get_Struct(obj, struct datum_value, dv);
+    dv->d = d;
+    return obj;
+}
+
+Datum plruby_datum_get(VALUE obj, Oid *typoid)
+{
+    struct datum_value *dv;
+
+    if (TYPE(obj) != T_DATA ||
+        RDATA(obj)->dmark != (RUBY_DATA_FUNC)pl_conv_mark) {
+        rb_raise(pl_ePLruby, "invalid Datum value");
+    }
+    Data_Get_Struct(obj, struct datum_value, dv);
+    if (typoid) *typoid = dv->typoid;
+    return dv->d;
 }
 
 #endif
@@ -416,12 +444,19 @@ plruby_to_datum(VALUE obj, FmgrInfo *finfo, Oid typoid,
     }
 #ifdef PLRUBY_ENABLE_CONVERSION
     if (rb_respond_to(obj, id_to_datum)) {
-        VALUE res = rb_funcall(obj, id_to_datum, 2, INT2NUM(typoid), 
-                               INT2NUM(typlen));
-        if (TYPE(res) == T_DATA) {
-            d = (Datum)RDATA(res)->data;
-            rb_gc_force_recycle(res);
-            return d;
+        struct datum_value *dv;
+        VALUE res;
+        
+        res = Data_Make_Struct(rb_cData, struct datum_value, pl_conv_mark, free, dv);
+        dv->typoid = typoid;
+        dv->typlen = typlen;
+        res = rb_funcall(obj, id_to_datum, 1, res);
+        if (TYPE(res) == T_DATA &&
+            RDATA(res)->dmark == (RUBY_DATA_FUNC)pl_conv_mark) {
+            Data_Get_Struct(res, struct datum_value, dv);
+            if (dv->typoid == typoid && dv->typlen == typlen && dv->d) {
+                return dv->d;
+            }
         }
     }
 #endif
@@ -513,14 +548,11 @@ pl_tuple_heap(VALUE c, VALUE tuple)
     HeapTuple retval;
     struct pl_tuple *tpl;
     Datum *dvalues;
+    Oid typid;
     char *nulls;
     int i;
 
-    if (TYPE(tuple) != T_DATA || 
-        RDATA(tuple)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tuple, struct pl_tuple, tpl);
+    GetTuple(tuple, tpl);
     if (tpl->pro->result_type == 'b' && TYPE(c) != T_ARRAY) {
         c = rb_Array(c);
     }
@@ -541,27 +573,47 @@ pl_tuple_heap(VALUE c, VALUE tuple)
         }
         else {
             nulls[i] = ' ';
+            typid =  tpl->att->tupdesc->attrs[i]->atttypid;
 #if PG_PL_VERSION >= 74
             if (tpl->att->tupdesc->attrs[i]->attndims != 0) {
                 pl_proc_desc prodesc;
+                FmgrInfo func;
+                HeapTuple hp;
+                Form_pg_type fpg;
 
                 MEMZERO(&prodesc, pl_proc_desc, 1);
-                prodesc.result_func = tpl->pro->arg_func[i];
-                prodesc.result_elem = tpl->pro->arg_elem[i];
-                prodesc.result_oid = tpl->pro->arg_type[i];
-                prodesc.result_len = tpl->pro->arg_len[i];
-                prodesc.result_val = tpl->pro->arg_val[i];
-                prodesc.result_align = tpl->pro->arg_align[i];
+                PLRUBY_BEGIN(1);
+                hp = SearchSysCacheTuple(RUBY_TYPOID, ObjectIdGetDatum(typid), 0, 0, 0);
+                if (!HeapTupleIsValid(hp)) {
+                    rb_raise(pl_ePLruby, "cache lookup failed for type %u",
+                             typid);
+                }
+                fpg = (Form_pg_type) GETSTRUCT(hp);
+                typid = fpg->typelem;
+                ReleaseSysCache(hp);
+                hp = SearchSysCacheTuple(RUBY_TYPOID, ObjectIdGetDatum(typid), 0, 0, 0);
+                if (!HeapTupleIsValid(hp)) {
+                    rb_raise(pl_ePLruby, "cache lookup failed for type %u",
+                             typid);
+                }
+                fpg = (Form_pg_type) GETSTRUCT(hp);
+                fmgr_info(fpg->typinput, &func);
+                prodesc.result_func = func;
+                prodesc.result_oid = typid;
+                prodesc.result_elem = typid;
+                prodesc.result_val = fpg->typbyval;
+                prodesc.result_len = fpg->typlen;
+                prodesc.result_align = fpg->typalign;
+                ReleaseSysCache(hp);
+                PLRUBY_END;
                 dvalues[i] = plruby_return_array(RARRAY(c)->ptr[i], &prodesc);
             }
             else
 #endif
             {
-                Oid typoid = tpl->att->tupdesc->attrs[i]->atttypid;
-
                 dvalues[i] = plruby_to_datum(RARRAY(c)->ptr[i],
                                              &tpl->att->attinfuncs[i],
-                                             typoid,
+                                             typid,
                                              tpl->att->attelems[i],
                                              tpl->att->atttypmods[i]);
             }
@@ -580,11 +632,7 @@ pl_tuple_put(VALUE c, VALUE tuple)
     MemoryContext oldcxt;
     struct pl_tuple *tpl;
 
-    if (TYPE(tuple) != T_DATA || 
-        RDATA(tuple)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tuple, struct pl_tuple, tpl);
+    GetTuple(tuple, tpl);
     retval = pl_tuple_heap(c, tuple);
     PLRUBY_BEGIN(1);
     oldcxt = MemoryContextSwitchTo(tpl->cxt);
@@ -608,11 +656,7 @@ pl_tuple_datum(VALUE c, VALUE tuple)
     HeapTuple tmp;
     struct pl_tuple *tpl;
 
-    if (TYPE(tuple) != T_DATA || 
-        RDATA(tuple)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-        rb_raise(pl_ePLruby, "invalid thread local variable");
-    }
-    Data_Get_Struct(tuple, struct pl_tuple, tpl);
+    GetTuple(tuple, tpl);
     tmp = pl_tuple_heap(c, tuple);
     PLRUBY_BEGIN(1);
     retval = TupleGetDatum(TupleDescGetSlot(tpl->att->tupdesc), tmp);
@@ -673,12 +717,29 @@ pl_warn(argc, argv, obj)
     case 2:
         indice  = 1;
         switch (level = NUM2INT(argv[0])) {
-        case NOTICE:
 #ifdef DEBUG
         case DEBUG:
 #endif
 #ifdef DEBUG1
         case DEBUG1:
+#endif
+#ifdef DEBUG2
+        case DEBUG2:
+#endif
+#ifdef DEBUG3
+        case DEBUG3:
+#endif
+#ifdef DEBUG4
+        case DEBUG4:
+#endif
+#ifdef DEBUG5
+        case DEBUG5:
+#endif
+#ifdef NOTICE
+        case NOTICE:
+#endif
+#ifdef LOG
+        case LOG:
 #endif
 #ifdef NOIND
         case NOIND:
@@ -721,7 +782,7 @@ pl_quote(obj, mes)
 {    
     char *tmp, *cp1, *cp2;
 
-    if (TYPE(mes) != T_STRING) {
+    if (TYPE(mes) != T_STRING || !RSTRING(mes)->ptr) {
         rb_raise(pl_ePLruby, "quote: string expected");
     }
     tmp = ALLOCA_N(char, RSTRING(mes)->len * 2 + 1);
@@ -893,11 +954,16 @@ pl_convert_arg(Datum value, Oid typoid, FmgrInfo *finfo, Oid typelem,
             }
         }
         if (RTEST(klass)) {
-            VALUE val, res;
+            struct datum_value *dv;
+            VALUE res;
 
-            val = Data_Wrap_Struct(rb_cData, 0, 0, (void *)value);
-            res = rb_funcall(klass, id_from_datum, 2, val, vid);
-            rb_gc_force_recycle(val);
+
+            res = Data_Make_Struct(rb_cData, struct datum_value,
+                                   pl_conv_mark, free, dv);
+            dv->d = value;
+            dv->typoid = typoid;
+            dv->typlen = attlen;
+            res = rb_funcall(klass, id_from_datum, 1, res);
             return res;
         }
     }
@@ -1042,18 +1108,7 @@ plruby_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
 
             PLRUBY_BEGIN(1);
 #if PG_PL_VERSION >= 74
-            if (NameStr(fpgt->typname)[0] != '_')
-#endif
-            {
-                FmgrInfo finfo;
-                
-                fmgr_info(typoutput, &finfo);
-                
-                s = pl_convert_arg(attr, tupdesc->attrs[i]->atttypid,
-                                   &finfo, typelem,tupdesc->attrs[i]->attlen);
-            }
-#if PG_PL_VERSION >= 74 
-            else {
+            if (NameStr(fpgt->typname)[0] == '_') {
                 ArrayType *array;
                 int ndim, *dim;
                 
@@ -1069,8 +1124,9 @@ plruby_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
                     Form_pg_type typeStruct;
                     char *p = ARR_DATA_PTR(array);
 
-                    typeTuple = SearchSysCache(TYPEOID,
-                                               ObjectIdGetDatum((Oid) fpgt->typelem), 0, 0, 0);
+                    typeTuple = 
+                        SearchSysCacheTuple(RUBY_TYPOID,
+                                            ObjectIdGetDatum((Oid) fpgt->typelem), 0, 0, 0);
                     if (!HeapTupleIsValid(typeTuple)) {
                         rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                                  (Oid) fpgt->typelem);
@@ -1088,7 +1144,16 @@ plruby_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
                                      ARR_ELEMTYPE(array));
                 }
             }
+            else
 #endif
+            {
+                FmgrInfo finfo;
+                
+                fmgr_info(typoutput, &finfo);
+                
+                s = pl_convert_arg(attr, tupdesc->attrs[i]->atttypid,
+                                   &finfo, typelem,tupdesc->attrs[i]->attlen);
+            }
             PLRUBY_END;
 
 #if PG_PL_VERSION >= 71
@@ -1191,11 +1256,7 @@ plruby_create_args(struct pl_thread_st *plth, pl_proc_desc *prodesc)
         if (NIL_P(res)) {
             res = Data_Make_Struct(rb_cData, struct pl_tuple, pl_thr_mark, free, tpl);
         } 
-        if (TYPE(res) != T_DATA || 
-           RDATA(res)->dmark != (RUBY_DATA_FUNC)pl_thr_mark) {
-            rb_raise(pl_ePLruby, "invalid thread local variable");
-        }
-        Data_Get_Struct(res, struct pl_tuple, tpl);
+        GetTuple(res, tpl);
         tpl->fcinfo = fcinfo;
         tpl->pro = prodesc;
         rb_thread_local_aset(rb_thread_current(), id_thr, res);
@@ -1377,16 +1438,14 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
 
     if (c == Qnil) {
 #ifdef NEW_STYLE_FUNCTION
-        {
 #if PG_PL_VERSION >= 73
-            if (expr_multiple) {
-                pl_context_remove();
-                fcinfo->context = NULL;
-                ((ReturnSetInfo *)fcinfo->resultinfo)->isDone = ExprEndResult;
-            }
-#endif
-            PG_RETURN_NULL();
+        if (expr_multiple) {
+            pl_context_remove();
+            fcinfo->context = NULL;
+            ((ReturnSetInfo *)fcinfo->resultinfo)->isDone = ExprEndResult;
         }
+#endif
+        PG_RETURN_NULL();
 #else
         *isNull = true;
         return (Datum)0;

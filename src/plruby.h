@@ -214,6 +214,9 @@ extern MemoryContext plruby_spi_context;
 
 #ifdef PLRUBY_ENABLE_CONVERSION
 extern int plruby_fatal;
+extern Oid plruby_datum_oid _((VALUE, int *));
+extern VALUE plruby_datum_set _((VALUE, Datum));
+extern VALUE plruby_datum_get _((VALUE, Oid *));
 #endif
 
 #ifdef NEW_STYLE_FUNCTION

@@ -20,7 +20,13 @@ src/conversions/network/conversions.h
 src/conversions/basic/conversions.h
 src/conversions/basic/plruby_basic.c
 src/conversions/basic/extconf.rb
+src/conversions/bitstring/bitstring.sql
+src/conversions/bitstring/extconf.rb
+src/conversions/bitstring/conversions.h
+src/conversions/bitstring/plruby_bitstring.c
 src/conversions.h
+src/plplan.c
+src/plpl.c
 test/plp/b.rb
 test/plp/runtest
 test/plp/test.expected.65

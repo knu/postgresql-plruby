@@ -176,26 +176,48 @@ end
 
 conversions = {}
 subdirs = []
+enable_autoload = false
 
 if version.to_i >= 71
+   all_conversions = enable_config("all-conversions")
    Dir.foreach("src/conversions") do |dir| 
-      next if dir[0] == ?.
-      conversions[dir] = enable_config(dir)
+      next if dir[0] == ?. || !File.directory?("src/conversions/" + dir)
+      conversions[dir] = if all_conversions
+                            true
+                         else 
+                            enable_config(dir)
+                         end
    end
 
    if conversions.find {|k,v| v}
       $CFLAGS += " -DPLRUBY_ENABLE_CONVERSION"
       conversions["basic"] = true
-      begin
-	 conv = File.new("src/conversions.h", "w")
+      File.open("src/conversions.h", "w") do |conv|
 	 conversions.each do |key, val|
 	    if val
 	       conv.puts "#include \"conversions/#{key}/conversions.h\""
 	       subdirs << "src/conversions/#{key}"
 	    end
 	 end
-      ensure
-	 conv.close if conv
+      end
+   end
+   if !subdirs.empty?
+      enable_autoload = enable_config("autoload")
+      if enable_autoload
+         if RUBY_VERSION < "1.8.1"
+            enable_autoload = false
+            puts <<-EOT
+
+====================== WARNING ==========
+
+ --enable-autoload is disabled because it
+ can work *only* with ruby >= 1.8.1
+
+====================== WARNING ==========
+            EOT
+         else
+            $CFLAGS += " -DPLRUBY_ENABLE_AUTOLOAD='\"#{Config::CONFIG["sitearchdir"]}/plruby\"'"
+         end
       end
    end
 end
@@ -205,7 +227,7 @@ $CFLAGS += " -DPG_PL_VERSION=#{version}"
 suffix = with_config('suffix').to_s
 $CFLAGS += " -DPLRUBY_CALL_HANDLER=plruby#{suffix}_call_handler"
 
-if safe.to_i >= 3 
+if safe.to_i >= 3 && !enable_autoload
    $objs = ["plruby.o", "plplan.o", "plpl.o"]
    subdirs.each do |key|
       Dir.foreach(key) do |f|

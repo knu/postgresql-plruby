@@ -23,42 +23,60 @@ extern VALUE plruby_s_new _((int, VALUE *, VALUE));
 #ifndef HAVE_RB_INITIALIZE_COPY
 extern VALUE plruby_clone _((VALUE));
 #endif
-
-#define INIT_COPY(init_copy, type_struct, mark_func)                    \
-static VALUE                                                            \
-init_copy(VALUE copy, VALUE orig)                                       \
-{                                                                       \
-    type_struct *t0, *t1;                                               \
-                                                                        \
-    if (copy == orig) return copy;                                      \
-    if (TYPE(orig) != T_DATA ||                                         \
-        RDATA(orig)->dmark != (RUBY_DATA_FUNC)mark_func) {              \
-        rb_raise(rb_eTypeError, "wrong argument type to clone");        \
-    }                                                                   \
-    Data_Get_Struct(orig, type_struct, t0);                             \
-    Data_Get_Struct(copy, type_struct, t1);                             \
-    MEMCPY(t1, t0, type_struct, 1);                                     \
-    return copy;                                                        \
-}
+extern Oid plruby_datum_oid _((VALUE, int *));
+extern VALUE plruby_datum_set _((VALUE, Datum));
+extern VALUE plruby_datum_get _((VALUE, Oid *));
 
 static void pl_inet_mark(inet *p) {}
 
 static VALUE
 pl_inet_s_alloc(VALUE obj)
 {
+    void *v;
     inet *inst;
-    return Data_Make_Struct(obj, inet, pl_inet_mark, free, inst);
+
+    v = (void *)DFC1(inet_in, "0.0.0.0");
+    inst = (inet *)ALLOC_N(char, VARSIZE(v));
+    CPY_FREE(inst, v, VARSIZE(v));
+    return Data_Wrap_Struct(obj, pl_inet_mark, free, inst);
 }
 
-INIT_COPY(pl_inet_init_copy, inet, pl_inet_mark);
+static VALUE
+pl_inet_init_copy(VALUE copy, VALUE orig)
+{
+    inet *t0, *t1;
+    int s0, s1;
+    
+    if (copy == orig) return copy;
+    if (TYPE(orig) != T_DATA ||
+        RDATA(orig)->dmark != (RUBY_DATA_FUNC) pl_inet_mark) {
+        rb_raise(rb_eTypeError, "wrong argument type to clone");
+    }
+    Data_Get_Struct(orig, inet, t0);
+    Data_Get_Struct(copy, inet, t1);
+    s0 = VARSIZE(t0);
+    s1 = VARSIZE(t1);
+    if (s0 != s1) {
+        free(t1);
+        DATA_PTR(copy) = 0;
+        t1 = (inet *)ALLOC_N(char, s0);
+        DATA_PTR(copy) = t1;
+    }
+    memcpy(t1, t0, s0);
+    return copy;
+}
 
 static VALUE
-pl_inet_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_inet_s_datum(VALUE obj, VALUE a)
 {
     inet *ip0, *ip1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, inet, ip0);
+    ip0 = (inet *)plruby_datum_get(a, &typoid);
+    if (typoid != INETOID && typoid != CIDROID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     ip1 = (inet *)ALLOC_N(char, VARSIZE(ip0));
     memcpy(ip1, ip0, VARSIZE(ip0));
     res = Data_Wrap_Struct(obj, pl_inet_mark, free, ip1);
@@ -67,20 +85,20 @@ pl_inet_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_inet_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_inet_to_datum(VALUE obj, VALUE a)
 {
     inet *ip0, *ip1;
     Datum d;
     Oid typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     if (typoid != INETOID && typoid != CIDROID) {
 	return Qnil;
     }
     Data_Get_Struct(obj, inet, ip0);
     ip1 = (inet *)palloc(VARSIZE(ip0));
     memcpy(ip1, ip0, VARSIZE(ip0));
-    return Data_Wrap_Struct(rb_cData, 0, 0, ip1);
+    return plruby_datum_set(a, (Datum)ip1);
 }
 
 static VALUE
@@ -291,15 +309,33 @@ pl_mac_s_alloc(VALUE obj)
     return Data_Make_Struct(obj, macaddr, pl_mac_mark, free, mac);
 }
 
-INIT_COPY(pl_mac_init_copy, macaddr, pl_mac_mark);
+static VALUE
+pl_mac_init_copy(VALUE copy, VALUE orig)
+{
+    macaddr *t0, *t1;
+
+    if (copy == orig) return copy;
+    if (TYPE(orig) != T_DATA ||
+        RDATA(orig)->dmark != (RUBY_DATA_FUNC)pl_mac_mark) {
+        rb_raise(rb_eTypeError, "wrong argument type to clone");
+    }
+    Data_Get_Struct(orig, macaddr, t0);
+    Data_Get_Struct(copy, macaddr, t1);
+    MEMCPY(t1, t0, macaddr, 1);
+    return copy;
+}
 
 static VALUE
-pl_mac_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_mac_s_datum(VALUE obj, VALUE a)
 {
     macaddr *mac0, *mac1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, macaddr, mac0);
+    mac0 = (macaddr *)plruby_datum_get(a, &typoid);
+    if (typoid != MACADDROID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     mac1 = ALLOC_N(macaddr, 1);
     memcpy(mac1, mac0, sizeof(macaddr));
     res = Data_Wrap_Struct(obj, pl_mac_mark, free, mac1);
@@ -308,19 +344,19 @@ pl_mac_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_mac_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_mac_to_datum(VALUE obj, VALUE a)
 {
     macaddr *mac0, *mac1;
     Oid typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     if (typoid != MACADDROID) {
 	return Qnil;
     }
     Data_Get_Struct(obj, macaddr, mac0);
     mac1 = (macaddr *)palloc(sizeof(macaddr));
     memcpy(mac1, mac0, sizeof(macaddr));
-    return Data_Wrap_Struct(rb_cData, 0, 0, mac1);
+    return plruby_datum_set(a, (Datum)mac1);
 }
 
 static VALUE
@@ -392,8 +428,8 @@ void Init_plruby_network()
 #endif
     rb_define_singleton_method(pl_cInet, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cInet, "from_string", plruby_s_new, -1);
-    rb_define_singleton_method(pl_cInet, "from_datum", pl_inet_s_datum, 2);
-    rb_define_method(pl_cInet, "to_datum", pl_inet_to_datum, 2);
+    rb_define_singleton_method(pl_cInet, "from_datum", pl_inet_s_datum, 1);
+    rb_define_method(pl_cInet, "to_datum", pl_inet_to_datum, 1);
     rb_define_method(pl_cInet, "initialize", pl_inet_init, -1);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cInet, "clone", plruby_clone, 0);
@@ -429,8 +465,8 @@ void Init_plruby_network()
 #endif
     rb_define_singleton_method(pl_cMac, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cMac, "from_string", plruby_s_new, -1);
-    rb_define_singleton_method(pl_cMac, "from_datum", pl_mac_s_datum, 2);
-    rb_define_method(pl_cMac, "to_datum", pl_mac_to_datum, 2);
+    rb_define_singleton_method(pl_cMac, "from_datum", pl_mac_s_datum, 1);
+    rb_define_method(pl_cMac, "to_datum", pl_mac_to_datum, 1);
     rb_define_method(pl_cMac, "initialize", pl_mac_init, 1);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cMac, "clone", plruby_clone, 0);

@@ -147,8 +147,8 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             fpgt = (Form_pg_type) GETSTRUCT(typeTup);
             arg_is_array = qdesc->arg_is_array[i] = NameStr(fpgt->typname)[0] == '_';
             if (qdesc->arg_is_array[i]) {
-                HeapTuple typeTuple = SearchSysCache
-                    (TYPEOID,
+                HeapTuple typeTuple = SearchSysCacheTuple
+                    (RUBY_TYPOID,
                      ObjectIdGetDatum(fpgt->typelem), 0, 0, 0);
 
                 if (!HeapTupleIsValid(typeTuple)) {

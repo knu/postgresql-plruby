@@ -28,6 +28,9 @@ extern VALUE plruby_s_new _((int, VALUE *, VALUE));
 #ifndef HAVE_RB_INITIALIZE_COPY
 extern VALUE plruby_clone _((VALUE));
 #endif
+extern Oid plruby_datum_oid _((VALUE, int *));
+extern VALUE plruby_datum_set _((VALUE, Datum));
+extern VALUE plruby_datum_get _((VALUE, Oid *));
 
 static VALUE pl_cPoint;
 
@@ -77,12 +80,16 @@ pl_point_s_alloc(VALUE obj)
 INIT_COPY(pl_point_init_copy, Point, pl_point_mark);
 
 static VALUE
-pl_point_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_point_s_datum(VALUE obj, VALUE a)
 {
     Point *p0, *p1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, Point, p0);
+    p0 = (Point *)plruby_datum_get(a, &typoid);
+    if (typoid != POINTOID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     p1 = ALLOC_N(Point, 1);
     memcpy(p1, p0, sizeof(Point));
     res = Data_Wrap_Struct(obj, pl_point_mark, free, p1);
@@ -91,19 +98,19 @@ pl_point_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_point_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_point_to_datum(VALUE obj, VALUE a)
 {
     Point *p0, *p1;
     int typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     if (typoid != POINTOID) {
         return Qnil;
     }
     Data_Get_Struct(obj, Point, p0);
     p1 = (Point *)palloc(sizeof(Point));
     memcpy(p1, p0, sizeof(Point));
-    return Data_Wrap_Struct(rb_cData, 0, 0, p1);
+    return plruby_datum_set(a, (Datum)p1);
 }
 
 static VALUE
@@ -350,12 +357,16 @@ pl_lseg_s_alloc(VALUE obj)
 INIT_COPY(pl_lseg_init_copy, LSEG, pl_lseg_mark);
 
 static VALUE
-pl_lseg_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_lseg_s_datum(VALUE obj, VALUE a)
 {
     LSEG *p0, *p1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, LSEG, p0);
+    p0 = (LSEG *)plruby_datum_get(a, &typoid);
+    if (typoid != LSEGOID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     p1 = ALLOC_N(LSEG, 1);
     memcpy(p1, p0, sizeof(LSEG));
     res = Data_Wrap_Struct(obj, pl_lseg_mark, free, p1);
@@ -364,19 +375,19 @@ pl_lseg_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_lseg_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_lseg_to_datum(VALUE obj, VALUE a)
 {
     LSEG *p0, *p1;
     int typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     if (typoid != LSEGOID) {
         return Qnil;
     }
     Data_Get_Struct(obj, LSEG, p0);
     p1 = (LSEG *)palloc(sizeof(LSEG));
     memcpy(p1, p0, sizeof(LSEG));
-    return Data_Wrap_Struct(rb_cData, 0, 0, p1);
+    return plruby_datum_set(a, (Datum)p1);
 }
 
 static VALUE
@@ -629,12 +640,16 @@ pl_box_s_alloc(VALUE obj)
 INIT_COPY(pl_box_init_copy, BOX, pl_box_mark);
 
 static VALUE
-pl_box_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_box_s_datum(VALUE obj, VALUE a)
 {
     BOX *p0, *p1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, BOX, p0);
+    p0 = (BOX *)plruby_datum_get(a, &typoid);
+    if (typoid != BOXOID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     p1 = ALLOC_N(BOX, 1);
     memcpy(p1, p0, sizeof(BOX));
     res = Data_Wrap_Struct(obj, pl_box_mark, free, p1);
@@ -643,27 +658,27 @@ pl_box_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_box_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_box_to_datum(VALUE obj, VALUE a)
 {
     BOX *p0, *p1;
     int typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     switch (typoid) {
     case BOXOID:
         break;
 
     case CIRCLEOID:
         obj = pl_convert(obj, rb_intern("to_circle"), pl_circle_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     case POLYGONOID:
         obj = pl_convert(obj, rb_intern("to_poly"), pl_poly_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     case POINTOID:
         obj = pl_convert(obj, rb_intern("to_point"), pl_point_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     default:
         return Qnil;
@@ -671,7 +686,7 @@ pl_box_to_datum(VALUE obj, VALUE a, VALUE b)
     Data_Get_Struct(obj, BOX, p0);
     p1 = (BOX *)palloc(sizeof(BOX));
     memcpy(p1, p0, sizeof(BOX));
-    return Data_Wrap_Struct(rb_cData, 0, 0, p1);
+    return plruby_datum_set(a, (Datum)p1);
 }
 
 static VALUE
@@ -1080,12 +1095,16 @@ pl_path_init_copy(VALUE copy, VALUE orig)
 }
 
 static VALUE
-pl_path_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_path_s_datum(VALUE obj, VALUE a)
 {
     PATH *p0, *p1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, PATH, p0);
+    p0 = (PATH *)plruby_datum_get(a, &typoid);
+    if (typoid != PATHOID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     p1 = (PATH *)ALLOC_N(char, p0->size);
     memcpy(p1, p0, p0->size);
     res = Data_Wrap_Struct(obj, pl_path_mark, free, p1);
@@ -1094,23 +1113,23 @@ pl_path_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_path_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_path_to_datum(VALUE obj, VALUE a)
 {
     PATH *p0, *p1;
     int typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     switch (typoid) {
     case PATHOID:
         break;
 
     case POLYGONOID:
         obj = pl_convert(obj, rb_intern("to_poly"), pl_poly_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     case POINTOID:
         obj = pl_convert(obj, rb_intern("to_point"), pl_point_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     default:
         return Qnil;
@@ -1118,7 +1137,7 @@ pl_path_to_datum(VALUE obj, VALUE a, VALUE b)
     Data_Get_Struct(obj, PATH, p0);
     p1 = (PATH *)palloc(p0->size);
     memcpy(p1, p0, p0->size);
-    return Data_Wrap_Struct(rb_cData, 0, 0, p1);
+    return plruby_datum_set(a, (Datum)p1);
 }
 
 static VALUE
@@ -1371,12 +1390,16 @@ pl_poly_init_copy(VALUE copy, VALUE orig)
 }
 
 static VALUE
-pl_poly_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_poly_s_datum(VALUE obj, VALUE a)
 {
     POLYGON *p0, *p1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, POLYGON, p0);
+    p0 = (POLYGON *)plruby_datum_get(a, &typoid);
+    if (typoid != POLYGONOID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     p1 = (POLYGON *)ALLOC_N(char, p0->size);
     memcpy(p1, p0, p0->size);
     res = Data_Wrap_Struct(obj, pl_poly_mark, free, p1);
@@ -1385,31 +1408,31 @@ pl_poly_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_poly_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_poly_to_datum(VALUE obj, VALUE a)
 {
     POLYGON *p0, *p1;
     int typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     switch (typoid) {
     case POLYGONOID:
         break;
 
     case CIRCLEOID:
         obj = pl_convert(obj, rb_intern("to_circle"), pl_circle_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     case PATHOID:
         obj = pl_convert(obj, rb_intern("to_path"), pl_path_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     case BOXOID:
         obj = pl_convert(obj, rb_intern("to_box"), pl_box_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     case POINTOID:
         obj = pl_convert(obj, rb_intern("to_point"), pl_point_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     default:
         return Qnil;
@@ -1417,7 +1440,7 @@ pl_poly_to_datum(VALUE obj, VALUE a, VALUE b)
     Data_Get_Struct(obj, POLYGON, p0);
     p1 = (POLYGON *)palloc(p0->size);
     memcpy(p1, p0, p0->size);
-    return Data_Wrap_Struct(rb_cData, 0, 0, p1);
+    return plruby_datum_set(a, (Datum)p1);
 }
 
 
@@ -1639,12 +1662,16 @@ pl_circle_s_alloc(VALUE obj)
 INIT_COPY(pl_circle_init_copy, CIRCLE, pl_circle_mark);
 
 static VALUE
-pl_circle_s_datum(VALUE obj, VALUE a, VALUE b)
+pl_circle_s_datum(VALUE obj, VALUE a)
 {
     CIRCLE *p0, *p1;
+    Oid typoid;
     VALUE res;
 
-    Data_Get_Struct(a, CIRCLE, p0);
+    p0 = (CIRCLE *)plruby_datum_get(a, &typoid);
+    if (typoid != CIRCLEOID) {
+	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
+    }
     p1 = ALLOC_N(CIRCLE, 1);
     memcpy(p1, p0, sizeof(CIRCLE));
     res = Data_Wrap_Struct(obj, pl_circle_mark, free, p1);
@@ -1653,27 +1680,27 @@ pl_circle_s_datum(VALUE obj, VALUE a, VALUE b)
 }
 
 static VALUE
-pl_circle_to_datum(VALUE obj, VALUE a, VALUE b)
+pl_circle_to_datum(VALUE obj, VALUE a)
 {
     CIRCLE *p0, *p1;
     int typoid;
 
-    typoid = NUM2INT(a);
+    typoid = plruby_datum_oid(a, 0);
     switch (typoid) {
     case CIRCLEOID:
         break;
 
     case BOXOID:
         obj = pl_convert(obj, rb_intern("to_box"), pl_box_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
         
     case POLYGONOID:
         obj = pl_convert(obj, rb_intern("to_poly"), pl_poly_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     case POINTOID:
         obj = pl_convert(obj, rb_intern("to_point"), pl_point_mark);
-        return rb_funcall(obj, rb_frame_last_func(), 2, a, b);
+        return rb_funcall(obj, rb_frame_last_func(), 1, a);
 
     default:
         return Qnil;
@@ -1681,7 +1708,7 @@ pl_circle_to_datum(VALUE obj, VALUE a, VALUE b)
     Data_Get_Struct(obj, CIRCLE, p0);
     p1 = (CIRCLE *)palloc(sizeof(CIRCLE));
     memcpy(p1, p0, sizeof(CIRCLE));
-    return Data_Wrap_Struct(rb_cData, 0, 0, p1);
+    return plruby_datum_set(a, (Datum)p1);
 }
 
 static VALUE
@@ -2132,7 +2159,7 @@ void Init_plruby_geometry()
     rb_define_singleton_method(pl_cPoint, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cPoint, "from_string", pl_point_s_str, 1);
     rb_define_singleton_method(pl_cPoint, "from_datum", pl_point_s_datum, 1);
-    rb_define_method(pl_cPoint, "to_datum", pl_point_to_datum, 2);
+    rb_define_method(pl_cPoint, "to_datum", pl_point_to_datum, 1);
     rb_define_method(pl_cPoint, "initialize", pl_point_init, 2);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cPoint, "clone", plruby_clone, 0);
@@ -2169,8 +2196,8 @@ void Init_plruby_geometry()
 #endif
     rb_define_singleton_method(pl_cLseg, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cLseg, "from_string", pl_lseg_s_str, 1);
-    rb_define_singleton_method(pl_cLseg, "from_datum", pl_lseg_s_datum, 2);
-    rb_define_method(pl_cLseg, "to_datum", pl_lseg_to_datum, 2);
+    rb_define_singleton_method(pl_cLseg, "from_datum", pl_lseg_s_datum, 1);
+    rb_define_method(pl_cLseg, "to_datum", pl_lseg_to_datum, 1);
     rb_define_method(pl_cLseg, "initialize", pl_lseg_init, 2);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cLseg, "clone", plruby_clone, 0);
@@ -2200,8 +2227,8 @@ void Init_plruby_geometry()
 #endif
     rb_define_singleton_method(pl_cBox, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cBox, "from_string", pl_box_s_str, 1);
-    rb_define_singleton_method(pl_cBox, "from_datum", pl_box_s_datum, 2);
-    rb_define_method(pl_cBox, "to_datum", pl_box_to_datum, 2);
+    rb_define_singleton_method(pl_cBox, "from_datum", pl_box_s_datum, 1);
+    rb_define_method(pl_cBox, "to_datum", pl_box_to_datum, 1);
     rb_define_method(pl_cBox, "initialize", pl_box_init, -1);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cBox, "clone", plruby_clone, 0);
@@ -2254,8 +2281,8 @@ void Init_plruby_geometry()
 #endif
     rb_define_singleton_method(pl_cPath, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cPath, "from_string", pl_path_s_str, 1);
-    rb_define_singleton_method(pl_cPath, "from_datum", pl_path_s_datum, 2);
-    rb_define_method(pl_cPath, "to_datum", pl_path_to_datum, 2);
+    rb_define_singleton_method(pl_cPath, "from_datum", pl_path_s_datum, 1);
+    rb_define_method(pl_cPath, "to_datum", pl_path_to_datum, 1);
     rb_define_method(pl_cPath, "initialize", pl_path_init, -1);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cPath, "clone", plruby_clone, 0);
@@ -2284,8 +2311,8 @@ void Init_plruby_geometry()
 #endif
     rb_define_singleton_method(pl_cPoly, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cPoly, "from_string", pl_poly_s_str, 1);
-    rb_define_singleton_method(pl_cPoly, "from_datum", pl_poly_s_datum, 2);
-    rb_define_method(pl_cPoly, "to_datum", pl_poly_to_datum, 2);
+    rb_define_singleton_method(pl_cPoly, "from_datum", pl_poly_s_datum, 1);
+    rb_define_method(pl_cPoly, "to_datum", pl_poly_to_datum, 1);
     rb_define_method(pl_cPoly, "initialize", pl_poly_init, -1);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cPoly, "clone", plruby_clone, 0);
@@ -2317,8 +2344,8 @@ void Init_plruby_geometry()
 #endif
     rb_define_singleton_method(pl_cCircle, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cCircle, "from_string", pl_circle_s_str, 1);
-    rb_define_singleton_method(pl_cCircle, "from_datum", pl_circle_s_datum, 2);
-    rb_define_method(pl_cCircle, "to_datum", pl_circle_to_datum, 2);
+    rb_define_singleton_method(pl_cCircle, "from_datum", pl_circle_s_datum, 1);
+    rb_define_method(pl_cCircle, "to_datum", pl_circle_to_datum, 1);
     rb_define_method(pl_cCircle, "initialize", pl_circle_init, 2);
 #ifndef HAVE_RB_INITIALIZE_COPY
     rb_define_method(pl_cCircle, "clone", plruby_clone, 0);

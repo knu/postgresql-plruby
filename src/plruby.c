@@ -639,10 +639,8 @@ pl_func_handler(struct pl_thread_st *plth)
             Form_pg_type typeStruct;
 
             PLRUBY_BEGIN(1);
-            typeTuple = SearchSysCache
-                (TYPEOID,
-                 ObjectIdGetDatum(prodesc->result_elem), 0, 0, 0);
-                        
+            typeTuple = SearchSysCacheTuple(RUBY_TYPOID,
+                                            ObjectIdGetDatum(prodesc->result_elem), 0, 0, 0);
             if (!HeapTupleIsValid(typeTuple)) {
                 rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                          prodesc->result_elem);
@@ -706,10 +704,8 @@ pl_func_handler(struct pl_thread_st *plth)
                 HeapTuple typeTuple;
                 Form_pg_type typeStruct;
                     
-                typeTuple = SearchSysCache
-                    (TYPEOID,
-                     ObjectIdGetDatum(prodesc->arg_elem[i]), 0, 0, 0);
-                    
+                typeTuple = SearchSysCacheTuple(RUBY_TYPOID,
+                                                ObjectIdGetDatum(prodesc->arg_elem[i]), 0, 0, 0);
                 if (!HeapTupleIsValid(typeTuple)) {
                     rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                              prodesc->arg_elem[i]);
@@ -826,11 +822,11 @@ for_numvals(obj, argobj)
         pl_proc_desc prodesc;
 
         MEMZERO(&prodesc, pl_proc_desc, 1);
-        prodesc.result_elem = fpg->typelem;
+        prodesc.result_oid = fpg->typelem;
         PLRUBY_BEGIN(1);
-        typeTup = SearchSysCache(TYPEOID,
-                                 ObjectIdGetDatum(prodesc.result_elem),
-                                 0, 0, 0);
+        typeTup = SearchSysCacheTuple(RUBY_TYPOID,
+                                      ObjectIdGetDatum(prodesc.result_oid),
+                                      0, 0, 0);
         if (!HeapTupleIsValid(typeTup)) {
             rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                      prodesc.result_elem);
@@ -838,7 +834,7 @@ for_numvals(obj, argobj)
         fpg = (Form_pg_type) GETSTRUCT(typeTup);
         fmgr_info(fpg->typinput, &finfo);
         prodesc.result_func = finfo;
-        prodesc.result_oid = prodesc.result_elem;
+        prodesc.result_elem = prodesc.result_oid;
         prodesc.result_val = fpg->typbyval;
         prodesc.result_len = fpg->typlen;
         prodesc.result_align = fpg->typalign;
@@ -1285,10 +1281,16 @@ pl_init_all(void)
     }
     plruby_fatal = 1;
     ruby_init();
+#if defined(PLRUBY_ENABLE_AUTOLOAD) && MAIN_SAFE_LEVEL >= 3
+    {
+        VALUE path = rb_gv_get("$LOAD_PATH");
+        rb_ary_push(path, rb_str_new2(PLRUBY_ENABLE_AUTOLOAD));
+    }
+#else
     if (MAIN_SAFE_LEVEL < 3) {
         ruby_init_loadpath();
     }
-    rb_define_global_const("NOTICE", INT2FIX(NOTICE));
+#endif
 #ifdef DEBUG
     rb_define_global_const("DEBUG", INT2FIX(DEBUG));
 #else
@@ -1298,6 +1300,24 @@ pl_init_all(void)
 #endif
 #ifdef DEBUG1
     rb_define_global_const("DEBUG1", INT2FIX(DEBUG1));
+#endif
+#ifdef DEBUG2
+    rb_define_global_const("DEBUG2", INT2FIX(DEBUG2));
+#endif
+#ifdef DEBUG3
+    rb_define_global_const("DEBUG3", INT2FIX(DEBUG3));
+#endif
+#ifdef DEBUG4
+    rb_define_global_const("DEBUG4", INT2FIX(DEBUG4));
+#endif
+#ifdef DEBUG5
+    rb_define_global_const("DEBUG5", INT2FIX(DEBUG5));
+#endif
+#ifdef INFO
+    rb_define_global_const("INFO", INT2FIX(INFO));
+#endif
+#ifdef NOTICE
+    rb_define_global_const("NOTICE", INT2FIX(NOTICE));
 #endif
 #ifdef WARNING
     rb_define_global_const("WARNING", INT2FIX(WARNING));
@@ -1318,13 +1338,13 @@ pl_init_all(void)
         rb_const_defined_at(rb_cObject, rb_intern("PLtemp"))) {
         elog(ERROR, "module already defined");
     }
+    id_to_s = rb_intern("to_s");
     Init_plruby_pl();
     pl_mPL = rb_const_get(rb_cObject, rb_intern("PL"));
     pl_ePLruby = rb_const_get(pl_mPL, rb_intern("Error"));
     pl_eCatch = rb_const_get(pl_mPL, rb_intern("Catch"));
     pl_mPLtemp = rb_const_get(rb_cObject, rb_intern("PLtemp"));
     pl_sPLtemp = rb_singleton_class(pl_mPLtemp);
-    id_to_s = rb_intern("to_s");
     id_raise = rb_intern("raise");
     id_kill = rb_intern("kill");
     id_alive = rb_intern("alive?");
