@@ -27,30 +27,43 @@ end
 if ! have_library("pq", "PQsetdbLogin")
     raise "libpq is missing"
 end
-if ! have_library("ruby", "rb_gvar_get")
-    raise "ruby must be > 1.4.3"
-end
-$LDFLAGS += " -L${archdir} "
-create_makefile("plruby")
-version = 7
+$libs = append_library($libs, "ruby")
 if ! version = with_config("pgsql-version")
+   version = nil
+   version_in = "#{srcdir}/version.h.in"
+   version_regexp = /PG_RELEASE\s+"(\d)/
+   retry_version = true
    begin
-      IO.foreach("#{srcdir}/version.h.in") do |line|
-	 if /PG_RELEASE\s+\"(\d)\"/ =~ line
+      IO.foreach(version_in) do |line|
+	 if version_regexp =~ line
 	    version = $1
+	    if ! version.sub!(/\./, '')
+	       version += "0"
+	    end
 	    break
 	 end
       end
+      raise if ! version
    rescue
+      if retry_version
+	 version_in = "#{prefix}/include/config.h"
+	 version_regexp = /PG_VERSION\s+"(\d(\.\d)?)/
+	 retry_version = false
+	 retry
+      end
+      version = "70"
       print <<-EOT
  ************************************************************************
  I can't find the version of PostgreSQL, the test will be make against
- the output of 7.*. If the test fail, verify the result in the directories
+ the output of 7.0. If the test fail, verify the result in the directories
  test/plt and test/plp
  ************************************************************************
       EOT
    end
 end
+$CFLAGS += " -DPG_PL_VERSION=#{version}"
+create_makefile("plruby")
+version.sub!(/\.\d/, '')
 open("Makefile", "a") do |make|
     make.print <<-EOF
 

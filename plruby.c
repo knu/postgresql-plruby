@@ -87,6 +87,10 @@
 #define NEW_STYLE_FUNCTION
 #endif
 
+#if PG_PL_VERSION == 71
+#define SearchSysCacheTuple SearchSysCache
+#endif
+
 #include <ruby.h>
 
 enum { TG_OK, TG_SKIP };
@@ -155,7 +159,11 @@ end
 static void plruby_init_all(void);
 
 #ifdef NEW_STYLE_FUNCTION
+#if PG_PL_VERSION == 71
+PG_FUNCTION_INFO_V1(plruby_call_handler);
+#else
 Datum plruby_call_handler(PG_FUNCTION_ARGS);
+#endif
 static Datum plruby_func_handler(PG_FUNCTION_ARGS);
 static HeapTuple plruby_trigger_handler(PG_FUNCTION_ARGS);
 #else
@@ -345,6 +353,9 @@ plruby_func_handler(proinfo, proargs, isNull)
 
 	fmgr_info(typeStruct->typinput, &(prodesc->result_in_func));
 	prodesc->result_in_elem = (Oid) (typeStruct->typelem);
+#if PG_PL_VERSION == 71
+	ReleaseSysCache(typeTup);
+#endif
 	prodesc->result_in_len = typeStruct->typlen;
 	prodesc->nargs = procStruct->pronargs;
 	proc_internal_args[0] = '\0';
@@ -357,15 +368,21 @@ plruby_func_handler(proinfo, proargs, isNull)
 	    }
 	    typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
 
-	    if (typeStruct->typrelid != InvalidOid)
+	    if (typeStruct->typrelid != InvalidOid) {
 		prodesc->arg_is_rel[i] = 1;
+#if PG_PL_VERSION == 71
+		ReleaseSysCache(typeTup);
+#endif
+	    }
 	    else
 		prodesc->arg_is_rel[i] = 0;
 
 	    fmgr_info(typeStruct->typoutput, &(prodesc->arg_out_func[i]));
 	    prodesc->arg_out_elem[i] = (Oid) (typeStruct->typelem);
 	    prodesc->arg_out_len[i] = typeStruct->typlen;
-
+#if PG_PL_VERSION == 71
+	    ReleaseSysCache(typeTup);
+#endif
 	}
 
 #ifdef NEW_STYLE_FUNCTION
@@ -389,6 +406,9 @@ plruby_func_handler(proinfo, proargs, isNull)
 	prodesc->proname = malloc(strlen(internal_proname) + 1);
 	strcpy(prodesc->proname, internal_proname);
 	rb_hash_aset(PLruby_hash, value_proname, value_proc_desc); 
+#if PG_PL_VERSION == 71
+	ReleaseSysCache(procTup);
+#endif
     }
 
     Data_Get_Struct(value_proc_desc, plruby_proc_desc, prodesc);
@@ -503,6 +523,9 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, int iterat)
 
 	typoutput = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typoutput);
 	typelem = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typelem);
+#if PG_PL_VERSION == 71
+	ReleaseSysCache(typeTup);
+#endif
 	if (!isnull && OidIsValid(typoutput)) {
 	    VALUE s;
 #ifdef NEW_STYLE_FUNCTION
@@ -589,6 +612,9 @@ for_numvals(obj, argobj)
     }
     typinput = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typinput);
     typelem = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typelem);
+#if PG_PL_VERSION == 71
+    ReleaseSysCache(typeTup);
+#endif
 
     /************************************************************
      * Set the attribute to NOT NULL and convert the contents
@@ -596,6 +622,13 @@ for_numvals(obj, argobj)
     arg->modnulls[attnum - 1] = ' ';
     fmgr_info(typinput, &finfo);
 #ifdef NEW_STYLE_FUNCTION
+#if PG_PL_VERSION == 71
+    arg->modvalues[attnum - 1] =
+	FunctionCall3(&finfo,
+		      CStringGetDatum(RSTRING(value)->ptr),
+		      ObjectIdGetDatum(typelem),
+		      Int32GetDatum(arg->tupdesc->attrs[attnum - 1]->atttypmod));
+#else
     arg->modvalues[attnum - 1] =
 	FunctionCall3(&finfo,
 		      CStringGetDatum(RSTRING(value)->ptr),
@@ -603,6 +636,7 @@ for_numvals(obj, argobj)
 		      Int32GetDatum((!VARLENA_FIXED_SIZE(arg->tupdesc->attrs[attnum - 1]))
 		      ? arg->tupdesc->attrs[attnum - 1]->attlen
 		      : arg->tupdesc->attrs[attnum - 1]->atttypmod));
+#endif
 #else
     arg->modvalues[attnum - 1] = (Datum) (*fmgr_faddr(&finfo))
 	(RSTRING(value)->ptr,
@@ -696,6 +730,9 @@ plruby_trigger_handler(FmgrInfo *proinfo)
 	prodesc->proname = malloc(strlen(internal_proname) + 1);
 	strcpy(prodesc->proname, internal_proname);
 	rb_hash_aset(PLruby_hash, value_proname, value_proc_desc); 
+#if PG_PL_VERSION == 71
+	ReleaseSysCache(procTup);
+#endif
     }
     Data_Get_Struct(value_proc_desc, plruby_proc_desc, prodesc);
 
@@ -706,8 +743,21 @@ plruby_trigger_handler(FmgrInfo *proinfo)
     rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("name")), 
 		 rb_str_freeze(rb_tainted_str_new2(trigdata->tg_trigger->tgname)));
 
+#if PG_PL_VERSION > 70
+    {
+	char *s = 
+	    DatumGetCString(
+		DirectFunctionCall1(nameout,
+				    NameGetDatum(
+					&(trigdata->tg_relation->rd_rel->relname))));
+	
+	rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("relname")), 
+		     rb_str_freeze(rb_tainted_str_new2(s)));
+    }
+#else
     rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("relname")), 
 		 rb_str_freeze(rb_tainted_str_new2(nameout(&(trigdata->tg_relation->rd_rel->relname)))));
+#endif
 
 #ifdef NEW_STYLE_FUNCTION
     stroid = DatumGetCString(DirectFunctionCall1(oidout,
@@ -1067,6 +1117,9 @@ plruby_SPI_prepare(obj, a, b)
 	qdesc->argtypelems[i] = ((Form_pg_type) GETSTRUCT(typeTup))->typelem;
 	qdesc->argvalues[i] = (Datum) NULL;
 	qdesc->arglen[i] = (int) (((Form_pg_type) GETSTRUCT(typeTup))->typlen);
+#if PG_PL_VERSION == 71
+	ReleaseSysCache(typeTup);
+#endif
     }
 
     plan = SPI_prepare(RSTRING(a)->ptr, nargs, qdesc->argtypes);

@@ -4,8 +4,12 @@ include Config
 pwd = Dir.pwd
 pwd.sub!("[^/]+/[^/]+$", "")
 language, extension = 'C', '_old'
-if system("nm #{pwd}plruby.#{CONFIG['DLEXT']} | grep OidFunctionCall3 2>&1 > /dev/null")
+case ARGV[0].to_i
+when 70
    language = 'newC'
+   extension = "_new"
+when 71
+   language = 'C'
    extension = "_new"
 end
 begin

@@ -68,8 +68,12 @@ be 'newC' in this case
                 lancompiler 'PL/Ruby';
 
 
-    *WARNING* for the new interface to fmgr (for PostgreSQL > 7.0.2), the 
-              language must be specified as 'newC' rather than 'C'
+    *** WARNING for PostgreSQL > 7.0.2 ***
+              for the new interface to fmgr, the  language must be specified
+              as 'newC' rather than 'C'
+
+    *** WARNING for PostgreSQL >= 7.1.rc4 ***
+              the language must be specified as 'C' rather than 'newC'
 
     The trusted keyword on create procedural language tells PostgreSQL,
     that all users (not only those with superuser privilege) are

@@ -212,29 +212,43 @@ create function ruby_int4add(int4,int4) returns int4 as '
     args[0].to_i + args[1].to_i
 ' language 'plruby';
 
-create function ruby_int4div(int4,int4) returns int4 as '
-    args[0].to_i / args[1].to_i
+create function ruby_int4_accum(_int4, int4) returns _int4 as '
+    if /\\{(\\d+),(\\d+)\\}/ =~ args[0]
+        a, b = $1, $2
+        newsum = a.to_i + args[1].to_i
+        newcnt = b.to_i + 1
+    else
+        raise "unexpected value #{args[0]}"
+    end
+    "{#{newsum},#{newcnt}}"
 ' language 'plruby';
 
-create function ruby_int4inc(int4) returns int4 as '
-    args[0].to_i + 1
+create function ruby_int4_avg(_int4) returns int4 as '
+    if /\\{(\\d+),(\\d+)\\}/ =~ args[0]
+        a, b = $1, $2
+        if b.to_i == 0
+	    return nil
+        else
+            return a.to_i / b.to_i
+        end
+    else
+        raise "unexpected value #{args[0]}"
+    end
 ' language 'plruby';
 
 create aggregate ruby_avg (
-  sfunc1 = ruby_int4add,
+  sfunc = ruby_int4_accum,
   basetype = int4,
-  stype1 = int4,
-  sfunc2 = ruby_int4inc,
-  stype2 = int4,
-  finalfunc = ruby_int4div,
-  initcond2 = '0'
+  stype = _int4,
+  finalfunc = ruby_int4_avg,
+  initcond = '{0,0}'
  );
 
 create aggregate ruby_sum (
-  sfunc1 = ruby_int4add,
+  sfunc = ruby_int4add,
   basetype = int4,
-  stype1 = int4,
-  initcond1 = '0'
+  stype = int4,
+  initcond = '0'
  );
 
 create function ruby_int4lt(int4,int4) returns bool as '
