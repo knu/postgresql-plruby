@@ -11,11 +11,9 @@ query_free(qdesc)
     if (qdesc->arginfuncs) free(qdesc->arginfuncs);
     if (qdesc->argtypelems) free(qdesc->argtypelems);
     if (qdesc->arglen) free(qdesc->arglen);
-#if PG_PL_VERSION >= 73
     if (qdesc->arg_is_array) free(qdesc->arg_is_array);
     if (qdesc->arg_val) free(qdesc->arg_val);
     if (qdesc->arg_align) free(qdesc->arg_align);
-#endif
     free(qdesc);
 }
 
@@ -42,11 +40,11 @@ pl_plan_save(VALUE obj)
 
     GetPlan(obj, qdesc);
 
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     tmp = qdesc->plan;
     qdesc->plan = SPI_saveplan(tmp);
     SPI_freeplan(tmp);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
 
     if (qdesc->plan == NULL) {
         char buf[128];
@@ -114,28 +112,33 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
     qdesc->argtypes = NULL;
     if (qdesc->nargs) {
         qdesc->argtypes = ALLOC_N(Oid, qdesc->nargs);
+        MEMZERO(qdesc->argtypes, Oid, qdesc->nargs);
         qdesc->arginfuncs = ALLOC_N(FmgrInfo, qdesc->nargs);
+        MEMZERO(qdesc->arginfuncs, FmgrInfo, qdesc->nargs);
         qdesc->argtypelems = ALLOC_N(Oid, qdesc->nargs);
+        MEMZERO(qdesc->argtypelems, Oid, qdesc->nargs);
         qdesc->arglen = ALLOC_N(int, qdesc->nargs);
-#if PG_PL_VERSION >= 73
+        MEMZERO(qdesc->arglen, int, qdesc->nargs);
         qdesc->arg_is_array = ALLOC_N(bool, qdesc->nargs);
+        MEMZERO(qdesc->arg_is_array, bool, qdesc->nargs);
         qdesc->arg_val = ALLOC_N(bool, qdesc->nargs);
+        MEMZERO(qdesc->arg_val, bool, qdesc->nargs);
         qdesc->arg_align = ALLOC_N(char, qdesc->nargs);
-#endif
- 
-        for (i = 0; i < qdesc->nargs; i++)      {
-#if PG_PL_VERSION >= 73
+        MEMZERO(qdesc->arg_align, char, qdesc->nargs);
+        for (i = 0; i < qdesc->nargs; i++) {
             char *argcopy;
             List *names = NIL;
+#if PG_PL_VERSION >= 75
+            ListCell *lp;
+#else
             List  *lp;
+#endif
             TypeName *typename;
             Form_pg_type fpgt;
-#endif
             int arg_is_array = 0;
             VALUE args = plruby_to_s(RARRAY(qdesc->po.argsv)->ptr[i]);
 
-            PLRUBY_BEGIN(1);
-#if PG_PL_VERSION >= 73
+            PLRUBY_BEGIN_PROTECT(1);
             argcopy  = pstrdup(RSTRING(args)->ptr);
             SplitIdentifierString(argcopy, '.', &names);
             typename = makeNode(TypeName);
@@ -146,13 +149,18 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             fpgt = (Form_pg_type) GETSTRUCT(typeTup);
             arg_is_array = qdesc->arg_is_array[i] = NameStr(fpgt->typname)[0] == '_';
             if (qdesc->arg_is_array[i]) {
-                HeapTuple typeTuple = SearchSysCacheTuple
-                    (RUBY_TYPOID,
-                     ObjectIdGetDatum(fpgt->typelem), 0, 0, 0);
+                Oid elemtyp;
+                HeapTuple typeTuple;
+
+#if PG_PL_VERSION >= 75
+                elemtyp = getTypeIOParam(typeTup);
+#else
+                elemtyp = fpgt->typelem;
+#endif
+                typeTuple = SearchSysCache(TYPEOID, OidGD(elemtyp), 0, 0, 0);
 
                 if (!HeapTupleIsValid(typeTuple)) {
-                    rb_raise(pl_ePLruby, "cache lookup failed for type %u",
-                             fpgt->typelem);
+                    elog(ERROR, "cache lookup failed for type %u", elemtyp);
                 }
                 fpgt = (Form_pg_type) GETSTRUCT(typeTuple);
                 fmgr_info(fpgt->typinput, &(qdesc->arginfuncs[i]));
@@ -161,50 +169,57 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
                 qdesc->arg_align[i] = fpgt->typalign;
                 ReleaseSysCache(typeTuple);
             }
+#if PG_PL_VERSION >= 75
+            qdesc->argtypelems[i] = getTypeIOParam(typeTup);
 #else
-            typeTup = SearchSysCacheTuple(RUBY_TYPNAME,
-                                          PointerGetDatum(RSTRING(args)->ptr),
-                                          0, 0, 0);
-            if (!HeapTupleIsValid(typeTup)) {
-                rb_raise(pl_ePLruby, "Cache lookup of type '%s' failed", RSTRING(args)->ptr);
-            }
-            qdesc->argtypes[i] = typeTup->t_data->t_oid;
-#endif
-
             qdesc->argtypelems[i] = ((Form_pg_type) GETSTRUCT(typeTup))->typelem;
+#endif
             if (!arg_is_array) {
                 fmgr_info(((Form_pg_type) GETSTRUCT(typeTup))->typinput,
                           &(qdesc->arginfuncs[i]));
                 qdesc->arglen[i] = (int) (((Form_pg_type) GETSTRUCT(typeTup))->typlen);
             }
             ReleaseSysCache(typeTup);
-#if PG_PL_VERSION >= 73
+#if PG_PL_VERSION >= 75
+#define freeList(a_) list_free(a_)
+#endif
             freeList(typename->names);
             pfree(typename);
             freeList(names);
             pfree(argcopy);
-#endif
-            PLRUBY_END;
+            PLRUBY_END_PROTECT;
 
         }
     }
 
     {
-        extern bool InError;
+#ifdef PG_PL_TRYCATCH
+        PG_TRY();
+        {
+            plan = SPI_prepare(RSTRING(a)->ptr, qdesc->nargs, qdesc->argtypes);
+        }
+        PG_CATCH();
+        {
+            plan = NULL;
+        }
+        PG_END_TRY();
+#else
         sigjmp_buf save_restart;
+        extern bool InError;
 
         memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
         if (sigsetjmp(Warn_restart, 1) == 0) {
-            PLRUBY_BEGIN(1);
+            PLRUBY_BEGIN_PROTECT(1);
             plan = SPI_prepare(RSTRING(a)->ptr, qdesc->nargs, qdesc->argtypes);
             memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
-            PLRUBY_END;
+            PLRUBY_END_PROTECT;
         }
         else {
             memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
             InError = 0;
             plan = NULL;
         }
+#endif
     }
 
     if (plan == NULL) {
@@ -278,6 +293,7 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
         callnargs = RARRAY(argsv)->len;
         portal->nargs = callnargs;
         portal->nulls = ALLOC_N(char, callnargs + 1);
+        MEMZERO(portal->nulls, char, callnargs + 1);
         portal->argvalues = ALLOC_N(Datum, callnargs);
         MEMZERO(portal->argvalues, Datum, callnargs);
         portal->arglen = ALLOC_N(int, callnargs);
@@ -288,7 +304,6 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
                 portal->argvalues[j] = (Datum)NULL;
             }
             else {
-#if PG_PL_VERSION >= 73
                 if (qdesc->arg_is_array[j]) {
                     pl_proc_desc prodesc;
 
@@ -306,9 +321,7 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
                     portal->argvalues[j] =
                         plruby_return_array(RARRAY(argsv)->ptr[j], &prodesc);
                 } 
-                else
-#endif
-                {
+                else {
                     VALUE args = RARRAY(argsv)->ptr[j];
                     portal->nulls[j] = ' ';
                     portal->arglen[j] = qdesc->arglen[j];
@@ -427,9 +440,6 @@ create_vortal(int argc, VALUE *argv, VALUE obj)
     case 1:
         portal->po.argsv = argsv;
     }
-#if PG_PL_VERSION < 71
-    portal->po.output = RET_HASH;
-#endif
     process_args(qdesc, vortal);
     portal->po.argsv = 0;
     return vortal;
@@ -453,12 +463,12 @@ pl_plan_execp(argc, argv, obj)
     GetPlan(obj, qdesc);
     vortal = create_vortal(argc, argv, obj);
     Data_Get_Struct(vortal, struct PLportal, portal);
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     spi_rc = SPI_execp(qdesc->plan, portal->argvalues,
                        portal->nulls, portal->po.count);
     Data_Get_Struct(vortal, struct PLportal, portal);
     free_args(portal);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     count = portal->po.count;
     typout = portal->po.output;
 
@@ -534,10 +544,10 @@ pl_plan_execp(argc, argv, obj)
     return result;
 }
 
-#if PG_PL_VERSION >= 72
-
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION == 74
 #define PORTAL_ACTIVE(port) ((port)->portalActive)
+#elif PG_PL_VERSION > 74
+#define  PORTAL_ACTIVE(port) ((port)->status == PORTAL_ACTIVE)
 #else
 #define PORTAL_ACTIVE(port) 0
 #endif
@@ -548,12 +558,12 @@ pl_close(VALUE vortal)
     struct PLportal *portal;
 
     GetPortal(vortal, portal);
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     if (!PORTAL_ACTIVE(portal->portal)) {
         SPI_cursor_close(portal->portal);
     }
     portal->portal = 0;
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     return Qnil;
 }
 
@@ -581,9 +591,9 @@ pl_fetch(VALUE vortal)
     if (portal->po.count) pcount = portal->po.count;
     else pcount = -1;
     while (count != pcount) {
-        PLRUBY_BEGIN(1);
+        PLRUBY_BEGIN_PROTECT(1);
         SPI_cursor_fetch(portal->portal, true, block);
-        PLRUBY_END;
+        PLRUBY_END_PROTECT;
         if (SPI_processed <= 0) {
             return Qnil;
         }
@@ -617,12 +627,17 @@ pl_plan_each(argc, argv, obj)
     GetPlan(obj, qdesc);
     vortal = create_vortal(argc, argv, obj);
     Data_Get_Struct(vortal, struct PLportal, portal);
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
+#if PG_PL_VERSION >= 80
+    pgportal = SPI_cursor_open(NULL, qdesc->plan, portal->argvalues,
+			       portal->nulls, false);
+#else
     pgportal = SPI_cursor_open(NULL, qdesc->plan, 
                                portal->argvalues, portal->nulls);
+#endif
     Data_Get_Struct(vortal, struct PLportal, portal);
     free_args(portal);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     if (pgportal == NULL) {
         rb_raise(pl_ePLruby,  "SPI_cursor_open() failed");
     }
@@ -652,10 +667,15 @@ pl_plan_cursor(int argc, VALUE *argv, VALUE obj)
     }
     vortal = create_vortal(argc, argv, obj);
     Data_Get_Struct(vortal, struct PLportal, portal);
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
+#if PG_PL_VERSION >= 80
+    pgportal = SPI_cursor_open(name, qdesc->plan, portal->argvalues,
+			       portal->nulls, false);
+#else
     pgportal = SPI_cursor_open(name, qdesc->plan, 
                                portal->argvalues, portal->nulls);
-    PLRUBY_END;
+#endif
+    PLRUBY_END_PROTECT;
     if (pgportal == NULL) {
         rb_raise(pl_ePLruby,  "SPI_cursor_open() failed");
     }
@@ -670,10 +690,10 @@ pl_plan_release(VALUE obj)
     int spi_rc;
 
     GetPlan(obj, qdesc);
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     spi_rc = SPI_freeplan(qdesc->plan);
     qdesc->plan = 0;
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     if (spi_rc) {
         rb_raise(pl_ePLruby, "SPI_freeplan() failed");
     }
@@ -696,9 +716,9 @@ pl_cursor_move(VALUE obj, VALUE a)
         else {
             forward = 1;
         }
-        PLRUBY_BEGIN(1);
+        PLRUBY_BEGIN_PROTECT(1);
         SPI_cursor_move(portal->portal, forward, count);
-        PLRUBY_END;
+        PLRUBY_END_PROTECT;
     }
     return obj;
 }
@@ -725,9 +745,9 @@ pl_cursor_fetch(int argc, VALUE *argv, VALUE obj)
     if (!count) {
         return Qnil;
     }
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     SPI_cursor_fetch(portal->portal, forward, count);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     proces = SPI_processed;
     tup = SPI_tuptable;
     if (proces <= 0) {
@@ -801,15 +821,13 @@ pl_cursor_rewind(VALUE obj)
 
     GetPortal(obj, portal);
     while (proces) {
-        PLRUBY_BEGIN(1);
+        PLRUBY_BEGIN_PROTECT(1);
         SPI_cursor_move(portal->portal, 0, 12);
-        PLRUBY_END;
+        PLRUBY_END_PROTECT;
         proces = SPI_processed;
     }
     return obj;
 }
-
-#endif
 
 void Init_plruby_plan()
 {
@@ -836,17 +854,14 @@ void Init_plruby_plan()
     rb_define_method(pl_cPLPlan, "spi_execp", pl_plan_execp, -1);
     rb_define_method(pl_cPLPlan, "execp", pl_plan_execp, -1);
     rb_define_method(pl_cPLPlan, "exec", pl_plan_execp, -1);
-#if PG_PL_VERSION >= 72
     rb_define_method(pl_cPLPlan, "spi_fetch", pl_plan_each, -1);
     rb_define_method(pl_cPLPlan, "each", pl_plan_each, -1);
     rb_define_method(pl_cPLPlan, "fetch", pl_plan_each, -1);
     rb_define_method(pl_cPLPlan, "cursor", pl_plan_cursor, -1);
     rb_define_method(pl_cPLPlan, "release", pl_plan_release, 0);
-#endif
     pl_cPLCursor = rb_define_class_under(pl_mPL, "Cursor", rb_cObject);
     rb_undef_method(CLASS_OF(pl_cPLCursor), "allocate");
     rb_undef_method(CLASS_OF(pl_cPLCursor), "new");
-#if PG_PL_VERSION >= 72
     rb_include_module(pl_cPLCursor, rb_mEnumerable);
     rb_define_method(pl_cPLCursor, "each", pl_cursor_each, 0);
     rb_define_method(pl_cPLCursor, "reverse_each", pl_cursor_rev_each, 0);
@@ -856,5 +871,4 @@ void Init_plruby_plan()
     rb_define_method(pl_cPLCursor, "row", pl_cursor_fetch, -1);
     rb_define_method(pl_cPLCursor, "move", pl_cursor_move, 1);
     rb_define_method(pl_cPLCursor, "rewind", pl_cursor_rewind, 0);
-#endif
 }

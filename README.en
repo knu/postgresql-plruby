@@ -7,11 +7,11 @@ procedures
 
 * Prerequisite
 
-   ruby >= 1.4.4
-   source of postgresql (for some include files). 
+   ruby >= 1.6
+   postgresql >= 7.3
 
-  For PostgreSQL 7.2  the source is not required if all headers was installed.
-  Command (see INSTALL in the directory postgresql-7.2)
+  All PostgreSQL headers need to be installed. Command (see INSTALL in the
+  directory postgresql-7.x.y)
 
           make install-all-headers 
 
@@ -29,19 +29,14 @@ procedures
 
   --with-pgsql-lib=<library dir for PostgreSQL>
 
-  --with-pgsql-srcinc=<include file *from* the source of PostgreSQL>
-     pgsql-srcinc must contains, for example, the file catalog/pg_proc.h
-     (not needed if `make install-all-headers' was executed)
-
-  --with-pgsql-version=<release number for PostgreSQL, actually 65, 70, 71
-                        or 72 i.e. major and minor number>
+  --with-pgsql-version=<release number for PostgreSQL, actually 73,
+                        or 74 i.e. major and minor number>
 
   --disable-conversion
     by default plruby try to convert a postgres type to a ruby class
-    (for PostgreSQL >= 72). This option give the possibility to disable
-    all conversions
+    This option give the possibility to disable all conversions
 
-  --with_suffix=<suffix to add>
+  --with-suffix=<suffix to add>
 
     For example
 
@@ -53,13 +48,12 @@ procedures
  Example :
 
   ruby extconf.rb --with-pgsql-include=/usr/include/postgresql \
-                  --with-pgsql-lib=/usr/lib \
-                  --with-pgsql-srcinc=/var/postgres/postgresl-6.5/src/include
+                  --with-pgsql-lib=/usr/lib
 
 
 * Test (and examples)
 
- WARNING : if plruby was compiled with --enable-conversion
+ WARNING : if plruby was compiled without --disable-conversion
  you must *FIRST* run `make install' before `make test'
 
   make test
@@ -82,23 +76,16 @@ procedures
 
     The commands to create the new language are:
 
-        create function plruby_call_handler () returns opaque
-                as 'path-to-plruby-shared-lib'
-                language 'C';
+        create function plruby_call_handler () returns language_handler
+        as 'path-to-plruby-shared-lib'
+        language 'C';
 
-        create trusted procedural language 'plruby'
-                handler plruby_call_handler
-                lancompiler 'PL/Ruby';
+        create trusted language 'plruby'
+        handler plruby_call_handler
+        lancompiler 'PL/Ruby';
 
 
-    *** WARNING for PostgreSQL > 7.0.2 ***
-              for the new interface to fmgr, the  language must be specified
-              as 'newC' rather than 'C'
-
-    *** WARNING for PostgreSQL >= 7.1.rc4 ***
-              the language must be specified as 'C' rather than 'newC'
-
-    The trusted keyword on create procedural language tells PostgreSQL,
+    The 'trusted' keyword on 'create language' tells PostgreSQL,
     that all users (not only those with superuser privilege) are
     permitted to create functions with LANGUAGE 'plruby'. This is
     absolutely safe, because there is nothing a normal user can do

@@ -15,16 +15,18 @@
 #include "catalog/pg_language.h"
 #include "catalog/pg_type.h"
 
-#if PG_PL_VERSION >= 73
 #include "nodes/makefuncs.h"
 #include "nodes/nodes.h"
 #include "parser/parse_type.h"
 #include "utils/lsyscache.h"
 #include "funcapi.h"
-#endif
 
-#if PG_PL_VERSION >= 73
 #include "utils/array.h"
+
+#if PG_PL_VERSION >= 75
+#include "nodes/pg_list.h"
+#include "utils/typcache.h"
+#include "access/xact.h"
 #endif
 
 #include "package.h"
@@ -33,26 +35,6 @@
 
 #ifndef StringValuePtr
 #define StringValuePtr(x) STR2CSTR(x)
-#endif
-
-#ifndef MAXFMGRARGS
-#define RUBY_ARGS_MAXFMGR FUNC_MAX_ARGS
-#define RUBY_TYPOID TYPEOID
-#define RUBY_PROOID PROCOID
-#define RUBY_TYPNAME TYPENAME
-#else
-#define RUBY_ARGS_MAXFMGR MAXFMGRARGS
-#define RUBY_TYPOID TYPOID
-#define RUBY_PROOID PROOID
-#define RUBY_TYPNAME TYPNAME
-#endif
-
-#ifdef PG_FUNCTION_ARGS
-#define NEW_STYLE_FUNCTION
-#endif
-
-#if PG_PL_VERSION >= 71
-#define SearchSysCacheTuple SearchSysCache
 #endif
 
 extern VALUE rb_thread_list();
@@ -92,6 +74,35 @@ extern int plruby_interrupted;
     }                                                           \
 } while (0)
 
+#ifdef PG_PL_TRYCATCH
+
+#define PLRUBY_BEGIN_PROTECT(lvl_) do {         \
+    int in_progress = plruby_in_progress;       \
+    if (plruby_interrupted) {                   \
+        rb_raise(pl_ePLruby, "timeout");        \
+    }                                           \
+    plruby_in_progress = lvl_;                  \
+    PG_TRY();                                   \
+    {
+
+extern int errorcode;
+
+#define PLRUBY_END_PROTECT                      \
+    }                                           \
+    PG_CATCH();                                 \
+    {                                           \
+        plruby_in_progress = in_progress;       \
+        rb_raise(pl_eCatch, "propagate");       \
+    }                                           \
+    PG_END_TRY();                               \
+    plruby_in_progress = in_progress;           \
+    if (plruby_interrupted) {                   \
+        rb_raise(pl_ePLruby, "timeout");        \
+    }                                           \
+} while (0)
+
+#else
+    
 #define PLRUBY_BEGIN_PROTECT(lvl_) do {                                 \
     sigjmp_buf save_restart;                                            \
     int in_progress = plruby_in_progress;                               \
@@ -114,10 +125,29 @@ extern int plruby_interrupted;
     }                                                           \
 } while (0)
 
+#endif
+
 #else
 
 #define PLRUBY_BEGIN(lvl_)
 #define PLRUBY_END
+
+#ifdef PG_PL_TRYCATCH
+
+#define PLRUBY_BEGIN_PROTECT(lvl_) do {         \
+    PG_TRY();                                   \
+    {
+
+#define PLRUBY_END_PROTECT                      \
+    }                                           \
+    PG_CATCH();                                 \
+    {                                           \
+        rb_raise(pl_eCatch, "propagate");       \
+    }                                           \
+    PG_END_TRY();                               \
+} while (0)
+
+#else
 
 #define PLRUBY_BEGIN_PROTECT(lvl_) do {                                 \
     sigjmp_buf save_restart;                                            \
@@ -133,6 +163,8 @@ extern int plruby_interrupted;
    
 #endif
 
+#endif
+
    
 
 enum { TG_OK, TG_SKIP };
@@ -140,43 +172,34 @@ enum { TG_BEFORE, TG_AFTER, TG_ROW, TG_STATEMENT, TG_INSERT,
        TG_DELETE, TG_UPDATE, TG_UNKNOWN }; 
 
 struct pl_thread_st {
-#ifdef NEW_STYLE_FUNCTION
     PG_FUNCTION_ARGS;
-#else
-    FmgrInfo *proinfo;
-    FmgrValues *proargs;
-    bool *isNull;
-#endif
     int timeout;
 };
 
 typedef struct pl_proc_desc
 {
     char	   *proname;
-#if PG_PL_VERSION >= 73
     TransactionId  fn_xmin;
     CommandId      fn_cmin;
-#endif
     FmgrInfo	result_func;
     Oid		result_elem;
     Oid		result_oid;
     int		result_len;
-#if PG_PL_VERSION >= 73
     bool	result_is_array;
     bool	result_val;
     char	result_align;
-#endif
     int		nargs;
-    FmgrInfo	arg_func[RUBY_ARGS_MAXFMGR];
-    Oid		arg_elem[RUBY_ARGS_MAXFMGR];
-    Oid		arg_type[RUBY_ARGS_MAXFMGR];
-    int		arg_len[RUBY_ARGS_MAXFMGR];
-#if PG_PL_VERSION >= 73
-    bool	arg_is_array[RUBY_ARGS_MAXFMGR];
-    bool	arg_val[RUBY_ARGS_MAXFMGR];
-    char	arg_align[RUBY_ARGS_MAXFMGR];
+#if PG_PL_VERSION >= 75
+    int         named_args;
 #endif
-    int		arg_is_rel[RUBY_ARGS_MAXFMGR];
+    FmgrInfo	arg_func[FUNC_MAX_ARGS];
+    Oid		arg_elem[FUNC_MAX_ARGS];
+    Oid		arg_type[FUNC_MAX_ARGS];
+    int		arg_len[FUNC_MAX_ARGS];
+    bool	arg_is_array[FUNC_MAX_ARGS];
+    bool	arg_val[FUNC_MAX_ARGS];
+    char	arg_align[FUNC_MAX_ARGS];
+    int		arg_is_rel[FUNC_MAX_ARGS];
     char result_type;
 } pl_proc_desc;
 
@@ -195,11 +218,9 @@ typedef struct pl_query_desc
     FmgrInfo *arginfuncs;
     Oid *argtypelems;
     int	*arglen;
-#if PG_PL_VERSION >= 73
     bool       *arg_is_array;
     bool       *arg_val;
     char       *arg_align;
-#endif
     int cursor;
     struct portal_options po;
 } pl_query_desc;
@@ -242,14 +263,11 @@ extern VALUE plruby_create_args _((struct pl_thread_st *, pl_proc_desc *));
 extern VALUE plruby_i_each _((VALUE, struct portal_options *));
 extern void plruby_exec_output _((VALUE, int, int *));
 extern VALUE plruby_to_s _((VALUE));
-#if PG_PL_VERSION >= 73
+
 extern Datum plruby_return_array _((VALUE, pl_proc_desc *));
-#endif
-
-#if PG_PL_VERSION >= 73
 extern MemoryContext plruby_spi_context;
-#endif
 
+extern Datum plruby_dfc0 _((PGFunction));
 extern Datum plruby_dfc1 _((PGFunction, Datum));
 extern Datum plruby_dfc2 _((PGFunction, Datum, Datum));
 extern Datum plruby_dfc3 _((PGFunction, Datum, Datum, Datum));
@@ -262,29 +280,14 @@ extern VALUE plruby_datum_get _((VALUE, Oid *));
 extern VALUE plruby_define_void_class _((char *, char *));
 #endif
 
-#ifdef NEW_STYLE_FUNCTION
-
 #define DFC1(a_, b_) DirectFunctionCall1((a_), (b_))
 
-#else
+#define OidGD(a_) ObjectIdGetDatum(a_)
+#define PointerGD(a_) PointerGetDatum(a_)
+#define NameGD(a_) NameGetDatum(a_)
+#define BoolGD(a_) BoolGetDatum(a_)
+#define IntGD(a_) Int32GetDatum(a_)
+#define CStringGD(a_) CStringGetDatum(a_)
+#define TupleGD(a_,b_) TupleGetDatum((a_),(b_))
 
-#define DFC1(a_, b_) ((a_)(b_))
-#define CALLED_AS_TRIGGER(x) (CurrentTriggerData != NULL)
-#define DatumGetCString(x_) (x_)
-
-#endif
-
-#ifndef BoolGetDatum
-#define BoolGetDatum(a_) (a_)
-#define DatumGetBool(a_) (a_)
-#endif
-
-#if PG_PL_VERSION < 71
-#define ReleaseSysCache(a_)
-#endif
-
-#if PG_PL_VERSION < 72
-#define SPI_freetuptable(a_) 
-#define SPI_freeplan(a_) 
-#endif
 

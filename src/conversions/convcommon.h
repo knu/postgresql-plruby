@@ -25,7 +25,7 @@ name_(int argc, VALUE *argv, VALUE obj)                         \
     VALUE result;                                               \
                                                                 \
     Data_Get_Struct(obj, void, mac);                            \
-    res = (char *)plruby_dfc1(func_, mac);                      \
+    res = (char *)PLRUBY_DFC1(func_, mac);                      \
     result = rb_tainted_str_new(VARDATA(res), VARSIZE(res));    \
     pfree(res);                                                 \
     return result;                                              \
@@ -43,7 +43,7 @@ name_(VALUE obj, VALUE a)                                               \
     }                                                                   \
     initStringInfo(&si);                                                \
     appendBinaryStringInfo(&si, RSTRING(a)->ptr, RSTRING(a)->len);      \
-    mac1 = (type_ *)plruby_dfc1(func_, &si);                            \
+    mac1 = (type_ *)PLRUBY_DFC1(func_, &si);                            \
     pfree(si.data);                                                     \
     Data_Get_Struct(obj, type_, mac0);                                  \
     CPY_FREE(mac0, mac1, sizeof(type_));                                \
@@ -63,7 +63,7 @@ name_(VALUE obj, VALUE a)                                               \
     }                                                                   \
     initStringInfo(&si);                                                \
     appendBinaryStringInfo(&si, RSTRING(a)->ptr, RSTRING(a)->len);      \
-    mac1 = (type_ *)plruby_dfc1(func_, &si);                            \
+    mac1 = (type_ *)PLRUBY_DFC1(func_, &si);                            \
     pfree(si.data);                                                     \
     Data_Get_Struct(obj, type_, mac0);                                  \
     free(mac0);                                                         \
@@ -99,3 +99,13 @@ extern VALUE plruby_datum_get _((VALUE, Oid *));
 #ifndef StringValuePtr
 #define StringValuePtr(x) STR2CSTR(x)
 #endif
+
+extern Datum plruby_dfc0 _((PGFunction));
+extern Datum plruby_dfc1 _((PGFunction, Datum));
+extern Datum plruby_dfc2 _((PGFunction, Datum, Datum));
+extern Datum plruby_dfc3 _((PGFunction, Datum, Datum, Datum));
+
+#define PLRUBY_DFC0(a_) plruby_dfc0(a_)
+#define PLRUBY_DFC1(a_,b_) plruby_dfc1(a_,PointerGetDatum(b_))
+#define PLRUBY_DFC2(a_,b_,c_) plruby_dfc2(a_,PointerGetDatum(b_),PointerGetDatum(c_))
+#define PLRUBY_DFC3(a_,b_,c_,d_) plruby_dfc3(a_,PointerGetDatum(b_),PointerGetDatum(c_),PointerGetDatum(d_))

@@ -46,19 +46,7 @@
 
 #include "plruby.h"
 
-#ifdef NEW_STYLE_FUNCTION
-
-#if PG_PL_VERSION >= 71
 PG_FUNCTION_INFO_V1(PLRUBY_CALL_HANDLER);
-#else
-Datum PLRUBY_CALL_HANDLER(PG_FUNCTION_ARGS);
-#endif
-
-#else
-
-Datum plruby_call_handler(FmgrInfo *, FmgrValues *, bool *);
-
-#endif
 
 static Datum pl_func_handler(struct pl_thread_st *);
 static HeapTuple pl_trigger_handler(struct pl_thread_st *);
@@ -114,7 +102,6 @@ plruby_to_s(VALUE obj)
     return obj;
 }
 
-#if PG_PL_VERSION >= 73
 static void
 perm_fmgr_info(Oid functionId, FmgrInfo *finfo)
 {
@@ -122,8 +109,6 @@ perm_fmgr_info(Oid functionId, FmgrInfo *finfo)
 }
 
 #define fmgr_info perm_fmgr_info
-
-#endif
 
 static int pl_fatal = 0;
 
@@ -182,7 +167,8 @@ pl_require_th(VALUE th)
             if (TYPE(file_to_load) == T_STRING && 
                 RSTRING(file_to_load)->ptr) {
                 rb_undef_method(CLASS_OF(class_to_load), "method_missing");
-                rb_protect(rb_require, (VALUE)RSTRING(file_to_load)->ptr, 0);
+                rb_protect((VALUE(*)(VALUE))rb_require, 
+                           (VALUE)RSTRING(file_to_load)->ptr, 0);
                 file_to_load = Qnil;
             }
             rb_thread_wakeup(exec_th);
@@ -225,7 +211,7 @@ pl_conversions_missing(int argc, VALUE *argv, VALUE obj)
         tmp[1] = (VALUE)id;
         tmp[2] = (VALUE)argc;
         tmp[3] = (VALUE)argv;
-        return rb_iterate(pl_each, (VALUE)tmp, rb_yield, 0);
+        return rb_iterate((VALUE(*)(VALUE))pl_each, (VALUE)tmp, rb_yield, 0);
     }
     return rb_funcall2(obj, id, argc, argv);
 }
@@ -233,7 +219,7 @@ pl_conversions_missing(int argc, VALUE *argv, VALUE obj)
 VALUE
 plruby_define_void_class(char *name, char *path)
 {
-    VALUE klass, loadp;
+    VALUE klass;
 
     klass = rb_define_class(name, rb_cObject);
 #if HAVE_RB_DEFINE_ALLOC_FUNC
@@ -267,50 +253,54 @@ plruby_s_load(VALUE obj, VALUE a)
 #endif
 
 Datum
+plruby_dfc0(PGFunction func)
+{
+    FunctionCallInfoData fcinfo;
+    Datum result;
+
+    PLRUBY_BEGIN_PROTECT(1);
+    fcinfo.flinfo = NULL;
+    fcinfo.context = NULL;
+    fcinfo.resultinfo = NULL;
+    fcinfo.isnull = false;
+    fcinfo.nargs = 0;
+    result = (*func)(&fcinfo);
+    if (fcinfo.isnull)
+        result = 0;
+    PLRUBY_END_PROTECT;
+    return result;
+}
+
+Datum
 plruby_dfc1(PGFunction func, Datum arg1)
 {
-    sigjmp_buf save_restart;
     Datum result;
     
-    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
-    if (sigsetjmp(Warn_restart, 1) != 0) {
-        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
-        rb_raise(pl_eCatch, "propagate");
-    }
+    PLRUBY_BEGIN_PROTECT(1);
     result = DirectFunctionCall1(func, arg1);
-    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+    PLRUBY_END_PROTECT;
     return result;
 }
 
 Datum
 plruby_dfc2(PGFunction func, Datum arg1, Datum arg2)
 {
-    sigjmp_buf save_restart;
     Datum result;
     
-    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
-    if (sigsetjmp(Warn_restart, 1) != 0) {
-        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
-        rb_raise(pl_eCatch, "propagate");
-    }
+    PLRUBY_BEGIN_PROTECT(1);
     result = DirectFunctionCall2(func, arg1, arg2);
-    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+    PLRUBY_END_PROTECT;
     return result;
 }
 
 Datum
 plruby_dfc3(PGFunction func, Datum arg1, Datum arg2, Datum arg3)
 {
-    sigjmp_buf save_restart;
     Datum result;
     
-    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
-    if (sigsetjmp(Warn_restart, 1) != 0) {
-        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
-        rb_raise(pl_eCatch, "propagate");
-    }
+    PLRUBY_BEGIN_PROTECT(1);
     result = DirectFunctionCall3(func, arg1, arg2, arg3);
-    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+    PLRUBY_END_PROTECT;
     return result;
 }
 
@@ -338,15 +328,28 @@ pl_protect(plth)
     Datum retval;
     VALUE result;
 
+#ifdef PG_PL_TRYCATCH
+    PG_TRY();
+#else
     if (sigsetjmp(Warn_restart, 1) != 0) {
         return pl_eCatch;
     }
-    if (CALLED_AS_TRIGGER(plth->fcinfo)) {
-        retval = PointerGetDatum(pl_trigger_handler(plth));
+#endif
+    {
+        if (CALLED_AS_TRIGGER(plth->fcinfo)) {
+            retval = PointerGD(pl_trigger_handler(plth));
+        }
+        else {
+            retval = pl_func_handler(plth);
+        }
     }
-    else {
-        retval = pl_func_handler(plth);
+#ifdef PG_PL_TRYCATCH
+    PG_CATCH();
+    {
+        return pl_eCatch;
     }
+    PG_END_TRY();
+#endif
     result = Data_Wrap_Struct(rb_cObject, pl_result_mark, 0, (void *)retval);
     return result;
 }
@@ -410,7 +413,7 @@ pl_error(VALUE v)
     return result;
 }
 
-#if defined(PLRUBY_TIMEOUT) && PG_PL_VERSION >= 73
+#if defined(PLRUBY_TIMEOUT)
 struct extra_args {
     VALUE result;
     struct Node *context;
@@ -443,7 +446,15 @@ pl_real_handler(struct pl_thread_st *plth)
 
     state = 0;
     pl_call_level++;
-    result = rb_protect(pl_protect, (VALUE)plth, &state);
+#ifdef PG_PL_TRYCATCH
+    PG_TRY();
+#endif
+    {
+        result = rb_protect(pl_protect, (VALUE)plth, &state);
+    }
+#ifdef PG_PL_TRYCATCH
+    PG_END_TRY();
+#endif
     pl_call_level--;
     if (state) {
         state = 0;
@@ -452,7 +463,7 @@ pl_real_handler(struct pl_thread_st *plth)
             result = rb_str_new2("Unknown Error");
         }
     }
-#if defined(PLRUBY_TIMEOUT) && PG_PL_VERSION >= 73
+#if defined(PLRUBY_TIMEOUT)
     {
         VALUE res;
         struct extra_args *exa;
@@ -475,27 +486,19 @@ pl_real_handler(struct pl_thread_st *plth)
 
 static void pl_init_all _(());
 
-#if PG_PL_VERSION >= 73
 MemoryContext plruby_spi_context;
-#endif
 
 Datum
-#ifdef NEW_STYLE_FUNCTION
 PLRUBY_CALL_HANDLER(PG_FUNCTION_ARGS)
-#else
-PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
-                    FmgrValues *proargs,
-                    bool *isNull)
-#endif
 {
     VALUE result;
+#ifndef PG_PL_TRYCATCH
     sigjmp_buf save_restart;
+#endif
     struct pl_thread_st plth;
     volatile void *tmp;
-#if PG_PL_VERSION >= 73
     MemoryContext orig_context;
     volatile VALUE orig_id;
-#endif
 
     if (pl_firstcall) {
         pl_init_all();
@@ -505,11 +508,9 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
         Init_stack(&tmp);
     }
 
-#if PG_PL_VERSION >= 73
     orig_context = CurrentMemoryContext;
     orig_id = rb_thread_local_aref(rb_thread_current(), id_thr);
     rb_thread_local_aset(rb_thread_current(), id_thr, Qnil);
-#endif
     if (SPI_connect() != SPI_OK_CONNECT) {
         if (pl_call_level) {
             rb_raise(pl_ePLruby, "cannot connect to SPI manager");
@@ -518,19 +519,13 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
             elog(ERROR, "cannot connect to SPI manager");
         }
     }
-#if PG_PL_VERSION >= 73
     plruby_spi_context =  MemoryContextSwitchTo(orig_context);
-#endif
-#ifdef NEW_STYLE_FUNCTION
     plth.fcinfo = fcinfo;
-#else
-    plth.proinfo = proinfo;
-    plth.proargs = proargs;
-    plth.isNull = isNull;
-#endif
     plth.timeout = 0;
 
+#ifndef PG_PL_TRYCATCH
     memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
+#endif
 #ifdef PLRUBY_TIMEOUT
     if (!pl_call_level) {
         VALUE th;
@@ -552,7 +547,7 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
         result = pl_real_handler(&plth);
         PLRUBY_END;
     }
-#if defined(PLRUBY_TIMEOUT) && PG_PL_VERSION >= 73
+#if defined(PLRUBY_TIMEOUT)
     if (TYPE(result) == T_DATA &&
         RDATA(result)->dmark == (RUBY_DATA_FUNC)extra_args_mark) {
         ReturnSetInfo *rsi;
@@ -569,7 +564,9 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
         result = exa->result;
     }
 #endif
+#ifndef PG_PL_TRYCATCH
     memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+#endif
 
 #ifdef PLRUBY_TIMEOUT
     if (!pl_call_level) {
@@ -597,16 +594,18 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
     }
 #endif
 
-#if PG_PL_VERSION >= 73
     rb_thread_local_aset(rb_thread_current(), id_thr, orig_id);
-#endif
 
     if (result == pl_eCatch) {
         if (pl_call_level) {
             rb_raise(pl_eCatch, "SPI ERROR");
         }
         else {
+#ifdef PG_PL_TRYCATCH
+            PG_RE_THROW();
+#else
             siglongjmp(Warn_restart, 1);
+#endif
         }
     }
     if (TYPE(result) == T_STRING && RSTRING(result)->ptr) {
@@ -634,6 +633,56 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
 
 static char *definition = "def PLtemp.%s(%s)\n%s\nend";
 
+static VALUE
+pl_arg_names(HeapTuple procTup, pl_proc_desc *prodesc)
+{
+#if PG_PL_VERSION < 75
+    return rb_str_new2("args");
+#else
+    Datum argnamesDatum;
+    char *name;
+    bool isNull;
+    Datum *elems;
+    int nelems;
+    VALUE result;
+    int	i;
+    int nargs = prodesc->nargs;
+
+    prodesc->named_args = 0;
+    if (nargs == 0) {
+        return rb_str_new2("args");
+    }
+    argnamesDatum = SysCacheGetAttr(PROCOID, procTup, 
+                                    Anum_pg_proc_proargnames, &isNull);
+    if (isNull) {
+        return rb_str_new2("args");
+    }
+    PLRUBY_BEGIN_PROTECT(1);
+    deconstruct_array(DatumGetArrayTypeP(argnamesDatum), TEXTOID, -1, false,
+                      'i', &elems, &nelems);
+    if (nelems != nargs) {
+        result = Qnil;
+    }
+    else {
+        prodesc->named_args = 1;
+        result = rb_str_new2("");
+	for (i = 0; i < nargs; i++) {
+            name =  DatumGetCString(DFC1(textout, elems[i]));
+            rb_str_cat2(result, name);
+            pfree(name);
+            if (i != nargs - 1) {
+                rb_str_cat2(result, ",");
+            }
+        }
+    }
+    PLRUBY_END_PROTECT;
+    if (NIL_P(result)) {
+        rb_raise(pl_ePLruby, "invalid number of arguments for proargnames");
+    }
+    return result;
+#endif
+}
+
 static Datum
 pl_func_handler(struct pl_thread_st *plth)
 {
@@ -646,45 +695,18 @@ pl_func_handler(struct pl_thread_st *plth)
     VALUE value_proc_desc;
     VALUE value_proname;
     VALUE ary;
-    static char *argf = "args";
-    Oid result_oid, arg_type[RUBY_ARGS_MAXFMGR];
+    Oid result_oid, arg_type[FUNC_MAX_ARGS];
     int nargs;
-#ifdef NEW_STYLE_FUNCTION
     PG_FUNCTION_ARGS;
-#else
-    char *stroid;
-    FmgrInfo *proinfo;
-    FmgrValues *proargs;
-    bool *isNull;
-#endif
     
-#ifdef NEW_STYLE_FUNCTION
     fcinfo = plth->fcinfo;
     sprintf(internal_proname, "proc_%u", fcinfo->flinfo->fn_oid);
-#else
-    proinfo = plth->proinfo;
-    proargs = plth->proargs;
-    isNull = plth->isNull;
-    stroid = oidout(proinfo->fn_oid);
-    strcpy(internal_proname, "proc_");
-    strcat(internal_proname, stroid);
-    pfree(stroid);
-#endif
-
     proname_len = strlen(internal_proname);
     value_proname = rb_tainted_str_new(internal_proname, proname_len);
     value_proc_desc = rb_hash_aref(PLruby_hash, value_proname);
 
     PLRUBY_BEGIN(1);
-#ifdef NEW_STYLE_FUNCTION
-    procTup = SearchSysCacheTuple(RUBY_PROOID,
-                                  ObjectIdGetDatum(fcinfo->flinfo->fn_oid),
-                                  0, 0, 0);
-#else
-    procTup = SearchSysCacheTuple(RUBY_PROOID,
-                                  ObjectIdGetDatum(proinfo->fn_oid),
-                                  0, 0, 0);
-#endif
+    procTup = SearchSysCache(PROCOID, OidGD(fcinfo->flinfo->fn_oid), 0, 0, 0);
     PLRUBY_END;
     if (!HeapTupleIsValid(procTup))     {
         rb_raise(pl_ePLruby, "cache lookup from pg_proc failed");
@@ -722,7 +744,6 @@ pl_func_handler(struct pl_thread_st *plth)
         }
     }
 
-#if PG_PL_VERSION >= 73
     if (!NIL_P(value_proc_desc)) {
         int uptodate;
 
@@ -750,36 +771,27 @@ pl_func_handler(struct pl_thread_st *plth)
             value_proc_desc = Qnil;
         }
     }
-#endif
 
     if (NIL_P(value_proc_desc)) {
         HeapTuple typeTup;
         Form_pg_type typeStruct;
-        char proc_internal_args[4096];
         char *proc_source, *proc_internal_def;
         int status;
-#if PG_PL_VERSION >= 73
         MemoryContext oldcontext;
-#endif
 
         value_proc_desc = Data_Make_Struct(rb_cObject, pl_proc_desc, 0, pl_proc_free, prodesc);
         prodesc->result_oid = result_oid;
         PLRUBY_BEGIN(1);
-#if PG_PL_VERSION >= 73
         oldcontext = MemoryContextSwitchTo(TopMemoryContext);
         prodesc->fn_xmin = HeapTupleHeaderGetXmin(procTup->t_data);
         prodesc->fn_cmin = HeapTupleHeaderGetCmin(procTup->t_data);
-#endif
-        typeTup = SearchSysCacheTuple(RUBY_TYPOID,
-                                      ObjectIdGetDatum(result_oid),
-                                      0, 0, 0);
+        typeTup = SearchSysCache(TYPEOID, OidGD(result_oid), 0, 0, 0);
         PLRUBY_END;
         if (!HeapTupleIsValid(typeTup)) {
             rb_raise(pl_ePLruby, "cache lookup for return type failed");
         }
         typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
 
-#if PG_PL_VERSION >= 73
         if (typeStruct->typtype == 'p') {
             switch (result_oid) {
             case RECORDOID:
@@ -791,13 +803,7 @@ pl_func_handler(struct pl_thread_st *plth)
                 break;
             }
         }
-#endif
 
-#if PG_PL_VERSION < 73
-        if (typeStruct->typrelid != InvalidOid) {
-            rb_raise(pl_ePLruby, "return types of tuples supported only for >= 7.3");
-        }
-#else
         if (procStruct->proretset) {
             Oid funcid, functypeid;
             char functyptype;
@@ -834,19 +840,17 @@ pl_func_handler(struct pl_thread_st *plth)
                 }
             }
         }
-#endif
 
         prodesc->result_elem = (Oid)typeStruct->typelem;
-#if PG_PL_VERSION >= 73
         prodesc->result_is_array = 0;
+        PLRUBY_BEGIN(1);
         if (NameStr(typeStruct->typname)[0] == '_') {
             FmgrInfo  inputproc;
             HeapTuple typeTuple;
             Form_pg_type typeStruct;
 
-            PLRUBY_BEGIN(1);
-            typeTuple = SearchSysCacheTuple(RUBY_TYPOID,
-                                            ObjectIdGetDatum(prodesc->result_elem), 0, 0, 0);
+            typeTuple = SearchSysCache(TYPEOID, OidGD(prodesc->result_elem),
+                                       0, 0, 0);
             if (!HeapTupleIsValid(typeTuple)) {
                 rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                          prodesc->result_elem);
@@ -859,26 +863,19 @@ pl_func_handler(struct pl_thread_st *plth)
             prodesc->result_len = typeStruct->typlen;
             prodesc->result_align = typeStruct->typalign;
             ReleaseSysCache(typeTuple);
-            PLRUBY_END;
         }
-        else
-#endif
-        {
-            PLRUBY_BEGIN(1);
+        else {
             fmgr_info(typeStruct->typinput, &(prodesc->result_func));
             prodesc->result_len = typeStruct->typlen;
-            PLRUBY_END;
         }
+        PLRUBY_END;
         ReleaseSysCache(typeTup);
 
         prodesc->nargs = nargs;
-        proc_internal_args[0] = '\0';
         for (i = 0; i < prodesc->nargs; i++)    {
 
             PLRUBY_BEGIN(1);
-            typeTup = SearchSysCacheTuple(RUBY_TYPOID,
-                                          ObjectIdGetDatum(arg_type[i]),
-                                          0, 0, 0);
+            typeTup = SearchSysCache(TYPEOID, OidGD(arg_type[i]), 0, 0, 0);
             PLRUBY_END;
 
             if (!HeapTupleIsValid(typeTup)) {
@@ -887,12 +884,10 @@ pl_func_handler(struct pl_thread_st *plth)
             typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
             prodesc->arg_type[i] = arg_type[i];
 
-#if PG_PL_VERSION >= 73
             if (typeStruct->typtype == 'p') {
                 rb_raise(pl_ePLruby, "argument can't have the type %s",
                          format_type_be(arg_type[i]));
             }
-#endif
             prodesc->arg_elem[i] = (Oid) (typeStruct->typelem);
             if (typeStruct->typrelid != InvalidOid) {
                 prodesc->arg_is_rel[i] = 1;
@@ -903,15 +898,15 @@ pl_func_handler(struct pl_thread_st *plth)
             }
 
             PLRUBY_BEGIN(1);
-#if PG_PL_VERSION >= 73
             prodesc->arg_is_array[i] = 0;
             if (NameStr(typeStruct->typname)[0] == '_') {
                 FmgrInfo  outputproc;
                 HeapTuple typeTuple;
                 Form_pg_type typeStruct;
                     
-                typeTuple = SearchSysCacheTuple(RUBY_TYPOID,
-                                                ObjectIdGetDatum(prodesc->arg_elem[i]), 0, 0, 0);
+                typeTuple = SearchSysCache(TYPEOID, 
+                                           OidGD(prodesc->arg_elem[i]),
+                                           0, 0, 0);
                 if (!HeapTupleIsValid(typeTuple)) {
                     rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                              prodesc->arg_elem[i]);
@@ -925,9 +920,7 @@ pl_func_handler(struct pl_thread_st *plth)
                 prodesc->arg_align[i] = typeStruct->typalign;
                 ReleaseSysCache(typeTuple);
             }
-            else
-#endif
-            {
+            else {
                 fmgr_info(typeStruct->typoutput, &(prodesc->arg_func[i]));
                 prodesc->arg_len[i] = typeStruct->typlen;
             }
@@ -935,22 +928,38 @@ pl_func_handler(struct pl_thread_st *plth)
             PLRUBY_END;
         }
 
-        PLRUBY_BEGIN_PROTECT(1);
-#ifdef NEW_STYLE_FUNCTION
-        proc_source = DatumGetCString(DFC1(textout,
-                                           PointerGetDatum(&procStruct->prosrc)));
+        {
+            Datum prosrc;
+            char *argf;
+            VALUE argname;
+#if PG_PL_VERSION >= 75
+            bool isnull;
+
+            PLRUBY_BEGIN_PROTECT(1);
+            prosrc = SysCacheGetAttr(PROCOID, procTup, Anum_pg_proc_prosrc, &isnull);
+            PLRUBY_END_PROTECT;
+            if (isnull) {
+                rb_raise(pl_ePLruby, "null source");
+            }
 #else
-        proc_source = textout(&(procStruct->prosrc));
+            prosrc = PointerGD(&procStruct->prosrc);
 #endif
-        proc_internal_def = ALLOCA_N(char, strlen(definition) + proname_len +
-                                     strlen(argf) + strlen(proc_source) + 1);
-        sprintf(proc_internal_def, definition, internal_proname, argf, proc_source);
-        pfree(proc_source);
-        PLRUBY_END_PROTECT;
+            argname = plruby_to_s(pl_arg_names(procTup, prodesc));
+            PLRUBY_BEGIN_PROTECT(1);
+            proc_source = DatumGetCString(DFC1(textout, prosrc));
+            proc_internal_def = ALLOCA_N(char, strlen(definition) + 
+                                         proname_len + RSTRING(argname)->len +
+                                         strlen(proc_source) + 1);
+            sprintf(proc_internal_def, definition, internal_proname,
+                    RSTRING(argname)->ptr, proc_source);
+            pfree(proc_source);
+            PLRUBY_END_PROTECT;
+        }
 
         rb_eval_string_protect(proc_internal_def, &status);
         if (status) {
             VALUE s = plruby_to_s(rb_gv_get("$!"));
+            rb_hash_delete(PLruby_hash, value_proname);
             rb_raise(pl_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
                  RSTRING(s)->ptr, proc_internal_def);
         }
@@ -958,9 +967,7 @@ pl_func_handler(struct pl_thread_st *plth)
         strcpy(prodesc->proname, internal_proname);
         rb_hash_aset(PLruby_hash, value_proname, value_proc_desc); 
         PLRUBY_BEGIN(1);
-#if PG_PL_VERSION >= 73
         MemoryContextSwitchTo(oldcontext);
-#endif
         PLRUBY_END;
     }
     ReleaseSysCache(procTup);
@@ -1005,31 +1012,30 @@ for_numvals(obj, argobj)
         rb_raise(pl_ePLruby, "invalid attribute '%s'", RSTRING(key)->ptr);
     }
     attnum -= 1;
+    if (arg->tupdesc->attrs[attnum]->attisdropped) {
+        return Qnil;
+    }
 
     PLRUBY_BEGIN(1);
-    typeTup = SearchSysCacheTuple(RUBY_TYPOID,
-                                  ObjectIdGetDatum(arg->tupdesc->attrs[attnum]->atttypid),
-                                  0, 0, 0);
+    typeTup = SearchSysCache(TYPEOID,
+                             OidGD(arg->tupdesc->attrs[attnum]->atttypid),
+                             0, 0, 0);
     if (!HeapTupleIsValid(typeTup)) {   
         rb_raise(pl_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
-             RSTRING(key)->ptr,
-             ObjectIdGetDatum(arg->tupdesc->attrs[attnum]->atttypid));
+                 RSTRING(key)->ptr, OidGD(arg->tupdesc->attrs[attnum]->atttypid));
     }
     fpg = (Form_pg_type) GETSTRUCT(typeTup);
     ReleaseSysCache(typeTup);
     arg->modnulls[attnum] = ' ';
     fmgr_info(fpg->typinput, &finfo);
     PLRUBY_END;
-#if PG_PL_VERSION >= 73
     if (fpg->typelem != 0 && fpg->typlen == -1) {
         pl_proc_desc prodesc;
 
         MEMZERO(&prodesc, pl_proc_desc, 1);
         prodesc.result_oid = fpg->typelem;
         PLRUBY_BEGIN(1);
-        typeTup = SearchSysCacheTuple(RUBY_TYPOID,
-                                      ObjectIdGetDatum(prodesc.result_oid),
-                                      0, 0, 0);
+        typeTup = SearchSysCache(TYPEOID, OidGD(prodesc.result_oid), 0, 0, 0);
         if (!HeapTupleIsValid(typeTup)) {
             rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                      prodesc.result_elem);
@@ -1045,9 +1051,7 @@ for_numvals(obj, argobj)
         PLRUBY_END;
         arg->modvalues[attnum] = plruby_return_array(value, &prodesc);
     }
-    else
-#endif
-    {
+    else {
         arg->modvalues[attnum] = 
             plruby_to_datum(value, &finfo, 
                             arg->tupdesc->attrs[attnum]->atttypid, 
@@ -1073,7 +1077,7 @@ pl_trigger_handler(struct pl_thread_st *plth)
     Form_pg_proc procStruct;
     TupleDesc tupdesc;
     HeapTuple rettup;
-    int i;
+    int i, rc;
     int *modattrs;
     Datum *modvalues;
     char *modnulls;
@@ -1082,46 +1086,17 @@ pl_trigger_handler(struct pl_thread_st *plth)
     VALUE value_proname, value_proc_desc;
     char *proc_internal_def;
     static char *argt = "new, old, args, tg";
-#ifdef NEW_STYLE_FUNCTION
     PG_FUNCTION_ARGS;
 
     fcinfo = plth->fcinfo;
-#else
-    FmgrInfo *proinfo;
-
-    proinfo = plth->proinfo;
-#endif
-
-    
-#ifdef NEW_STYLE_FUNCTION
     trigdata = (TriggerData *) fcinfo->context;
-
     sprintf(internal_proname, "proc_%u_trigger", fcinfo->flinfo->fn_oid);
-#else
-    trigdata = CurrentTriggerData;
-    CurrentTriggerData = NULL;
-
-    stroid = oidout(proinfo->fn_oid);
-    strcpy(internal_proname, "proc_");
-    strcat(internal_proname, stroid);
-    strcat(internal_proname, "_trigger");
-    pfree(stroid);
-#endif
-
     proname_len = strlen(internal_proname);
     value_proname = rb_tainted_str_new(internal_proname, proname_len);
     value_proc_desc = rb_hash_aref(PLruby_hash, value_proname);
 
     PLRUBY_BEGIN(1);
-#ifdef NEW_STYLE_FUNCTION
-    procTup = SearchSysCacheTuple(RUBY_PROOID,
-                                  ObjectIdGetDatum(fcinfo->flinfo->fn_oid),
-                                  0, 0, 0);
-#else
-    procTup = SearchSysCacheTuple(RUBY_PROOID,
-                                  ObjectIdGetDatum(proinfo->fn_oid),
-                                  0, 0, 0);
-#endif
+    procTup = SearchSysCache(PROCOID, OidGD(fcinfo->flinfo->fn_oid), 0, 0, 0);
     PLRUBY_END;
 
     if (!HeapTupleIsValid(procTup)) {
@@ -1130,7 +1105,6 @@ pl_trigger_handler(struct pl_thread_st *plth)
 
     procStruct = (Form_pg_proc) GETSTRUCT(procTup);
 
-#if PG_PL_VERSION >= 73
     if (!NIL_P(value_proc_desc)) {
         GetProcDesc(value_proc_desc, prodesc);
         if (prodesc->fn_xmin != HeapTupleHeaderGetXmin(procTup->t_data) ||
@@ -1139,23 +1113,29 @@ pl_trigger_handler(struct pl_thread_st *plth)
             value_proc_desc = Qnil;
         }
     }
-#endif
 
     if (NIL_P(value_proc_desc)) {
         char *proc_source;
+        Datum prosrc;
+#if PG_PL_VERSION >= 75
+        bool isnull;
+#endif
         
         value_proc_desc = Data_Make_Struct(rb_cObject, pl_proc_desc, 0, pl_proc_free, prodesc);
-#if PG_PL_VERSION >= 73
         prodesc->fn_xmin = HeapTupleHeaderGetXmin(procTup->t_data);
         prodesc->fn_cmin = HeapTupleHeaderGetCmin(procTup->t_data);
+#if PG_PL_VERSION >= 75
+        PLRUBY_BEGIN_PROTECT(1);
+        prosrc = SysCacheGetAttr(PROCOID, procTup, Anum_pg_proc_prosrc, &isnull);
+        PLRUBY_END_PROTECT;
+        if (isnull) {
+            rb_raise(pl_ePLruby, "null source");
+        }
+#else
+        prosrc = PointerGD(&procStruct->prosrc);
 #endif
         PLRUBY_BEGIN_PROTECT(1);
-#ifdef NEW_STYLE_FUNCTION
-        proc_source = DatumGetCString(
-            DFC1(textout, PointerGetDatum(&procStruct->prosrc)));
-#else
-        proc_source = textout(&(procStruct->prosrc));
-#endif
+        proc_source = DatumGetCString(DFC1(textout, prosrc));
         proc_internal_def = ALLOCA_N(char, strlen(definition) + proname_len +
                                      strlen(argt) + strlen(proc_source) + 1);
         sprintf(proc_internal_def, definition, internal_proname, argt, proc_source);
@@ -1165,6 +1145,7 @@ pl_trigger_handler(struct pl_thread_st *plth)
         rb_eval_string_protect(proc_internal_def, &status);
         if (status) {
             VALUE s = plruby_to_s(rb_gv_get("$!"));
+            rb_hash_delete(PLruby_hash, value_proname);
             rb_raise(pl_ePLruby, "cannot create internal procedure %s\n<<===%s\n===>>",
                  RSTRING(s)->ptr, proc_internal_def);
         }
@@ -1181,33 +1162,30 @@ pl_trigger_handler(struct pl_thread_st *plth)
     rb_hash_aset(TG, rb_str_freeze_new2("name"), 
                  rb_str_freeze_new2(trigdata->tg_trigger->tgname));
 
-#if PG_PL_VERSION > 70
     {
         char *s;
         
         PLRUBY_BEGIN_PROTECT(1);
         s = DatumGetCString(
-            DFC1(nameout, NameGetDatum(
-                     &(trigdata->tg_relation->rd_rel->relname))));
+            DFC1(nameout, NameGD(&(trigdata->tg_relation->rd_rel->relname))));
         rb_hash_aset(TG, rb_str_freeze_new2("relname"),rb_str_freeze_new2(s));
         pfree(s);
         PLRUBY_END_PROTECT;
     }
-#else
-    rb_hash_aset(TG, rb_str_freeze_new2("relname"), 
-                 rb_str_freeze_new2(nameout(&(trigdata->tg_relation->rd_rel->relname))));
-#endif
-
     PLRUBY_BEGIN_PROTECT(1);
-    stroid = DatumGetCString(DFC1(oidout,
-                                  ObjectIdGetDatum(trigdata->tg_relation->rd_id)));
+    stroid = DatumGetCString(DFC1(oidout, OidGD(trigdata->tg_relation->rd_id)));
     rb_hash_aset(TG, rb_str_freeze_new2("relid"), rb_str_freeze_new2(stroid));
     pfree(stroid);
     PLRUBY_END_PROTECT;
 
     tmp = rb_ary_new2(tupdesc->natts);
     for (i = 0; i < tupdesc->natts; i++) {
-        rb_ary_push(tmp, rb_str_freeze_new2(tupdesc->attrs[i]->attname.data));
+        if (tupdesc->attrs[i]->attisdropped) {
+            rb_ary_push(tmp, rb_str_freeze_new2(""));
+        }
+        else {
+            rb_ary_push(tmp, rb_str_freeze_new2(NameStr(tupdesc->attrs[i]->attname)));
+        }
     }
     rb_hash_aset(TG, rb_str_freeze_new2("relatts"), rb_ary_freeze(tmp));
 
@@ -1264,14 +1242,12 @@ pl_trigger_handler(struct pl_thread_st *plth)
     c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
                    4, tg_new, tg_old, args, TG);
 
-    PLRUBY_BEGIN(1);
-#if PG_PL_VERSION >= 73
+    PLRUBY_BEGIN_PROTECT(1);
     MemoryContextSwitchTo(plruby_spi_context);
-#endif
-    if (SPI_finish() != SPI_OK_FINISH) {
-        rb_raise(pl_ePLruby, "SPI_finish() failed");
+    if ((rc = SPI_finish()) != SPI_OK_FINISH) {
+        elog(ERROR, "SPI_finish() failed : %d",  rc);
     }
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
 
     switch (TYPE(c)) {
     case T_TRUE:
@@ -1328,10 +1304,10 @@ pl_trigger_handler(struct pl_thread_st *plth)
         rb_iterate(rb_each, c, for_numvals, res);
     }
 
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     rettup = SPI_modifytuple(trigdata->tg_relation, rettup, tupdesc->natts,
                              modattrs, modvalues, modnulls);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     
     if (rettup == NULL) {
         rb_raise(pl_ePLruby, "SPI_modifytuple() failed - RC = %d\n", SPI_result);
@@ -1407,9 +1383,9 @@ pl_load_singleton(argc, argv, obj)
     buff = ALLOCA_N(char, 1 + strlen(recherche) + strlen(nom));
     sprintf(buff, recherche, nom);
 
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     spi_rc = SPI_exec(buff, 0);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
 
     if (spi_rc != SPI_OK_SELECT || SPI_processed == 0) {
         SPI_freetuptable(SPI_tuptable);
@@ -1417,9 +1393,9 @@ pl_load_singleton(argc, argv, obj)
             buff = ALLOCA_N(char, 1 + strlen(singleton) + strlen(nom));
             sprintf(buff, singleton, nom);
 
-            PLRUBY_BEGIN(1);
+            PLRUBY_BEGIN_PROTECT(1);
             spi_rc = SPI_exec(buff, 1);
-            PLRUBY_END;
+            PLRUBY_END_PROTECT;
             if (spi_rc != SPI_OK_SELECT || SPI_processed == 0) {
                 SPI_freetuptable(SPI_tuptable);
                 rb_raise(rb_eNameError, 
@@ -1463,7 +1439,7 @@ pl_load_singleton(argc, argv, obj)
         tmp[1] = (VALUE)id;
         tmp[2] = (VALUE)argc;
         tmp[3] = (VALUE)argv;
-        return rb_iterate(pl_each, (VALUE)tmp, rb_yield, 0);
+        return rb_iterate((VALUE(*)(VALUE))pl_each, (VALUE)tmp, rb_yield, 0);
     }
     return rb_funcall2(pl_mPLtemp, id, argc, argv);
 }
@@ -1538,6 +1514,7 @@ pl_init_all(void)
     }
     id_to_s = rb_intern("to_s");
     Init_plruby_pl();
+    Init_plruby_trans();
     pl_mPL = rb_const_get(rb_cObject, rb_intern("PL"));
     pl_ePLruby = rb_const_get(pl_mPL, rb_intern("Error"));
     pl_eCatch = rb_const_get(pl_mPL, rb_intern("Catch"));

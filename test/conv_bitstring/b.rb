@@ -4,11 +4,18 @@ include Config
 pwd = Dir.pwd
 pwd.sub!(%r{[^/]+/[^/]+$}, "")
 
-language, extension = 'C', '_new_trigger'
+language, extension = 'C', '_new'
 opaque = 'language_handler'
 
 suffix = ARGV[1].to_s
 
+case ARGV[0].to_i
+when 70
+   language = 'newC'
+when 73, 74
+   extension = "_new_trigger"
+   opaque = 'language_handler'
+end
 begin
    f = File.new("test_queries.sql", "w")
    IO.foreach("test_queries.orig") do |x| 

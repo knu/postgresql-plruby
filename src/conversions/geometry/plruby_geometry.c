@@ -101,7 +101,7 @@ pl_point_s_str(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     res = Data_Make_Struct(obj, Point, pl_point_mark, free, p);
-    CPY_FREE(p, plruby_dfc1(point_in,  RSTRING(a)->ptr), sizeof(Point));
+    CPY_FREE(p, PLRUBY_DFC1(point_in,  RSTRING(a)->ptr), sizeof(Point));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
 }
@@ -222,7 +222,7 @@ NAME_(VALUE obj)                                \
     char *str;                                  \
                                                 \
     Data_Get_Struct(obj, Point, p);             \
-    str = (char *)plruby_dfc1(FUNCTION_, p);    \
+    str = (char *)PLRUBY_DFC1(FUNCTION_, p);    \
     if (OBJ_TAINTED(obj)) {                     \
         return rb_tainted_str_new2(str);        \
     }                                           \
@@ -251,7 +251,7 @@ NAME_(VALUE obj, VALUE a)                                       \
         Data_Get_Struct(a, Point, p1);                          \
         res = Data_Make_Struct(rb_obj_class(obj), Point,        \
                                pl_point_mark, free, pr);        \
-        CPY_FREE(pr, plruby_dfc2(FUNCTION_, p0, p1), sizeof(Point));   \
+        CPY_FREE(pr, PLRUBY_DFC2(FUNCTION_, p0, p1), sizeof(Point));   \
         if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res); \
         return res;                                             \
     }                                                           \
@@ -272,7 +272,7 @@ NAME_(VALUE obj, VALUE a)                       \
     CHECK_CLASS(obj, a);                        \
     Data_Get_Struct(obj, Point, p0);            \
     Data_Get_Struct(a, Point, p1);              \
-    if (plruby_dfc2(FUNCTION_, p0, p1))         \
+    if (PLRUBY_DFC2(FUNCTION_, p0, p1))         \
         return Qtrue;                           \
     return Qfalse;                              \
 }
@@ -321,7 +321,7 @@ pl_point_slope(VALUE obj, VALUE a)
     CHECK_CLASS(obj, a);
     Data_Get_Struct(obj, Point, p0);
     Data_Get_Struct(a, Point, p1);
-    RETURN_FLOAT2(obj, a, plruby_dfc2(point_slope, p0, p1));
+    RETURN_FLOAT2(obj, a, PLRUBY_DFC2(point_slope, p0, p1));
 }
 
 static void pl_lseg_mark(LSEG *l) {}
@@ -382,7 +382,7 @@ pl_lseg_s_str(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     res = Data_Make_Struct(obj, LSEG, pl_lseg_mark, free, l);
-    CPY_FREE(l, plruby_dfc1(lseg_in, RSTRING(a)->ptr), sizeof(LSEG));
+    CPY_FREE(l, PLRUBY_DFC1(lseg_in, RSTRING(a)->ptr), sizeof(LSEG));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
 }
@@ -472,7 +472,7 @@ pl_lseg_length(VALUE obj)
     LSEG *l;
 
     Data_Get_Struct(obj, LSEG, l);
-    RETURN_FLOAT(obj, plruby_dfc1(lseg_length, l));
+    RETURN_FLOAT(obj, PLRUBY_DFC1(lseg_length, l));
 }
 
 static VALUE
@@ -483,7 +483,7 @@ pl_lseg_parallel(VALUE obj, VALUE a)
     CHECK_CLASS(obj, a);
     Data_Get_Struct(obj, LSEG, l0);
     Data_Get_Struct(a, LSEG, l1);
-    if (plruby_dfc2(lseg_parallel, l0, l1)) return Qtrue;
+    if (PLRUBY_DFC2(lseg_parallel, l0, l1)) return Qtrue;
     return Qfalse;
 }
 
@@ -495,7 +495,7 @@ pl_lseg_perp(VALUE obj, VALUE a)
     CHECK_CLASS(obj, a);
     Data_Get_Struct(obj, LSEG, l0);
     Data_Get_Struct(a, LSEG, l1);
-    if (plruby_dfc2(lseg_perp, l0, l1)) return Qtrue;
+    if (PLRUBY_DFC2(lseg_perp, l0, l1)) return Qtrue;
     return Qfalse;
 }
 
@@ -506,7 +506,7 @@ NAME_(VALUE obj)                                \
     LSEG *l;                                    \
                                                 \
     Data_Get_Struct(obj, LSEG, l);              \
-    if (plruby_dfc1(FUNCTION_, l)) return Qtrue;\
+    if (PLRUBY_DFC1(FUNCTION_, l)) return Qtrue;\
     return Qfalse;                              \
 }
 
@@ -523,8 +523,8 @@ pl_lseg_cmp(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, LSEG, l0);
     Data_Get_Struct(a, LSEG, l1);
-    if (plruby_dfc2(lseg_eq, l0, l1)) return INT2NUM(0);
-    if (plruby_dfc2(lseg_lt, l0, l1)) return INT2NUM(-1);
+    if (PLRUBY_DFC2(lseg_eq, l0, l1)) return INT2NUM(0);
+    if (PLRUBY_DFC2(lseg_lt, l0, l1)) return INT2NUM(-1);
     return INT2NUM(1);
 }
 
@@ -537,7 +537,7 @@ pl_lseg_center(VALUE obj)
 
     Data_Get_Struct(obj, LSEG, l);
     res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p);
-    CPY_FREE(p, plruby_dfc1(lseg_center, l), sizeof(Point));
+    CPY_FREE(p, PLRUBY_DFC1(lseg_center, l), sizeof(Point));
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
     return res;
 }
@@ -555,7 +555,7 @@ pl_lseg_closest(VALUE obj, VALUE a)
             Point *p;
 
             Data_Get_Struct(a, Point, p);
-            p0 = (Point *)plruby_dfc2(close_ps, p, l0);
+            p0 = (Point *)PLRUBY_DFC2(close_ps, p, l0);
             if (!p0) return Qnil;
             res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
             CPY_FREE(p1, p0, sizeof(Point));
@@ -564,7 +564,7 @@ pl_lseg_closest(VALUE obj, VALUE a)
         }
         if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_lseg_mark) {
             Data_Get_Struct(a, LSEG, l1);
-            p0 = (Point *)plruby_dfc2(close_lseg, l0, l1);
+            p0 = (Point *)PLRUBY_DFC2(close_lseg, l0, l1);
             if (!p0) return Qnil;
             res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
             CPY_FREE(p1, p0, sizeof(Point));
@@ -584,7 +584,7 @@ pl_lseg_intersect(VALUE obj, VALUE a)
     if (TYPE(a) == T_DATA &&
         RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_lseg_mark) {
         Data_Get_Struct(a, LSEG, l1);
-        if (plruby_dfc2(lseg_intersect, l0, l1)) return Qtrue;
+        if (PLRUBY_DFC2(lseg_intersect, l0, l1)) return Qtrue;
         return Qfalse;
     }
     return rb_funcall(a, rb_frame_last_func(), 1, obj);
@@ -602,7 +602,7 @@ pl_lseg_intersection(VALUE obj, VALUE a)
         rb_raise(rb_eArgError, "intersection : expected a Segment");
     }
     Data_Get_Struct(a, LSEG, l1);
-    p0 = (Point *)plruby_dfc2(lseg_interpt, l0, l1);
+    p0 = (Point *)PLRUBY_DFC2(lseg_interpt, l0, l1);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(Point));
@@ -684,7 +684,7 @@ pl_box_s_str(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     res = Data_Make_Struct(obj, BOX, pl_box_mark, free, l);
-    CPY_FREE(l, plruby_dfc1(box_in, RSTRING(a)->ptr), sizeof(BOX));
+    CPY_FREE(l, PLRUBY_DFC1(box_in, RSTRING(a)->ptr), sizeof(BOX));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
 }
@@ -875,8 +875,8 @@ pl_box_cmp(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, BOX, l0);
     Data_Get_Struct(a, BOX, l1);
-    if (plruby_dfc2(box_eq, l0, l1)) return INT2NUM(0);
-    if (plruby_dfc2(box_lt, l0, l1)) return INT2NUM(-1);
+    if (PLRUBY_DFC2(box_eq, l0, l1)) return INT2NUM(0);
+    if (PLRUBY_DFC2(box_lt, l0, l1)) return INT2NUM(-1);
     return INT2NUM(1);
 }
 
@@ -889,7 +889,7 @@ NAME_(VALUE obj, VALUE a)                       \
     CHECK_CLASS(obj, a);                        \
     Data_Get_Struct(obj, BOX, p0);              \
     Data_Get_Struct(a, BOX, p1);                \
-    if (plruby_dfc2(FUNCTION_, p0, p1)) return Qtrue;\
+    if (PLRUBY_DFC2(FUNCTION_, p0, p1)) return Qtrue;\
     return Qfalse;                              \
 }
 
@@ -917,7 +917,7 @@ NAME_(VALUE obj, VALUE a)                                       \
     Data_Get_Struct(a, Point, pt);                              \
     res = Data_Make_Struct(rb_obj_class(obj), BOX,              \
                            pl_box_mark, free, pr);              \
-    CPY_FREE(pr, plruby_dfc2(FUNCTION_, p0, pt), sizeof(BOX));  \
+    CPY_FREE(pr, PLRUBY_DFC2(FUNCTION_, p0, pt), sizeof(BOX));  \
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);     \
     return res;                                                 \
 }
@@ -934,7 +934,7 @@ NAME_(VALUE obj)                                \
     BOX *l;                                     \
                                                 \
     Data_Get_Struct(obj, BOX, l);               \
-    RETURN_FLOAT(obj, plruby_dfc1(FUNCTION_, l));\
+    RETURN_FLOAT(obj, PLRUBY_DFC1(FUNCTION_, l));\
 }
 
 BOX_FLOAT(pl_box_area,box_area);
@@ -949,7 +949,7 @@ pl_box_center(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, BOX, b);
-    p0 = (Point *)plruby_dfc1(box_center, b);
+    p0 = (Point *)PLRUBY_DFC1(box_center, b);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(Point));
@@ -970,7 +970,7 @@ pl_box_closest(VALUE obj, VALUE a)
             Point *p;
 
             Data_Get_Struct(a, Point, p);
-            p0 = (Point *)plruby_dfc2(close_pb, p, l0);
+            p0 = (Point *)PLRUBY_DFC2(close_pb, p, l0);
             if (!p0) return Qnil;
             res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
             CPY_FREE(p1, p0, sizeof(Point));
@@ -981,7 +981,7 @@ pl_box_closest(VALUE obj, VALUE a)
             LSEG *p;
 
             Data_Get_Struct(a, LSEG, p);
-            p0 = (Point *)plruby_dfc2(close_sb, p, l0);
+            p0 = (Point *)PLRUBY_DFC2(close_sb, p, l0);
             if (!p0) return Qnil;
             res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
             CPY_FREE(p1, p0, sizeof(Point));
@@ -1004,7 +1004,7 @@ pl_box_intersect(VALUE obj, VALUE a)
             LSEG *p;
 
             Data_Get_Struct(a, LSEG, p);
-            if (plruby_dfc2(inter_sb, p, l0)) return Qtrue;
+            if (PLRUBY_DFC2(inter_sb, p, l0)) return Qtrue;
             return Qfalse;
         }
     }
@@ -1021,7 +1021,7 @@ pl_box_intersection(VALUE obj, VALUE a)
     Data_Get_Struct(obj, BOX, l0);
     a = pl_convert(a, rb_intern("to_box"), pl_box_mark);
     Data_Get_Struct(a, BOX, l1);
-    l1 = (BOX *)plruby_dfc2(box_intersect, l0, l1);
+    l1 = (BOX *)PLRUBY_DFC2(box_intersect, l0, l1);
     if (!l1) return Qnil;
     res = Data_Make_Struct(rb_obj_class(obj), BOX, pl_box_mark, free, l2);
     CPY_FREE(l2, l1, sizeof(BOX));
@@ -1038,7 +1038,7 @@ pl_box_diagonal(VALUE obj)
 
     Data_Get_Struct(obj, BOX, b);
     res = Data_Make_Struct(obj, LSEG, pl_lseg_mark, free, l);
-    CPY_FREE(l, plruby_dfc1(box_diagonal, b), sizeof(LSEG));
+    CPY_FREE(l, PLRUBY_DFC1(box_diagonal, b), sizeof(LSEG));
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
     return res;
 }
@@ -1137,7 +1137,7 @@ pl_path_s_str(VALUE obj, VALUE a)
     VALUE res;
 
     a = plruby_to_s(a);
-    m = (PATH *)plruby_dfc1(path_in, RSTRING(a)->ptr);
+    m = (PATH *)PLRUBY_DFC1(path_in, RSTRING(a)->ptr);
     p = (PATH *)ALLOC_N(char, m->size);
     CPY_FREE(p, m, m->size);
     res = Data_Wrap_Struct(obj, pl_path_mark, free, p);
@@ -1206,8 +1206,8 @@ pl_path_cmp(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, PATH, l0);
     Data_Get_Struct(a, PATH, l1);
-    if (plruby_dfc2(path_n_eq, l0, l1)) return INT2NUM(0);
-    if (plruby_dfc2(path_n_lt, l0, l1)) return INT2NUM(-1);
+    if (PLRUBY_DFC2(path_n_eq, l0, l1)) return INT2NUM(0);
+    if (PLRUBY_DFC2(path_n_lt, l0, l1)) return INT2NUM(-1);
     return INT2NUM(1);
 }
 
@@ -1238,7 +1238,7 @@ pl_path_open(VALUE obj)
 }
 
 static VALUE
-pl_path_closed(obj)
+pl_path_closed(VALUE obj)
 {
     PATH *p;
     Data_Get_Struct(obj, PATH, p);
@@ -1246,12 +1246,12 @@ pl_path_closed(obj)
 }
 
 static VALUE
-pl_path_length(obj)
+pl_path_length(VALUE obj)
 {
     PATH *p;
 
     Data_Get_Struct(obj, PATH, p);
-    RETURN_FLOAT(obj, plruby_dfc1(path_length, p));
+    RETURN_FLOAT(obj, PLRUBY_DFC1(path_length, p));
 }
 
 #define PATH_CALL(NAME_, FUNCTION_)                                     \
@@ -1269,7 +1269,7 @@ NAME_(VALUE obj, VALUE a)                                               \
         a = pl_convert(a, rb_intern("to_point"), pl_point_mark);        \
     }                                                                   \
     Data_Get_Struct(a, Point, p);                                       \
-    p1 = (PATH *)plruby_dfc2(FUNCTION_, p0, p);                         \
+    p1 = (PATH *)PLRUBY_DFC2(FUNCTION_, p0, p);                         \
     size = p1->size;                                                    \
     p2 = (PATH *)ALLOC_N(char, size);                                   \
     CPY_FREE(p2, p1, size);                                             \
@@ -1293,13 +1293,27 @@ pl_path_concat(VALUE obj, VALUE a)
     Data_Get_Struct(obj, PATH, p0);
     a = pl_convert(a, rb_intern("to_path"), pl_path_mark);
     Data_Get_Struct(a, Point, p);
-    p1 = (PATH *)plruby_dfc2(path_add_pt, p0, p);
+    p1 = (PATH *)PLRUBY_DFC2(path_add_pt, p0, p);
     free(p0);
     p0 = (PATH *)ALLOC_N(char, p1->size);
     CPY_FREE(p0, p1, p1->size);
     RDATA(obj)->data = p0;
     return obj;
 }
+
+#if PG_PL_VERSION >= 75
+
+static VALUE
+pl_path_area(VALUE obj)
+{
+    PATH *p0;
+
+    Data_Get_Struct(obj, PATH, p0);
+    RETURN_FLOAT(obj, PLRUBY_DFC1(path_area, p0));
+}
+
+#endif
+
 
 /* Extracted from geo_utils.c */
 
@@ -1444,7 +1458,7 @@ pl_poly_s_str(VALUE obj, VALUE a)
     VALUE res;
 
     a = plruby_to_s(a);
-    m = (POLYGON *)plruby_dfc1(poly_in, RSTRING(a)->ptr);
+    m = (POLYGON *)PLRUBY_DFC1(poly_in, RSTRING(a)->ptr);
     p = (POLYGON *)ALLOC_N(char, m->size);
     CPY_FREE(p, m, m->size);
     res = Data_Wrap_Struct(obj, pl_poly_mark, free, p);
@@ -1512,7 +1526,7 @@ NAME_(VALUE obj, VALUE a)                       \
     CHECK_CLASS(obj, a);                        \
     Data_Get_Struct(obj, POLYGON, p0);          \
     Data_Get_Struct(a, POLYGON, p1);            \
-    if (plruby_dfc2(FUNCTION_, p0, p1)) return Qtrue;\
+    if (PLRUBY_DFC2(FUNCTION_, p0, p1)) return Qtrue;\
     return Qfalse;                              \
 }
 
@@ -1537,14 +1551,14 @@ pl_poly_contain(VALUE obj, VALUE a)
         Point *p1;
 
         Data_Get_Struct(a, Point, p1);
-        if (plruby_dfc2(poly_contain_pt, p0, p1)) return Qtrue;
+        if (PLRUBY_DFC2(poly_contain_pt, p0, p1)) return Qtrue;
         return Qfalse;
     }
     if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_poly_mark) {
         POLYGON *p1;
 
         Data_Get_Struct(a, POLYGON, p1);
-        if (plruby_dfc2(poly_contain, p0, p1)) return Qtrue;
+        if (PLRUBY_DFC2(poly_contain, p0, p1)) return Qtrue;
         return Qfalse;
     }
     rb_raise(rb_eArgError, "invalid geometry object");
@@ -1560,14 +1574,14 @@ pl_poly_npoints(VALUE obj)
 }
 
 static VALUE
-pl_poly_center(obj)
+pl_poly_center(VALUE obj)
 {
     POLYGON *p;
     Point *p0, *p1;
     VALUE res;
 
     Data_Get_Struct(obj, POLYGON, p);
-    p0 = (Point *)plruby_dfc1(poly_center, p);
+    p0 = (Point *)PLRUBY_DFC1(poly_center, p);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(Point));
@@ -1585,7 +1599,7 @@ pl_box_to_poly(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, BOX, b);
-    p0 = (POLYGON *)plruby_dfc1(box_poly, b);
+    p0 = (POLYGON *)PLRUBY_DFC1(box_poly, b);
     if (!p0) return Qnil;
     p1 = (POLYGON *)ALLOC_N(char, p0->size);
     CPY_FREE(p1, p0, p0->size);
@@ -1602,7 +1616,7 @@ pl_path_to_poly(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, PATH, b);
-    p0 = (POLYGON *)plruby_dfc1(path_poly, b);
+    p0 = (POLYGON *)PLRUBY_DFC1(path_poly, b);
     if (!p0) return Qnil;
     p1 = (POLYGON *)ALLOC_N(char, p0->size);
     CPY_FREE(p1, p0, p0->size);
@@ -1619,7 +1633,7 @@ pl_poly_to_path(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, POLYGON, b);
-    p0 = (PATH *)plruby_dfc1(poly_path, b);
+    p0 = (PATH *)PLRUBY_DFC1(poly_path, b);
     if (!p0) return Qnil;
     p1 = (PATH *)ALLOC_N(char, p0->size);
     CPY_FREE(p1, p0, p0->size);
@@ -1636,7 +1650,7 @@ pl_poly_to_box(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, POLYGON, b);
-    p0 = (BOX *)plruby_dfc1(poly_box, b);
+    p0 = (BOX *)PLRUBY_DFC1(poly_box, b);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cBox, BOX, pl_box_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(BOX));
@@ -1714,7 +1728,7 @@ pl_circle_s_str(VALUE obj, VALUE a)
     VALUE res;
 
     a = plruby_to_s(a);
-    m = (CIRCLE *)plruby_dfc1(circle_in, RSTRING(a)->ptr);
+    m = (CIRCLE *)PLRUBY_DFC1(circle_in, RSTRING(a)->ptr);
     res = Data_Make_Struct(obj, CIRCLE, pl_circle_mark, free, p);
     CPY_FREE(p, m, sizeof(CIRCLE));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
@@ -1763,7 +1777,7 @@ NAME_(VALUE obj, VALUE a)                       \
     CHECK_CLASS(obj, a);                        \
     Data_Get_Struct(obj, CIRCLE, p0);           \
     Data_Get_Struct(a, CIRCLE, p1);             \
-    if (plruby_dfc2(FUNCTION_, p0, p1)) return Qtrue;\
+    if (PLRUBY_DFC2(FUNCTION_, p0, p1)) return Qtrue;\
     return Qfalse;                              \
 }
 
@@ -1790,14 +1804,14 @@ pl_circle_contain(VALUE obj, VALUE a)
         Point *p1;
 
         Data_Get_Struct(a, Point, p1);
-        if (plruby_dfc2(circle_contain_pt, p0, p1)) return Qtrue;
+        if (PLRUBY_DFC2(circle_contain_pt, p0, p1)) return Qtrue;
         return Qfalse;
     }
     if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_circle_mark) {
         CIRCLE *p1;
 
         Data_Get_Struct(a, CIRCLE, p1);
-        if (plruby_dfc2(circle_contain, p0, p1)) return Qtrue;
+        if (PLRUBY_DFC2(circle_contain, p0, p1)) return Qtrue;
         return Qfalse;
     }
     rb_raise(rb_eArgError, "contain : invalid geometry object");
@@ -1820,7 +1834,7 @@ NAME_(VALUE obj, VALUE a)                                               \
     Data_Get_Struct(a, Point, pt);                                      \
     res = Data_Make_Struct(rb_obj_class(obj), CIRCLE,                   \
                            pl_circle_mark, free, pr);                   \
-    CPY_FREE(pr, plruby_dfc2(FUNCTION_, p0, pt), sizeof(CIRCLE));       \
+    CPY_FREE(pr, PLRUBY_DFC2(FUNCTION_, p0, pt), sizeof(CIRCLE));       \
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);             \
     return res;                                                         \
 }
@@ -1837,7 +1851,7 @@ NAME_(VALUE obj)                                \
     CIRCLE *l;                                  \
                                                 \
     Data_Get_Struct(obj, CIRCLE, l);            \
-    RETURN_FLOAT(obj, plruby_dfc1(FUNCTION_, l));\
+    RETURN_FLOAT(obj, PLRUBY_DFC1(FUNCTION_, l));\
 }
 
 CIRCLE_FLOAT(pl_circle_area,circle_area);
@@ -1854,8 +1868,8 @@ pl_circle_cmp(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, CIRCLE, l0);
     Data_Get_Struct(a, CIRCLE, l1);
-    if (plruby_dfc2(circle_eq, l0, l1)) return INT2NUM(0);
-    if (plruby_dfc2(circle_lt, l0, l1)) return INT2NUM(-1);
+    if (PLRUBY_DFC2(circle_eq, l0, l1)) return INT2NUM(0);
+    if (PLRUBY_DFC2(circle_lt, l0, l1)) return INT2NUM(-1);
     return INT2NUM(1);
 }
 
@@ -1867,7 +1881,7 @@ pl_circle_center(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, CIRCLE, l0);
-    p0 = (Point *)plruby_dfc1(circle_center, l0);
+    p0 = (Point *)PLRUBY_DFC1(circle_center, l0);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cPoint, Point, pl_point_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(Point));
@@ -1885,7 +1899,7 @@ pl_box_to_circle(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, BOX, b);
-    p0 = (CIRCLE *)plruby_dfc1(box_circle, b);
+    p0 = (CIRCLE *)PLRUBY_DFC1(box_circle, b);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cCircle, CIRCLE, pl_circle_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(CIRCLE));
@@ -1901,7 +1915,7 @@ pl_poly_to_circle(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, POLYGON, b);
-    p0 = (CIRCLE *)plruby_dfc1(poly_circle, b);
+    p0 = (CIRCLE *)PLRUBY_DFC1(poly_circle, b);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cCircle, CIRCLE, pl_circle_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(CIRCLE));
@@ -1917,7 +1931,7 @@ pl_circle_to_poly(VALUE obj, VALUE a)
     VALUE res;
 
     Data_Get_Struct(obj, CIRCLE, b);
-    p0 = (POLYGON *)plruby_dfc2(circle_poly, Int32GetDatum(NUM2INT(a)), b);
+    p0 = (POLYGON *)PLRUBY_DFC2(circle_poly, Int32GetDatum(NUM2INT(a)), b);
     if (!p0) return Qnil;
     p1 = (POLYGON *)ALLOC_N(char, p0->size);
     CPY_FREE(p1, p0, p0->size);
@@ -1934,7 +1948,7 @@ pl_circle_to_box(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, CIRCLE, b);
-    p0 = (BOX *)plruby_dfc1(poly_box, b);
+    p0 = (BOX *)PLRUBY_DFC1(poly_box, b);
     if (!p0) return Qnil;
     res = Data_Make_Struct(pl_cBox, BOX, pl_box_mark, free, p1);
     CPY_FREE(p1, p0, sizeof(BOX));
@@ -1958,21 +1972,21 @@ pl_point_on(VALUE obj, VALUE a)
         LSEG *l1;
 
         Data_Get_Struct(a, LSEG, l1);
-        if (plruby_dfc2(on_ps, p0, l1)) return Qtrue;
+        if (PLRUBY_DFC2(on_ps, p0, l1)) return Qtrue;
         return Qfalse;
     }
     if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_box_mark) {
         BOX *l1;
 
         Data_Get_Struct(a, BOX, l1);
-        if (plruby_dfc2(on_pb, p0, l1)) return Qtrue;
+        if (PLRUBY_DFC2(on_pb, p0, l1)) return Qtrue;
         return Qfalse;
     }
     if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_path_mark) {
         PATH *l1;
 
         Data_Get_Struct(a, PATH, l1);
-        if (plruby_dfc2(on_ppath, p0, l1)) return Qtrue;
+        if (PLRUBY_DFC2(on_ppath, p0, l1)) return Qtrue;
         return Qfalse;
     }
     rb_raise(rb_eArgError, "on : invalid geometry object");
@@ -1995,14 +2009,14 @@ pl_point_contained(VALUE obj, VALUE a)
         POLYGON *l1;
 
         Data_Get_Struct(a, POLYGON, l1);
-        if (plruby_dfc2(pt_contained_poly, p0, l1)) return Qtrue;
+        if (PLRUBY_DFC2(pt_contained_poly, p0, l1)) return Qtrue;
         return Qfalse;
     }
     if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_circle_mark) {
         CIRCLE *l1;
 
         Data_Get_Struct(a, CIRCLE, l1);
-        if (plruby_dfc2(pt_contained_circle, p0, l1)) return Qtrue;
+        if (PLRUBY_DFC2(pt_contained_circle, p0, l1)) return Qtrue;
         return Qfalse;
     }
     rb_raise(rb_eArgError, "contained : invalid geometry object");
@@ -2027,7 +2041,7 @@ pl_lseg_on(VALUE obj, VALUE a)
         BOX *l1;
         
         Data_Get_Struct(a, BOX, l1);
-        if (plruby_dfc2(on_sb, l0, l1)) return Qtrue;
+        if (PLRUBY_DFC2(on_sb, l0, l1)) return Qtrue;
         return Qfalse;
     }
     rb_raise(rb_eArgError, "on : invalid geometry object");
@@ -2049,7 +2063,7 @@ pl_geo_distance(VALUE obj, VALUE a, VALUE b)
             Point *p1;
 
             Data_Get_Struct(b, Point, p1);
-            RETURN_FLOAT2(a, b, plruby_dfc2(point_distance, p0, p1));
+            RETURN_FLOAT2(a, b, PLRUBY_DFC2(point_distance, p0, p1));
         }
         return pl_geo_distance(obj, b, a);
     }
@@ -2061,13 +2075,13 @@ pl_geo_distance(VALUE obj, VALUE a, VALUE b)
             Point *p;
 
             Data_Get_Struct(b, Point, p);
-            RETURN_FLOAT2(a, b, plruby_dfc2(dist_ps, p, l0));
+            RETURN_FLOAT2(a, b, PLRUBY_DFC2(dist_ps, p, l0));
         }
         if (RDATA(b)->dmark == (RUBY_DATA_FUNC)pl_lseg_mark) {
             LSEG *l1;
 
             Data_Get_Struct(a, LSEG, l1);
-            RETURN_FLOAT2(a, b, plruby_dfc2(lseg_distance, l0, l1));
+            RETURN_FLOAT2(a, b, PLRUBY_DFC2(lseg_distance, l0, l1));
         }
         return pl_geo_distance(obj, b, a);
     }
@@ -2079,19 +2093,19 @@ pl_geo_distance(VALUE obj, VALUE a, VALUE b)
             Point *p;
 
             Data_Get_Struct(b, Point, p);
-            RETURN_FLOAT2(a, b, plruby_dfc2(dist_pb, p, l0));
+            RETURN_FLOAT2(a, b, PLRUBY_DFC2(dist_pb, p, l0));
         }
         if (RDATA(b)->dmark == (RUBY_DATA_FUNC)pl_lseg_mark) {
             LSEG *l1;
 
             Data_Get_Struct(a, LSEG, l1);
-            RETURN_FLOAT2(a, b, plruby_dfc2(dist_sb, l1, l0));
+            RETURN_FLOAT2(a, b, PLRUBY_DFC2(dist_sb, l1, l0));
         }
         if (RDATA(b)->dmark == (RUBY_DATA_FUNC)pl_box_mark) {
             BOX *l1;
 
             Data_Get_Struct(b, BOX, l1);
-            RETURN_FLOAT2(a, a, plruby_dfc2(box_distance, l0, l1));
+            RETURN_FLOAT2(a, a, PLRUBY_DFC2(box_distance, l0, l1));
         }
         return pl_geo_distance(obj, b, a);
     }
@@ -2103,13 +2117,13 @@ pl_geo_distance(VALUE obj, VALUE a, VALUE b)
             Point *p;
 
             Data_Get_Struct(b, Point, p);
-            RETURN_FLOAT2(a, b, plruby_dfc2(dist_ppath, p, l0));
+            RETURN_FLOAT2(a, b, PLRUBY_DFC2(dist_ppath, p, l0));
         }
         if (RDATA(b)->dmark == (RUBY_DATA_FUNC)pl_path_mark) {
             PATH *l1;
 
             Data_Get_Struct(b, PATH, l1);
-            RETURN_FLOAT2(a, a, plruby_dfc2(path_distance, l0, l1));
+            RETURN_FLOAT2(a, a, PLRUBY_DFC2(path_distance, l0, l1));
         }
     }
     if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_poly_mark) {
@@ -2120,7 +2134,7 @@ pl_geo_distance(VALUE obj, VALUE a, VALUE b)
             POLYGON *l1;
 
             Data_Get_Struct(b, POLYGON, l1);
-            RETURN_FLOAT2(a, a, plruby_dfc2(poly_distance, l0, l1));
+            RETURN_FLOAT2(a, a, PLRUBY_DFC2(poly_distance, l0, l1));
         }
     }
     if (RDATA(a)->dmark == (RUBY_DATA_FUNC)pl_circle_mark) {
@@ -2131,7 +2145,7 @@ pl_geo_distance(VALUE obj, VALUE a, VALUE b)
             CIRCLE *l1;
 
             Data_Get_Struct(b, CIRCLE, l1);
-            RETURN_FLOAT2(a, a, plruby_dfc2(circle_distance, l0, l1));
+            RETURN_FLOAT2(a, a, PLRUBY_DFC2(circle_distance, l0, l1));
         }
     }
     rb_raise(rb_eArgError, "distance : invalid geometry objects (%s, %s)",
@@ -2334,6 +2348,9 @@ void Init_plruby_geometry()
     rb_define_method(pl_cPath, "/", pl_path_div, 1);
     rb_define_method(pl_cPath, "to_poly", pl_path_to_poly, 0);
     rb_define_method(pl_cPath, "to_polygon", pl_path_to_poly, 0);
+#if PG_PL_VERSION >= 75
+    rb_define_method(pl_cPath, "area", pl_path_area, 0);
+#endif
     pl_cPoly = rb_define_class("Polygon", rb_cObject);
     rb_undef_method(CLASS_OF(pl_cPoly), "method_missing");
 #if HAVE_RB_DEFINE_ALLOC_FUNC

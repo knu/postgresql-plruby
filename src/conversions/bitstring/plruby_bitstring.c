@@ -70,7 +70,7 @@ pl_bit_to_datum(VALUE obj, VALUE a)
     case BITOID:
     case VARBITOID:
         Data_Get_Struct(obj, VarBit, ip0);
-        ip1 = (VarBit *)plruby_dfc3(bit, ip0, Int32GetDatum(length), true);
+        ip1 = (VarBit *)PLRUBY_DFC3(bit, ip0, Int32GetDatum(length), true);
         break;
     default:
         /* a faire */
@@ -97,26 +97,31 @@ pl_bit_init(int argc, VALUE *argv, VALUE obj)
     taint = OBJ_TAINTED(a);
     if (rb_respond_to(a, rb_intern("to_int"))) {
         a = rb_funcall2(a, rb_intern("to_int"), 0, 0);
-        v = (void *)plruby_dfc1(bitfromint4, Int32GetDatum(NUM2LONG(a)));
+#if PG_PL_VERSION >= 75
+        v = (void *)PLRUBY_DFC2(bitfromint4, Int32GetDatum(NUM2LONG(a)),
+                                Int32GetDatum(length));
+#else
+        v = (void *)PLRUBY_DFC1(bitfromint4, Int32GetDatum(NUM2LONG(a)));
         if (length > 0) {
-            int ll = DatumGetInt32(plruby_dfc1(bitlength, v));
+            int ll = DatumGetInt32(PLRUBY_DFC1(bitlength, v));
             if (length != ll) {
                 if (length < ll) {
-                    v1 = (void *)plruby_dfc2(bitshiftleft, v, 
+                    v1 = (void *)PLRUBY_DFC2(bitshiftleft, v,
                                              Int32GetDatum(ll - length));
                     pfree(v);
                 }
                 else {
                     v1 = v;
                 }
-                v = (void *)plruby_dfc3(bit, v1, Int32GetDatum(length), true);
+                v = (void *)PLRUBY_DFC3(bit, v1, Int32GetDatum(length), true);
                 pfree(v1);
             }
         }
+#endif
     }
     if (!v) {
         a = plruby_to_s(a);
-        v = (void *)plruby_dfc3(bit_in, RSTRING(a)->ptr, ObjectIdGetDatum(0),
+        v = (void *)PLRUBY_DFC3(bit_in, RSTRING(a)->ptr, ObjectIdGetDatum(0),
                                 Int32GetDatum(length));
     }
     Data_Get_Struct(obj, VarBit, inst);
@@ -139,7 +144,7 @@ pl_bit_cmp(VALUE a, VALUE b)
     }
     Data_Get_Struct(a, VarBit, inst0);
     Data_Get_Struct(b, VarBit, inst1);
-    result = DatumGetInt32(plruby_dfc2(bitcmp, inst0, inst1));
+    result = DatumGetInt32(PLRUBY_DFC2(bitcmp, inst0, inst1));
     return INT2FIX(result);
 }
 
@@ -151,7 +156,7 @@ pl_bit_to_s(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, VarBit, src);
-    str = (char *)plruby_dfc1(bit_out, src);
+    str = (char *)PLRUBY_DFC1(bit_out, src);
     if (OBJ_TAINTED(obj)) {
 	res = rb_tainted_str_new2(str);
     }
@@ -176,7 +181,7 @@ name_(VALUE obj, VALUE a)                                               \
     }                                                                   \
     Data_Get_Struct(obj, VarBit, v0);                                   \
     Data_Get_Struct(a, VarBit, v1);                                     \
-    vp = (VarBit *)plruby_dfc2(function_, v0, v1);                      \
+    vp = (VarBit *)PLRUBY_DFC2(function_, v0, v1);                      \
     vr = (VarBit *)ALLOC_N(char, VARSIZE(vp));                          \
     CPY_FREE(vr, vp, VARSIZE(vp));                                      \
     res = Data_Wrap_Struct(rb_class_of(obj), pl_bit_mark, free, vr);    \
@@ -201,7 +206,7 @@ pl_bit_push(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, VarBit, v0);
     Data_Get_Struct(a, VarBit, v1);
-    vp = (VarBit *)plruby_dfc2(bitcat, v0, v1);
+    vp = (VarBit *)PLRUBY_DFC2(bitcat, v0, v1);
     free(v0);
     v0 = (VarBit *)ALLOC_N(char, VARSIZE(vp));
     CPY_FREE(v0, vp, VARSIZE(vp));
@@ -216,7 +221,7 @@ pl_bit_not(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, VarBit, v0);
-    vp = (VarBit *)plruby_dfc1(bitnot, v0);
+    vp = (VarBit *)PLRUBY_DFC1(bitnot, v0);
     vr = (VarBit *)ALLOC_N(char, VARSIZE(vp));
     CPY_FREE(vr, vp, VARSIZE(vp));
     res = Data_Wrap_Struct(rb_class_of(obj), pl_bit_mark, free, vr);
@@ -233,7 +238,7 @@ name_(VALUE obj, VALUE a)                                               \
                                                                         \
     Data_Get_Struct(obj, VarBit, v0);                                   \
     a = rb_Integer(a);                                                  \
-    vp = (VarBit *)plruby_dfc2(function_, v0, Int32GetDatum(NUM2INT(a)));\
+    vp = (VarBit *)PLRUBY_DFC2(function_, v0, Int32GetDatum(NUM2INT(a)));\
     vr = (VarBit *)ALLOC_N(char, VARSIZE(vp));                          \
     CPY_FREE(vr, vp, VARSIZE(vp));                                      \
     res = Data_Wrap_Struct(rb_class_of(obj), pl_bit_mark, free, vr);    \
@@ -251,7 +256,7 @@ pl_bit_length(VALUE obj)
     int l;
 
     Data_Get_Struct(obj, VarBit, v);
-    l = DatumGetInt32(plruby_dfc1(bitlength, v));
+    l = DatumGetInt32(PLRUBY_DFC1(bitlength, v));
     return INT2NUM(l);
 }
 
@@ -262,7 +267,7 @@ pl_bit_octet_length(VALUE obj)
     int l;
 
     Data_Get_Struct(obj, VarBit, v);
-    l = DatumGetInt32(plruby_dfc1(bitoctetlength, v));
+    l = DatumGetInt32(PLRUBY_DFC1(bitoctetlength, v));
     return INT2NUM(l);
 }
 
@@ -273,7 +278,7 @@ pl_bit_to_i(VALUE obj)
     int l;
 
     Data_Get_Struct(obj, VarBit, v);
-    l = DatumGetInt32(plruby_dfc1(bittoint4, v));
+    l = DatumGetInt32(PLRUBY_DFC1(bittoint4, v));
     return INT2NUM(l);
 }
 
@@ -329,7 +334,7 @@ pl_bit_index(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, VarBit, v0);
     Data_Get_Struct(a, VarBit, v1);
-    i = DatumGetInt32(plruby_dfc2(bitposition, v0, v1));
+    i = DatumGetInt32(PLRUBY_DFC2(bitposition, v0, v1));
     i -= 1;
     if (i < 0) return Qnil;
     return INT2NUM(i);
@@ -365,7 +370,7 @@ pl_bit_substr(VALUE obj, long beg, long len)
     VALUE res;
     
     Data_Get_Struct(obj, VarBit, v);
-    ll = DatumGetInt32(plruby_dfc1(bitlength, v));
+    ll = DatumGetInt32(PLRUBY_DFC1(bitlength, v));
     if (len < 0) return Qnil;
     if (beg > ll) return Qnil;
     if (beg < 0) {
@@ -383,7 +388,7 @@ pl_bit_substr(VALUE obj, long beg, long len)
         if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
         return res;
     }
-    v0 = (VarBit *)plruby_dfc3(bitsubstr, v, Int32GetDatum(beg + 1), 
+    v0 = (VarBit *)PLRUBY_DFC3(bitsubstr, v, Int32GetDatum(beg + 1), 
                                Int32GetDatum(len));
     v1 = (VarBit *)ALLOC_N(char, VARSIZE(v0));
     CPY_FREE(v1, v0, VARSIZE(v0));
@@ -401,7 +406,7 @@ pl_bit_aref(VALUE obj, VALUE a)
     VALUE res;
 
     Data_Get_Struct(obj, VarBit, v);
-    l = DatumGetInt32(plruby_dfc1(bitlength, v));
+    l = DatumGetInt32(PLRUBY_DFC1(bitlength, v));
 
     switch (TYPE(a)) {
     case T_FIXNUM:
@@ -425,9 +430,9 @@ pl_bit_aref(VALUE obj, VALUE a)
 
     case T_STRING:
         a = plruby_to_s(a);
-        v0 = (void *)plruby_dfc3(bit_in, RSTRING(a)->ptr, 
+        v0 = (void *)PLRUBY_DFC3(bit_in, RSTRING(a)->ptr, 
                                  ObjectIdGetDatum(0), Int32GetDatum(-1));
-        if (DatumGetInt32(plruby_dfc2(bitposition, v, v0)) > 0) {
+        if (DatumGetInt32(PLRUBY_DFC2(bitposition, v, v0)) > 0) {
             v1 = (VarBit *)ALLOC_N(char, VARSIZE(v0));
             CPY_FREE(v1, v0, VARSIZE(v0));
             res = Data_Wrap_Struct(rb_class_obj(obj), pl_bit_mark, free, v1);
@@ -442,7 +447,7 @@ pl_bit_aref(VALUE obj, VALUE a)
             rb_raise(rb_eArgError, "expected a BitString object");
         }
         Data_Get_Struct(a, VarBit, v0);
-        if (DatumGetInt32(plruby_dfc2(bitposition, v, v0)) > 0) {
+        if (DatumGetInt32(PLRUBY_DFC2(bitposition, v, v0)) > 0) {
             return rb_funcall2(a, rb_intern("dup"), 0, 0);
         }
         return Qnil;
@@ -498,7 +503,7 @@ pl_bit_aset(int argc, VALUE *argv, VALUE obj)
     res = rb_funcall2(pl_bit_to_s(obj), rb_intern("[]="), argc, argv);
     if (NIL_P(res)) return res;
     res = plruby_to_s(res);
-    v = (void *)plruby_dfc3(bit_in, RSTRING(res)->ptr, ObjectIdGetDatum(0),
+    v = (void *)PLRUBY_DFC3(bit_in, RSTRING(res)->ptr, ObjectIdGetDatum(0),
                             Int32GetDatum(-1));
     Data_Get_Struct(obj, VarBit, inst);
     free(inst);

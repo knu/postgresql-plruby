@@ -79,3 +79,12 @@
 --- 0.4.1
 
  add bitstring
+
+--- 0.4.2
+
+ by default convert arguments ( --disable-conversion to remove it)
+
+--- 0.4.3
+
+ IMPORTANT : work only with postgres >= 7.3
+ transaction and named arguments for 8.0

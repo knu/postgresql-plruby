@@ -14,9 +14,6 @@ echo "**** Create procedural language plruby$2 ****"
 ruby b.rb $*
 psql -q -n $DBNAME <test_mklang.sql
 
-echo "**** Create tables, functions and triggers ****"
-psql -q -n $DBNAME <test_setup.sql
-
 echo "**** Running test queries ****"
 psql -q -n -e $DBNAME <test_queries.sql > test.out 2>&1
 

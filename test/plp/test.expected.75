@@ -452,7 +452,7 @@ select * from PField_v1 where pfname = 'PF0_2' order by slotname;
 (12 rows)
 
 insert into PField values ('PF1_1', 'should fail due to unique index');
-ERROR:  Cannot insert a duplicate key into unique index pfield_name
+ERROR:  duplicate key violates unique constraint "pfield_name"
 update PSlot set backlink = 'WS.not.there' where slotname = 'PS.base.a1';
 ERROR:  WS.not.there does not exist in WSlot
 update PSlot set backlink = 'XX.illegal' where slotname = 'PS.base.a1';
@@ -462,7 +462,7 @@ ERROR:  undefined method `stlotlink_unset' for PLtemp:Module
 update PSlot set slotlink = 'XX.illegal' where slotname = 'PS.base.a1';
 ERROR:  undefined method `stlotlink_unset' for PLtemp:Module
 insert into HSlot values ('HS', 'base.hub1', 1, '');
-ERROR:  Cannot insert a duplicate key into unique index hslot_name
+ERROR:  duplicate key violates unique constraint "hslot_name"
 insert into HSlot values ('HS', 'base.hub1', 20, '');
 ERROR:  no manual manipulation of HSlot
 delete from HSlot;

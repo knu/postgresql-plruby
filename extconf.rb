@@ -37,33 +37,15 @@ rescue
 end
 
 def create_lang(version = 74, suffix = '', safe = 0)
-   language, procedural = 'C', 'procedural'
-   opaque = 'opaque'
+   language, opaque = 'C', 'language_handler'
    version = version.to_i
+   opaque = "opaque" if version == 72
    safe = safe.to_i
    trusted = if safe >= 4
 		"trusted"
 	     else
 		""
 	     end
-
-   case version
-   when 70
-      language = 'newC'
-   when 71
-      language = 'C'
-   when 72
-      language = 'C'
-      procedural = ""
-   when 73
-      language = 'C'
-      procedural = ""
-      opaque = 'language_handler'
-   when 74
-      language = 'C'
-      procedural = ""
-      opaque = 'language_handler'
-   end
    puts <<-EOT
 
  ========================================================================
@@ -75,7 +57,7 @@ def create_lang(version = 74, suffix = '', safe = 0)
    as '#{Config::CONFIG["sitearchdir"]}/plruby#{suffix}.#{CONFIG["DLEXT"]}'
    language '#{language}';
 
-   create #{trusted} #{procedural} language 'plruby#{suffix}'
+   create #{trusted} language 'plruby#{suffix}'
    handler plruby#{suffix}_call_handler
    lancompiler 'PL/Ruby#{suffix}';
 
@@ -96,19 +78,6 @@ def rule(target, clean = nil)
    wr
 end
 
-
-libs = if CONFIG.key?("LIBRUBYARG_STATIC")
-	  Config::expand(CONFIG["LIBRUBYARG_STATIC"].dup).sub(/^-l/, '')
-       else
-	  Config::expand(CONFIG["LIBRUBYARG"].dup).sub(/lib([^.]*).*/, '\\1')
-       end
-
-unknown = find_library(libs, "ruby_init", 
-		       Config::expand(CONFIG["archdir"].dup))
-
-if srcdir = with_config("pgsql-srcinc")
-   $CFLAGS += " -Wall -I#{srcdir} "
-end
 
 include_dir, = dir_config("pgsql", "/usr/local/pgsql/include", "/usr/local/pgsql/lib")
 
@@ -144,36 +113,19 @@ end
 if ! have_header("catalog/pg_proc.h")
     raise  "Some include file are missing (see README for the installation)"
 end
-if ! have_library("pq", "PQsetdbLogin")
-    raise "libpq is missing"
-end
 
 if have_func("rb_hash_delete", "ruby.h")
    $CFLAGS += " -DHAVE_RB_HASH_DELETE"
 end
 
-if ! version = with_config("pgsql-version")
-   for version_in in [
-	 "#{include_dir}/config.h", 
-	 "#{include_dir}/pg_config.h", 
-	 "#{include_dir}/server/pg_config.h",
-	 "#{srcdir}/version.h.in",
-	 "#{srcdir}/pg_config.h"
-      ]
-      version = nil
-      version_regexp = /(?:PG_RELEASE|PG_VERSION)\s+"(\d(\.\d)?)/
-      begin
-	 IO.foreach(version_in) do |line|
-	    if version_regexp =~ line
-	       version = $1
-	       if ! version.sub!(/\./, '')
-		  version += "0"
-	       end
-	       break
-	    end
-	 end
-	 break if version
-      rescue
+version = with_config("pgsql-version")
+if !version && File.exist?("#{include_dir}/pg_config.h")
+   version_regexp = /\A#\s*define\s+PG_VERSION\s+"(\d(\.\d)?)/
+   IO.foreach("#{include_dir}/pg_config.h") do |line|
+      if version_regexp =~ line
+         version = $1
+         version += "0" if ! version.sub!(/\./, '')
+         break
       end
    end
 end
@@ -185,6 +137,14 @@ unless version
  the output of 7.4. If the test fail, verify the result in the directories
  test/plt and test/plp
  ************************************************************************
+   EOT
+end
+if version.to_i < 73
+   raise <<-EOT
+
+============================================================
+   Unsupported version #{version}, try to use plruby-0.4.2
+============================================================
    EOT
 end
 
@@ -201,28 +161,18 @@ if version.to_i >= 74
    end
 end
 
+if macro_defined?("PG_TRY", '#include "utils/elog.h"')
+    $CFLAGS += " -DPG_PL_TRYCATCH"
+end
+
 enable_conversion = false
-if version.to_i >= 72
-   if enable_conversion = enable_config("conversion", true)
-      $CFLAGS += " -DPLRUBY_ENABLE_CONVERSION"
-      if check_autoload(safe.to_i)
-         $CFLAGS += " -DRUBY_CAN_USE_AUTOLOAD"
-      end
-      if check_md
-         $CFLAGS += " -DRUBY_CAN_USE_MARSHAL_DUMP"
-      end
+if enable_conversion = enable_config("conversion", true)
+   $CFLAGS += " -DPLRUBY_ENABLE_CONVERSION"
+   if check_autoload(safe.to_i)
+      $CFLAGS += " -DRUBY_CAN_USE_AUTOLOAD"
    end
-else
-   if enable_config("conversion")
-      puts <<-EOT
-
-====================== WARNING ==========
-
- --enable-conversion is disabled because it
- can work *only* with PostgreSQL >= 71
-
-====================== WARNING ==========
-      EOT
+   if check_md
+      $CFLAGS += " -DRUBY_CAN_USE_MARSHAL_DUMP"
    end
 end
 
@@ -260,11 +210,15 @@ subdirs.unshift("src")
 
 begin
    Dir.chdir("src")
-   if CONFIG["LIBRUBYARG"] == "$(LIBRUBYARG_SHARED)" && 
-         !enable_config("plruby-shared")
-      $LIBRUBYARG = ""
+   if CONFIG["ENABLE_SHARED"] == "no"
+      libs = if CONFIG.key?("LIBRUBYARG_STATIC")
+                Config::expand(CONFIG["LIBRUBYARG_STATIC"].dup).sub(/^-l/, '')
+             else
+                Config::expand(CONFIG["LIBRUBYARG"].dup).sub(/lib([^.]*).*/, '\\1')
+             end
+      find_library(libs, "ruby_init", Config::expand(CONFIG["archdir"].dup))
    end
-   $objs = ["plruby.o", "plplan.o", "plpl.o"] unless $objs
+   $objs = ["plruby.o", "plplan.o", "plpl.o", "pltrans.o"] unless $objs
    create_makefile("plruby#{suffix}")
    version.sub!(/\.\d/, '')
 ensure
@@ -303,11 +257,13 @@ ri-site:
 \t@-(cd docs; rdoc -R plruby.rb)
 
 test: src/$(DLLIB)
-\t-(cd test/plt ; sh ./runtest #{version} #{suffix})
-\t-(cd test/plp ; sh ./runtest #{version} #{suffix})
 EOF
-if version >= "73"
-   make.puts "\t-(cd test/range; sh ./runtest #{version} #{suffix})"
+regexp = %r{\Atest/conv_(.*)}
+Dir["test/*"].each do |dir|
+   if regexp =~ dir
+      next unless subdirs.include?("src/conversions/#{$1}")
+   end
+   make.puts "\t-(cd #{dir} ; sh ./runtest #{version} #{suffix})"
 end
 
 make.close

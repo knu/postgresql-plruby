@@ -11,6 +11,7 @@
   * ((<module PL>)) : general module
   * ((<class PL::Plan>)) : class for prepared plans
   * ((<class PL::Cursor>)) : class for cursors
+  * ((<class PL::Transaction>)) : class for transactions (8.0)
   * ((<class BitString>))
   * ((<class Tinterval>))
   * ((<class NetAddr>))
@@ -45,26 +46,25 @@ To create a function in the PL/Ruby language use the syntax
 
    ' LANGUAGE 'plruby';
 
-when calling the function in a query, the arguments are given ((*as
-string values*)) in the array ((%args%)). To create a little max
+when calling the function in a query, the arguments are given
+in the array ((%args%)). To create a little max
 function returning the higher of two int4 values write :
 
    CREATE FUNCTION ruby_max(int4, int4) RETURNS int4 AS '
-       if args[0].to_i > args[1].to_i
+       if args[0] > args[1]
            return args[0]
        else
            return args[1]
        end
    ' LANGUAGE 'plruby';
 
-
 Tuple arguments are given as hash. Here is an example that defines
 the overpaid_2 function (as found in the older Postgres documentation)
 in PL/Ruby.
 
    CREATE FUNCTION overpaid_2 (EMP) RETURNS bool AS '
-       args[0]["salary"].to_f > 200000 || 
-          (args[0]["salary"].to_f > 100000 && args[0]["age"].to_i < 30)
+       args[0]["salary"] > 200000 || 
+          (args[0]["salary"] > 100000 && args[0]["age"] < 30)
    ' LANGUAGE 'plruby';
 
 === Warning : with PostgreSQL >= 7.4 "array" are given as a ruby Array
@@ -75,8 +75,8 @@ in version < 7.4 you write
    CREATE FUNCTION ruby_int4_accum(_int4, int4) RETURNS _int4 AS '
        if /\\{(\\d+),(\\d+)\\}/ =~ args[0]
            a, b = $1, $2
-           newsum = a.to_i + args[1].to_i
-           newcnt = b.to_i + 1
+           newsum = a + args[1]
+           newcnt = b + 1
        else
            raise "unexpected value #{args[0]}"
        end
@@ -87,8 +87,71 @@ This must now (>= 7.4) be written
 
    CREATE FUNCTION ruby_int4_accum(_int4, int4) RETURNS _int4 AS '
       a = args[0]
-      [a[0].to_i + args[1].to_i, a[1].to_i + 1]
+      [a[0] + args[1], a[1] + 1]
    ' LANGUAGE 'plruby';
+
+=== Release PostgreSQL 8.0
+
+With this version, plruby can have named arguments and the previous functions
+can be written
+
+   CREATE FUNCTION ruby_max(a int4, b int4) RETURNS int4 AS '
+       if a > b
+           a
+       else
+           b
+       end
+   ' LANGUAGE 'plruby';
+
+
+   CREATE FUNCTION overpaid_2 (emp EMP) RETURNS bool AS '
+       emp["salary"] > 200000 || 
+          (emp["salary"] > 100000 && emp["age"] < 30)
+   ' LANGUAGE 'plruby';
+
+With this version, you can also use transaction. For example
+
+   plruby_test=# create table tu (a int, b int);
+   CREATE TABLE
+   plruby_test=# create or replace function tt(abort bool) returns bool as '
+   plruby_test'#    transaction do |txn|
+   plruby_test'#       PL.exec("insert into tu values (1, 2)")
+   plruby_test'#       transaction do |txn1|
+   plruby_test'#          PL.exec("insert into tu values (3, 4)")
+   plruby_test'#          txn1.abort
+   plruby_test'#       end
+   plruby_test'#       PL.exec("insert into tu values (5, 6)")
+   plruby_test'#       txn.abort if abort
+   plruby_test'#    end
+   plruby_test'#    abort
+   plruby_test'# ' language 'plruby';
+   CREATE FUNCTION
+   plruby_test=# 
+   plruby_test=# select tt(true);
+    tt 
+   ----
+    t
+   (1 row)
+   
+   plruby_test=# select * from tu;
+    a | b 
+   ---+---
+   (0 rows)
+   
+   plruby_test=# select tt(false);
+    tt 
+   ----
+    f
+   (1 row)
+   
+   plruby_test=# select * from tu;
+    a | b 
+   ---+---
+    1 | 2
+    5 | 6
+   (2 rows)
+   
+   plruby_test=# 
 
 
 == Function returning SET (SFRM Materialize)
@@ -154,7 +217,7 @@ For example
 
    plruby_test=# create or replace function vv(int) returns setof int as '
    plruby_test'#    i = PL.context || 0
-   plruby_test'#    if i >= args[0].to_i
+   plruby_test'#    if i >= args[0]
    plruby_test'#       nil
    plruby_test'#    else
    plruby_test'#       PL.context = i + 1
@@ -243,7 +306,7 @@ then incremented on every update operation :
         when PL::INSERT
             new[args[0]] = 0
           when PL::UPDATE
-              new[args[0]] = old[args[0]].to_i + 1
+              new[args[0]] = old[args[0]] + 1
           else
               return PL::OK
           end
@@ -447,6 +510,9 @@ all others OID are converted to a String object
 == Class and modules
 
 === Global
+
+--- transaction {|txn| }
+    create a new transaction, yield an object ((%PL::Transaction%))
 
 --- warn [level], message
     Ruby interface to PostgreSQL elog()
@@ -771,12 +837,22 @@ all others OID are converted to a String object
 
     Positions the cursor at the beginning of the table
 
+=== class PL::Transaction
+
+a transaction is created with the global function ((%transaction()%)). Only 
+available with PostgreSQL >= 8.0
+
+--- abort
+    Abort the transaction
+
+--- commit
+    Commit the transaction
+
+
 === class BitString
 
 The class BitString implement the PostgreSQL type ((|bit|))
 and ((|bit varying|))
-
-only available if PL/Ruby was compiled with ((|--enable-bitstring|))
 
 The modules Comparable and Enumerable are included
 
@@ -899,8 +975,6 @@ The modules Comparable and Enumerable are included
 The class NetAddr implement the PostgreSQL type ((|inet|))
 and ((|cidr|))
 
-only available if PL/Ruby was compiled with ((|--enable-network|))
-
 The module Comparable is included
 
 ---  from_string(string, cidr = false)
@@ -967,8 +1041,6 @@ The module Comparable is included
 
 The MacAddr implement the PostgreSQL type ((|macaddr|))
 
-only available if PL/Ruby was compiled with ((|--enable-network|))
-
 The module Comparable is included
 
 --- from_string(string, cidr = false)
@@ -989,9 +1061,6 @@ The module Comparable is included
 === class Tinterval
 
 The Tinterval implement the PostgreSQL type ((|tinterval|))
-
-only available if PL/Ruby was compiled with ((|--enable-conversion|))
-
 
 --- from_string(string)
       Convert a ((|String|)) (PostgreSQL representation)
@@ -1019,8 +1088,6 @@ only available if PL/Ruby was compiled with ((|--enable-conversion|))
 === class Box
 
 The Box implement the PostgreSQL type ((|box|))
-
-only available if PL/Ruby was compiled with ((|--enable-geometry|))
 
 The module Comparable is included
 
@@ -1139,8 +1206,6 @@ The module Comparable is included
 
 The Path implement the PostgreSQL type ((|path|))
 
-only available if PL/Ruby was compiled with ((|--enable-geometry|))
-
 The module Comparable is included
 
 --- from_string(string)
@@ -1193,8 +1258,6 @@ The module Comparable is included
 === class Point
 
 The Point implement the PostgreSQL type ((|point|))
-
-only available if PL/Ruby was compiled with ((|--enable-geometry|))
 
 The module Comparable is included
 
@@ -1286,8 +1349,6 @@ The module Comparable is included
 
 The Segment implement the PostgreSQL type ((|lseg|))
 
-only available if PL/Ruby was compiled with ((|--enable-geometry|))
-
 The module Comparable is included
 
 --- from_string(string)
@@ -1352,9 +1413,6 @@ The module Comparable is included
 === class Polygon
 
 The Polygon implement the PostgreSQL type ((|polygon|))
-
-only available if PL/Ruby was compiled with ((|--enable-geometry|))
-
 
 --- from_string(string)
      Convert a ((|String|)) (PostgreSQL representation)
@@ -1430,8 +1488,6 @@ only available if PL/Ruby was compiled with ((|--enable-geometry|))
 === class Circle
 
 The Circle implement the PostgreSQL type ((|circle|))
-
-only available if PL/Ruby was compiled with ((|--enable-geometry|))
 
 The module Comparable is included
 

@@ -55,6 +55,8 @@
 #
 # * PLRuby::PL::Cursor
 #
+# * PLRuby::PL::Transaction
+#
 # * PLRuby::BitString
 #
 # * PLRuby::Tinterval
@@ -81,6 +83,14 @@
 #
 # 
 module PLRuby
+   #
+   # Create a new transaction and yield an object <em>PL::Transaction</em>
+   #
+   # Only available with PostgreSQL >= 8.0
+   def transaction()
+      yield txn
+   end
+
     # Ruby interface to PostgreSQL elog()
     #
     # Possible value for <tt>level</tt> are <tt>NOTICE</tt>, 
@@ -129,12 +139,12 @@ end
 # 
 #    ' LANGUAGE 'plruby';
 # 
-# when calling the function in a query, the arguments are given <b>as
-# string values</b> in the array <em>args</em>. To create a little max
+# when calling the function in a query, the arguments are given
+# in the array <em>args</em>. To create a little max
 # function returning the higher of two int4 values write :
 # 
 #    CREATE FUNCTION ruby_max(int4, int4) RETURNS int4 AS '
-#        if args[0].to_i > args[1].to_i
+#        if args[0] > args[1]
 #            return args[0]
 #        else
 #            return args[1]
@@ -147,9 +157,10 @@ end
 # in PLRuby.
 # 
 #    CREATE FUNCTION overpaid_2 (EMP) RETURNS bool AS '
-#        args[0]["salary"].to_f > 200000 || 
-#           (args[0]["salary"].to_f > 100000 && args[0]["age"].to_i < 30)
+#        args[0]["salary"] > 200000 || 
+#           (args[0]["salary"] > 100000 && args[0]["age"] < 30)
 #    ' LANGUAGE 'plruby';
+# 
 # 
 # === Warning : with PostgreSQL >= 7.4 "array" are given as a ruby Array
 # 
@@ -159,8 +170,8 @@ end
 #    CREATE FUNCTION ruby_int4_accum(_int4, int4) RETURNS _int4 AS '
 #        if /\\{(\\d+),(\\d+)\\}/ =~ args[0]
 #            a, b = $1, $2
-#            newsum = a.to_i + args[1].to_i
-#            newcnt = b.to_i + 1
+#            newsum = a + args[1]
+#            newcnt = b + 1
 #        else
 #            raise "unexpected value #{args[0]}"
 #        end
@@ -171,8 +182,72 @@ end
 # 
 #    CREATE FUNCTION ruby_int4_accum(_int4, int4) RETURNS _int4 AS '
 #       a = args[0]
-#       [a[0].to_i + args[1].to_i, a[1].to_i + 1]
+#       [a[0] + args[1], a[1] + 1]
 #    ' LANGUAGE 'plruby';
+# 
+# === Release PostgreSQL 8.0
+# 
+# With this version, plruby can have named arguments and the previous functions
+# can be written
+# 
+#    CREATE FUNCTION ruby_max(a int4, b int4) RETURNS int4 AS '
+#        if a > b
+#            a
+#        else
+#            b
+#        end
+#    ' LANGUAGE 'plruby';
+# 
+# 
+#    CREATE FUNCTION overpaid_2 (emp EMP) RETURNS bool AS '
+#        emp["salary"] > 200000 || 
+#           (emp["salary"] > 100000 && emp["age"] < 30)
+#    ' LANGUAGE 'plruby';
+# 
+# With this version, you can also use transaction. For example
+# 
+#    plruby_test=# create table tu (a int, b int);
+#    CREATE TABLE
+#    plruby_test=# create or replace function tt(abort bool) returns bool as '
+#    plruby_test'#    transaction do |txn|
+#    plruby_test'#       PL.exec("insert into tu values (1, 2)")
+#    plruby_test'#       transaction do |txn1|
+#    plruby_test'#          PL.exec("insert into tu values (3, 4)")
+#    plruby_test'#          txn1.abort
+#    plruby_test'#       end
+#    plruby_test'#       PL.exec("insert into tu values (5, 6)")
+#    plruby_test'#       txn.abort if abort
+#    plruby_test'#    end
+#    plruby_test'#    abort
+#    plruby_test'# ' language 'plruby';
+#    CREATE FUNCTION
+#    plruby_test=# 
+#    plruby_test=# select tt(true);
+#     tt 
+#    ----
+#     t
+#    (1 row)
+#    
+#    plruby_test=# select * from tu;
+#     a | b 
+#    ---+---
+#    (0 rows)
+#    
+#    plruby_test=# select tt(false);
+#     tt 
+#    ----
+#     f
+#    (1 row)
+#    
+#    plruby_test=# select * from tu;
+#     a | b 
+#    ---+---
+#     1 | 2
+#     5 | 6
+#    (2 rows)
+#    
+#    plruby_test=# 
+# 
 # 
 module PLRuby::Description::Function
 end
@@ -242,7 +317,7 @@ end
 # 
 #    plruby_test=# create or replace function vv(int) returns setof int as '
 #    plruby_test'#    i = PL.context || 0
-#    plruby_test'#    if i >= args[0].to_i
+#    plruby_test'#    if i >= args[0]
 #    plruby_test'#       nil
 #    plruby_test'#    else
 #    plruby_test'#       PL.context = i + 1
@@ -343,7 +418,7 @@ end
 #         when PL::INSERT
 #             new[args[0]] = 0
 #           when PL::UPDATE
-#               new[args[0]] = old[args[0]].to_i + 1
+#               new[args[0]] = old[args[0]] + 1
 #           else
 #               return PL::OK
 #           end
@@ -549,15 +624,6 @@ end
 #
 class PLRuby::Description::Conversion
 end
-# 
-#Ruby interface to PostgreSQL elog()
-#
-#Possible value for <em>level</em> are <em>NOTICE</em>, <em>DEBUG</em> and <em>NOIND</em>
-#
-#Use <em>raise()</em> if you want to simulate <em>elog(ERROR, "...")</em>
-#
- def  warn [level], message
- end
 #
 # general module
 # 
@@ -931,6 +997,21 @@ class PLRuby::PL::Cursor
    end
 end
 
+#
+# A transaction is created with the global function #transaction
+#
+# Only available with PostgreSQL >= 8.0
+#
+class PLRuby::PL::Transaction
+
+   # abort the transaction
+   def abort
+   end
+
+   # commit the transaction
+   def commit
+   end
+end
 #
 # The class PLRuby::BitString implement the PostgreSQL type <em>bit</em>
 # and <em>bit varying</em>

@@ -53,10 +53,10 @@ pl_tint_s_from_string(VALUE obj, VALUE str)
     tmp = StringValuePtr(str);
     first = pl_dequote(tmp);
     second = pl_dequote(first + strlen(first) + 1);
-    d0 = rb_dbl2big(DatumGetTimestamp(plruby_dfc1(date_timestamp, 
-					   plruby_dfc1(date_in, (Datum)first))));
-    d1 = rb_dbl2big(DatumGetTimestamp(plruby_dfc1(date_timestamp, 
-					   plruby_dfc1(date_in, (Datum)second))));
+    d0 = rb_dbl2big(DatumGetTimestamp(PLRUBY_DFC1(date_timestamp, 
+                                                  PLRUBY_DFC1(date_in, first))));
+    d1 = rb_dbl2big(DatumGetTimestamp(PLRUBY_DFC1(date_timestamp, 
+                                                  PLRUBY_DFC1(date_in, second))));
     res = Data_Make_Struct(obj, struct pl_tint, pl_tint_mark, free, tint);
     tint->low = rb_funcall(rb_cTime, rb_intern("at"), 1, d0);
     tint->high = rb_funcall(rb_cTime, rb_intern("at"), 1, d1);
@@ -76,13 +76,13 @@ pl_tint_s_datum(VALUE obj, VALUE a)
         rb_raise(rb_eArgError, "invalid argument");
     }
     res = rb_ary_new2(2);
-    tmp = rb_dbl2big(DatumGetTimestamp(plruby_dfc1(abstime_timestamp, 
-					    interval->data[0])));
+    tmp = rb_dbl2big(DatumGetTimestamp(PLRUBY_DFC1(abstime_timestamp, 
+                                                   interval->data[0])));
     tmp = rb_funcall(rb_cTime, rb_intern("at"), 1, tmp);
     OBJ_TAINT(tmp);
     rb_ary_push(res, tmp);
-    tmp = rb_dbl2big(DatumGetTimestamp(plruby_dfc1(abstime_timestamp, 
-					    interval->data[1])));
+    tmp = rb_dbl2big(DatumGetTimestamp(PLRUBY_DFC1(abstime_timestamp, 
+                                                   interval->data[1])));
     tmp = rb_funcall(rb_cTime, rb_intern("at"), 1, tmp);
     OBJ_TAINT(tmp);
     rb_ary_push(res, tmp);
@@ -117,11 +117,11 @@ pl_tint_mload(VALUE obj, VALUE a)
     if (TYPE(a) != T_ARRAY || RARRAY(a)->len != 2) {
         rb_raise(rb_eArgError, "expected an Array with 2 elements");
     }
-    Data_Get_Struct(obj, struct pl_tint, tint);
     if (!rb_obj_is_kind_of(RARRAY(a)->ptr[0], rb_cTime) ||
         !rb_obj_is_kind_of(RARRAY(a)->ptr[1], rb_cTime)) {
 	rb_raise(rb_eArgError, "need 2 Times objects");
     }
+    Data_Get_Struct(obj, struct pl_tint, tint);
     tint->low = RARRAY(a)->ptr[0];
     tint->high = RARRAY(a)->ptr[1];
     return obj;
@@ -230,7 +230,8 @@ pl_tint_init_copy(VALUE copy, VALUE orig)
     }
     Data_Get_Struct(orig, struct pl_tint, t0);
     Data_Get_Struct(copy, struct pl_tint, t1);
-    MEMCPY(t1, t0, struct pl_tint, 1);
+    t1->low = rb_obj_dup(t0->low);
+    t1->high = rb_obj_dup(t0->high);
     return copy;
 }
 

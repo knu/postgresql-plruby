@@ -9,7 +9,7 @@ pl_inet_s_alloc(VALUE obj)
     void *v;
     inet *inst;
 
-    v = (void *)plruby_dfc1(inet_in, "0.0.0.0");
+    v = (void *)PLRUBY_DFC1(inet_in, "0.0.0.0");
     inst = (inet *)ALLOC_N(char, VARSIZE(v));
     CPY_FREE(inst, v, VARSIZE(v));
     return Data_Wrap_Struct(obj, pl_inet_mark, free, inst);
@@ -92,10 +92,10 @@ pl_inet_init(int argc, VALUE *argv, VALUE obj)
     a = plruby_to_s(a);
     Data_Get_Struct(obj, inet, inst);
     if (cidr) {
-	v = (void *)plruby_dfc1(cidr_in, RSTRING(a)->ptr);
+	v = (void *)PLRUBY_DFC1(cidr_in, RSTRING(a)->ptr);
     }
     else {
-	v = (void *)plruby_dfc1(inet_in, RSTRING(a)->ptr);
+	v = (void *)PLRUBY_DFC1(inet_in, RSTRING(a)->ptr);
     }
     free(inst);
     inst = (inet *)ALLOC_N(char, VARSIZE(v));
@@ -114,8 +114,8 @@ pl_inet_cmp(VALUE a, VALUE b)
     }
     Data_Get_Struct(a, inet, inst0);
     Data_Get_Struct(b, inet, inst1);
-    if (plruby_dfc2(network_eq, inst0, inst1)) return INT2NUM(0);
-    if (plruby_dfc2(network_lt, inst0, inst1)) return INT2NUM(-1);
+    if (PLRUBY_DFC2(network_eq, inst0, inst1)) return INT2NUM(0);
+    if (PLRUBY_DFC2(network_lt, inst0, inst1)) return INT2NUM(-1);
     return INT2FIX(1);
 }
 
@@ -130,7 +130,7 @@ NAME_(VALUE obj, VALUE a)                                       \
     }                                                           \
     Data_Get_Struct(obj, inet, inst0);                          \
     Data_Get_Struct(a, inet, inst1);                            \
-    if (plruby_dfc2(FUNCTION_, inst0, inst1)) return Qtrue;     \
+    if (PLRUBY_DFC2(FUNCTION_, inst0, inst1)) return Qtrue;     \
     return Qfalse;                                              \
 }
 
@@ -148,7 +148,7 @@ NAME_(VALUE obj)						\
     VALUE res;							\
 								\
     Data_Get_Struct(obj, inet, src);				\
-    str = (char *)plruby_dfc1(FUNCTION_, src);			\
+    str = (char *)PLRUBY_DFC1(FUNCTION_, src);			\
     if (OBJ_TAINTED(obj)) {					\
 	res = rb_tainted_str_new((char *)VARDATA(str),		\
 				 VARSIZE(str) - VARHDRSZ);	\
@@ -172,7 +172,7 @@ pl_inet_to_s(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, inet, src);
-    str = (char *)plruby_dfc1(inet_out, src);
+    str = (char *)PLRUBY_DFC1(inet_out, src);
     if (OBJ_TAINTED(obj)) {
 	res = rb_tainted_str_new2(str);
     }
@@ -188,7 +188,7 @@ pl_inet_masklen(VALUE obj)
 {
     inet *src;
     Data_Get_Struct(obj, inet, src);
-    return INT2NUM(DatumGetInt32(plruby_dfc1(network_masklen, src)));
+    return INT2NUM(DatumGetInt32(PLRUBY_DFC1(network_masklen, src)));
 }
 
 static VALUE
@@ -198,7 +198,7 @@ pl_inet_setmasklen(VALUE obj, VALUE a)
     VALUE res;
 
     Data_Get_Struct(obj, inet, s0);
-    s1 = (inet *)plruby_dfc2(inet_set_masklen, s0, Int32GetDatum(NUM2INT(a)));
+    s1 = (inet *)PLRUBY_DFC2(inet_set_masklen, s0, Int32GetDatum(NUM2INT(a)));
     s2 = (inet *)ALLOC_N(char, VARSIZE(s1));
     CPY_FREE(s2, s1, VARSIZE(s1));
     res = Data_Wrap_Struct(rb_obj_class(obj), pl_inet_mark, free, s2);
@@ -215,7 +215,7 @@ pl_inet_family(VALUE obj)
     VALUE str;
 
     Data_Get_Struct(obj, inet, s);
-    switch (DatumGetInt32(plruby_dfc1(network_family, s))) {
+    switch (DatumGetInt32(PLRUBY_DFC1(network_family, s))) {
     case 4:
 	str = rb_str_new2("AF_INET");
 	break;
@@ -242,7 +242,7 @@ NAME_(VALUE obj)							\
     Data_Get_Struct(obj, inet, ip0);					\
     res = Data_Make_Struct(rb_obj_class(obj), inet,			\
 			   pl_inet_mark, free, ip1);			\
-    ip2 = (inet *)plruby_dfc1(FUNCTION_, ip0);                          \
+    ip2 = (inet *)PLRUBY_DFC1(FUNCTION_, ip0);                          \
     ip1 = (inet *)ALLOC_N(char, VARSIZE(ip2));				\
     CPY_FREE(ip1, ip2, VARSIZE(ip2));					\
     res = Data_Wrap_Struct(rb_obj_class(obj), pl_inet_mark, free, ip1);	\
@@ -276,6 +276,55 @@ pl_inet_last(VALUE obj)
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
     return res;
 }
+
+#if PG_PL_VERSION >= 75
+
+static VALUE
+pl_inet_s_caddr(VALUE obj)
+{
+    inet *ip0, *ip1;
+    VALUE res;
+
+    ip0 = (inet *)PLRUBY_DFC0(inet_client_addr);
+    if (!ip0) {
+        return Qnil;
+    }
+    ip1 = (inet *)ALLOC_N(char, VARSIZE(ip0));
+    CPY_FREE(ip1, ip0, VARSIZE(ip0));
+    res = Data_Wrap_Struct(obj, pl_inet_mark, free, ip1);
+    if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
+}
+
+static VALUE
+pl_inet_s_cport(VALUE obj)
+{
+    return INT2NUM(PLRUBY_DFC0(inet_client_port));
+}
+
+static VALUE
+pl_inet_s_saddr(VALUE obj)
+{
+    inet *ip0, *ip1;
+    VALUE res;
+
+    ip0 = (inet *)PLRUBY_DFC0(inet_server_addr);
+    if (!ip0) {
+        return Qnil;
+    }
+    ip1 = (inet *)ALLOC_N(char, VARSIZE(ip0));
+    CPY_FREE(ip1, ip0, VARSIZE(ip0));
+    res = Data_Wrap_Struct(obj, pl_inet_mark, free, ip1);
+    if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
+}
+
+static VALUE
+pl_inet_s_sport(VALUE obj)
+{
+    return INT2NUM(PLRUBY_DFC0(inet_server_port));
+}
+
+#endif
+    
 
 static void pl_mac_mark(macaddr *mac) {}
 
@@ -346,7 +395,7 @@ pl_mac_init(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     Data_Get_Struct(obj, struct macaddr, m0);
-    m1 = (macaddr *)plruby_dfc1(macaddr_in, RSTRING(a)->ptr);
+    m1 = (macaddr *)PLRUBY_DFC1(macaddr_in, RSTRING(a)->ptr);
     CPY_FREE(m0, m1, sizeof(macaddr));
     return obj;
 }
@@ -362,7 +411,7 @@ pl_mac_cmp(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, macaddr, m0);
     Data_Get_Struct(a, macaddr, m1);
-    res = DatumGetInt32(plruby_dfc2(macaddr_cmp, m0, m1));
+    res = DatumGetInt32(PLRUBY_DFC2(macaddr_cmp, m0, m1));
     return INT2NUM(res);
 }
 
@@ -374,7 +423,7 @@ pl_mac_to_s(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, macaddr, m);
-    s = (char *)plruby_dfc1(macaddr_out, m);
+    s = (char *)PLRUBY_DFC1(macaddr_out, m);
     res = rb_str_new2(s);
     pfree(s);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
@@ -388,7 +437,7 @@ pl_mac_truncate(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, macaddr, m0);
-    m2 = (macaddr *)plruby_dfc1(macaddr_trunc, m0);
+    m2 = (macaddr *)PLRUBY_DFC1(macaddr_trunc, m0);
     res = Data_Make_Struct(rb_obj_class(obj), macaddr, pl_mac_mark, free, m1);
     CPY_FREE(m1, m2, sizeof(macaddr));
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
@@ -410,6 +459,12 @@ void Init_plruby_network()
     rb_define_singleton_method(pl_cInet, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cInet, "from_string", plruby_s_new, -1);
     rb_define_singleton_method(pl_cInet, "from_datum", pl_inet_s_datum, 1);
+#if PG_PL_VERSION >= 75
+    rb_define_singleton_method(pl_cInet, "client_addr", pl_inet_s_caddr, 0);
+    rb_define_singleton_method(pl_cInet, "client_port", pl_inet_s_cport, 0);
+    rb_define_singleton_method(pl_cInet, "server_addr", pl_inet_s_saddr, 0);
+    rb_define_singleton_method(pl_cInet, "server_port", pl_inet_s_sport, 0);
+#endif
     rb_define_method(pl_cInet, "to_datum", pl_inet_to_datum, 1);
     rb_define_method(pl_cInet, "initialize", pl_inet_init, -1);
 #ifndef HAVE_RB_INITIALIZE_COPY
