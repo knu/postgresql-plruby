@@ -52,6 +52,30 @@ in PL/Ruby.
           (args[0]["salary"].to_f > 100000 && args[0]["age"].to_i < 30)
    ' LANGUAGE 'plruby';
 
+=== Warning : with PostgreSQL >= 7.4 "array" are given as a ruby Array
+
+For example to define a function (int4[], int4) and return int4[],
+in version < 7.4 you write
+
+   CREATE FUNCTION ruby_int4_accum(_int4, int4) RETURNS _int4 AS '
+       if /\\{(\\d+),(\\d+)\\}/ =~ args[0]
+           a, b = $1, $2
+           newsum = a.to_i + args[1].to_i
+           newcnt = b.to_i + 1
+       else
+           raise "unexpected value #{args[0]}"
+       end
+       "{#{newsum},#{newcnt}}"
+   ' LANGUAGE 'plruby';
+
+This must now (>= 7.4) be written
+
+   CREATE FUNCTION ruby_int4_accum(_int4, int4) RETURNS _int4 AS '
+      a = args[0]
+      [a[0].to_i + args[1].to_i, a[1].to_i + 1]
+   ' LANGUAGE 'plruby';
+
+
 == Function returning SET
 
 The return type must be declared as SETOF
@@ -105,7 +129,7 @@ For example to concatenate 2 rows create the function
 == Trigger procedures in PL Ruby
 
 Trigger procedures are defined in Postgres as functions without
-arguments and a return type of opaque. In PL/Ruby the procedure is
+arguments and a return type of trigger. In PL/Ruby the procedure is
 called with 4 arguments :
 
 :new (hash, tainted)
@@ -161,7 +185,7 @@ value in a table to keep track of the # of updates that are performed
 on the row. For new row's inserted, the value is initialized to 0 and
 then incremented on every update operation :
 
-    CREATE FUNCTION trigfunc_modcount() RETURNS OPAQUE AS '
+    CREATE FUNCTION trigfunc_modcount() RETURNS TRIGGER AS '
         case tg["op"]
         when PL::INSERT
             new[args[0]] = 0
@@ -184,7 +208,7 @@ A more complex example (extract from test_setup.sql in the distribution)
 which use the global variable ((%$Plans%)) to store a prepared
 plan
 
-   create function trig_pkey2_after() returns opaque as '
+   create function trig_pkey2_after() returns trigger as '
       if ! $Plans.key?("plan_dta2_upd")
           $Plans["plan_dta2_upd"] = 
                PL::Plan.new("update T_dta2 
@@ -268,7 +292,8 @@ found try, for each row, to define singleton methods with the template :
               #{body}
           end
 
-The previous example can be written (you have a more complete example in ???)
+The previous example can be written (you have a more complete example in
+test/plp/test_setup.sql)
 
           
           toto=> SELECT * FROM plruby_singleton_methods;
@@ -306,6 +331,9 @@ The previous example can be written (you have a more complete example in ???)
  
 === module PL
 
+--- args_type
+    Return the type of the arguments given to the function
+
 --- column_name(table)
     Return the name of the columns for the table
 
@@ -324,6 +352,7 @@ The previous example can be written (you have a more complete example in ???)
 
 --- result_type
     Return the type of the columns for a function returning a SETOF
+    or the type of the return value
 
 --- result_size
     Return the number of columns  for a function returning a SETOF

@@ -3,6 +3,7 @@
 DBNAME=plruby_test
 export DBNAME
 
+sleep 1
 echo "**** Destroy old database $DBNAME ****"
 if [ $1 -ge 70 ]; then
     dropdb $DBNAME

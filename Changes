@@ -39,3 +39,9 @@
  corrected bug with GC
  new classes PL::Plan, PL::Cursor
 
+--- 0.3.4
+
+ adapted for 7.4
+ Warning : array as input and output (7.4)
+ anyarray/anyelement in input/output for 7.4
+

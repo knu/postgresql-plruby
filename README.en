@@ -27,12 +27,15 @@ be 'newC' in this case
 
  You may need to specify :
 
+  --with-pgsql-dir=<prefix for include and lib directories for PostgreSQL>
+
   --with-pgsql-include-dir=<include file directory for PostgreSQL>
 
   --with-pgsql-lib-dir=<library dir for PostgreSQL>
 
   --with-pgsql-srcinc-dir=<include file *from* the source of PostgreSQL>
      pgsql-srcinc-dir must contains, for example, the file catalog/pg_proc.h
+     (not needed if `make install-all-headers' was executed)
 
   --with-pgsql-version=<release number for PostgreSQL, actually 65, 70, 71
                         or 72 i.e. major and minor number>

@@ -21,6 +21,11 @@ when 73
    extension = "_new_trigger"
    procedural = ""
    opaque = 'language_handler'
+when 74
+   language = 'C'
+   extension = "_new_trigger_array"
+   procedural = ""
+   opaque = 'language_handler'
 end
 begin
    f = File.new("test_setup.sql", "w")

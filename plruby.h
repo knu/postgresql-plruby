@@ -1,9 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <string.h>
 #include <setjmp.h>
 
 #include "executor/spi.h"
@@ -26,6 +22,31 @@
 #include "funcapi.h"
 #endif
 
+#if PG_PL_VERSION >= 74
+#include "server/utils/array.h"
+#endif
+
+#ifdef PACKAGE_NAME
+#undef PACKAGE_NAME
+#endif
+
+#ifdef PACKAGE_TARNAME
+#undef PACKAGE_TARNAME
+#endif
+
+#ifdef PACKAGE_VERSION
+#undef PACKAGE_VERSION
+#endif
+
+#ifdef PACKAGE_STRING
+#undef PACKAGE_STRING
+#endif
+
+#ifdef PACKAGE_BUGREPORT
+#undef PACKAGE_BUGREPORT
+#endif
+
+#include <ruby.h>
 
 #ifndef MAXFMGRARGS
 #define RUBY_ARGS_MAXFMGR FUNC_MAX_ARGS
@@ -46,8 +67,6 @@
 #if PG_PL_VERSION >= 71
 #define SearchSysCacheTuple SearchSysCache
 #endif
-
-#include <ruby.h>
 
 extern VALUE rb_thread_list();
 
@@ -107,14 +126,30 @@ struct pl_thread_st {
 typedef struct pl_proc_desc
 {
     char	   *proname;
-    FmgrInfo	result_in_func;
-    Oid			result_in_elem;
-    int			result_in_len;
-    int			nargs;
-    FmgrInfo	arg_out_func[RUBY_ARGS_MAXFMGR];
-    Oid			arg_out_elem[RUBY_ARGS_MAXFMGR];
-    int			arg_out_len[RUBY_ARGS_MAXFMGR];
-    int			arg_is_rel[RUBY_ARGS_MAXFMGR];
+#if PG_PL_VERSION >= 73
+    TransactionId  fn_xmin;
+    CommandId      fn_cmin;
+#endif
+    FmgrInfo	result_func;
+    Oid		result_elem;
+    Oid		result_oid;
+    int		result_len;
+#if PG_PL_VERSION >= 74
+    bool	result_is_array;
+    bool	result_val;
+    char	result_align;
+#endif
+    int		nargs;
+    FmgrInfo	arg_func[RUBY_ARGS_MAXFMGR];
+    Oid		arg_elem[RUBY_ARGS_MAXFMGR];
+    Oid		arg_type[RUBY_ARGS_MAXFMGR];
+    int		arg_len[RUBY_ARGS_MAXFMGR];
+#if PG_PL_VERSION >= 74
+    bool	arg_is_array[RUBY_ARGS_MAXFMGR];
+    bool	arg_val[RUBY_ARGS_MAXFMGR];
+    char	arg_align[RUBY_ARGS_MAXFMGR];
+#endif
+    int		arg_is_rel[RUBY_ARGS_MAXFMGR];
     char result_type;
 } pl_proc_desc;
 

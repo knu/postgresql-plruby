@@ -1,35 +1,30 @@
 #!/usr/bin/ruby
+ARGV.collect! {|x| x.sub(/^--with-pgsql-prefix=/, "--with-pgsql-dir=") }
+
 require 'mkmf'
 
-stat_lib = if CONFIG.key?("LIBRUBYARG_STATIC")
-	      $LDFLAGS += " -L#{CONFIG['libdir']}"
-	      CONFIG["LIBRUBYARG_STATIC"]
-	   else
-	      "-lruby"
-	   end.sub(/^-l/, '')
-            
+def resolve(key)
+   name = key.dup
+   true while name.gsub!(/\$\((\w+)\)/) { CONFIG[$1] }
+   name
+end
+
+if ! find_library(resolve(CONFIG["LIBRUBY"]).sub(/^lib(.*)\.\w+\z/, '\\1'), 
+		  "ruby_init", resolve(CONFIG["archdir"]))
+   raise "can't find -lruby"
+end
+
 if srcdir = with_config("pgsql-srcinc-dir")
-   $CFLAGS = "-I#{srcdir}"
+   $CFLAGS = "-I#{srcdir} "
 end
-include_dir = ""
-if prefix = with_config("pgsql-prefix")
-   if File.exist?("#{prefix}/include/server")
-      $CFLAGS += " -I#{prefix}/include -I#{prefix}/include/server"
-   else 
-      $CFLAGS += " -I#{prefix}/include -I#{prefix}/include/postgresql/server"
-   end
-   $LDFLAGS += " -L#{prefix}/lib"
-   include_dir = "#{prefix}/include"
-end
-if incdir = with_config("pgsql-include-dir")
-   $CFLAGS += " -I#{incdir} -I#{incdir}/server"
-   include_dir = incdir
-else
-   $CFLAGS += " -I/usr/include/postgresql -I/usr/include/postgresql/server"
-end
-if  libdir = with_config("pgsql-lib-dir")
-    $LDFLAGS += " -L#{libdir}"
-end
+
+include_dir, = dir_config("pgsql", "/usr/local/pgsql")
+
+$CFLAGS += if File.exist?("#{include_dir}/server")
+	      " -I#{include_dir}/server"
+	   else 
+	      " -I#{include_dir}/postgresql/server"
+	   end
 
 if safe = with_config("safe-level")
     $CFLAGS += " -DSAFE_LEVEL=#{safe}"
@@ -52,7 +47,7 @@ end
 if ! have_library("pq", "PQsetdbLogin")
     raise "libpq is missing"
 end
-$libs = append_library($libs, stat_lib)
+
 if ! version = with_config("pgsql-version")
    for version_in in [
 	 "#{include_dir}/config.h", 
@@ -78,17 +73,20 @@ if ! version = with_config("pgsql-version")
    end
 end
 unless version
-   version = "72"
+   version = "73"
    print <<-EOT
  ************************************************************************
  I can't find the version of PostgreSQL, the test will be make against
- the output of 7.2. If the test fail, verify the result in the directories
+ the output of 7.3. If the test fail, verify the result in the directories
  test/plt and test/plp
  ************************************************************************
    EOT
 end
 
 $CFLAGS += " -DPG_PL_VERSION=#{version}"
+if RUBY_VERSION >= "1.8.0"
+   $DLDFLAGS = $LDFLAGS
+end
 create_makefile("plruby")
 version.sub!(/\.\d/, '')
 open("Makefile", "a") do |make|
@@ -98,5 +96,8 @@ test: $(DLLIB)
 \t(cd test/plt ; sh ./runtest #{version})
 \t(cd test/plp ; sh ./runtest #{version})
     EOF
+    if version >= "73"
+        make.puts "\t(cd test/range; sh ./runtest #{version})"
+    end
 end
 

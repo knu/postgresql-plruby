@@ -5,11 +5,7 @@ export DBNAME
 
 sleep 1
 echo "**** Destroy old database $DBNAME ****"
-if [ $1 -ge 70 ]; then
-    dropdb $DBNAME
-else
-    destroydb $DBNAME
-fi
+dropdb $DBNAME
 
 echo "**** Create test database $DBNAME ****"
 createdb $DBNAME
@@ -17,9 +13,6 @@ createdb $DBNAME
 echo "**** Create procedural language plruby ****"
 ruby b.rb $1
 psql -q -n $DBNAME <test_mklang.sql
-
-echo "**** Create tables, functions and triggers ****"
-psql -q -n $DBNAME <test_setup.sql
 
 echo "**** Running test queries ****"
 psql -q -n -e $DBNAME <test_queries.sql > test.out 2>&1
