@@ -36,37 +36,16 @@ procedures
   --with-pgsql-version=<release number for PostgreSQL, actually 65, 70, 71
                         or 72 i.e. major and minor number>
 
-  --enable-conversion
-    arguments for the function will be converted to Integer, Float, true, 
-    false, Time, Tinterval or String depending of the internal type.
-
-  --enable-geometry
-    add the classes Point, Segment, Box, Path, Polygon, Circle to
-    plruby (--enable-conversion is automatically added)
-
-  --enable-network
-    add the classes NetAddr, MacAddr to plruby  (--enable-conversion
-    is automatically added)
-
-  --enable-bitstring
-    add the class BitString to plruby  (--enable-conversion is automatically
-    added)
-
-  --enable-all-conversions
-    enable all conversions (...)
-
-  --enable-autoload
-    ruby will use autoload for the classes Point, Segment, Box, Path, Polygon,
-    Circle, NetAddr, MacAddr, BitString even when it's compiled with
-    $SAFE >= 4
-
-    **WARNING** work only with ruby >= 1.8.1
+  --disable-conversion
+    by default plruby try to convert a postgres type to a ruby class
+    (for PostgreSQL >= 72). This option give the possibility to disable
+    all conversions
 
   --with_suffix=<suffix to add>
 
     For example
 
-    ruby extconf.rb --enable_geometry --with-suffix=_geo
+    ruby extconf.rb --with-suffix=_geo
 
     will create plruby_geo.so
 
@@ -80,7 +59,7 @@ procedures
 
 * Test (and examples)
 
- WARNING : if plruby was compiled with --enable-conversion and $SAFE < 3
+ WARNING : if plruby was compiled with --enable-conversion
  you must *FIRST* run `make install' before `make test'
 
   make test

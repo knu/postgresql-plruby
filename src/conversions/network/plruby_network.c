@@ -1,31 +1,5 @@
-#include "package.h"
-
-#include <ruby.h>
-
-#include "package.h"
-
-#include <postgres.h>
-#include <catalog/pg_type.h>
-#include <utils/builtins.h>
+#include "convcommon.h"
 #include <utils/inet.h>
-
-#define DFC1(A_,B_) DirectFunctionCall1(A_,(Datum)B_)
-#define DFC2(A_,B_,C_) DirectFunctionCall2(A_,(Datum)B_,(Datum)C_)
-
-#define CPY_FREE(p0_, p1_, size_) do {		\
-    void *p2_ = (void *)p1_;			\
-    memcpy((p0_), (p2_), (size_));		\
-    pfree(p2_);					\
-} while (0)
-
-extern VALUE plruby_to_s _((VALUE));
-extern VALUE plruby_s_new _((int, VALUE *, VALUE));
-#ifndef HAVE_RB_INITIALIZE_COPY
-extern VALUE plruby_clone _((VALUE));
-#endif
-extern Oid plruby_datum_oid _((VALUE, int *));
-extern VALUE plruby_datum_set _((VALUE, Datum));
-extern VALUE plruby_datum_get _((VALUE, Oid *));
 
 static void pl_inet_mark(inet *p) {}
 
@@ -35,7 +9,7 @@ pl_inet_s_alloc(VALUE obj)
     void *v;
     inet *inst;
 
-    v = (void *)DFC1(inet_in, "0.0.0.0");
+    v = (void *)plruby_dfc1(inet_in, "0.0.0.0");
     inst = (inet *)ALLOC_N(char, VARSIZE(v));
     CPY_FREE(inst, v, VARSIZE(v));
     return Data_Wrap_Struct(obj, pl_inet_mark, free, inst);
@@ -101,6 +75,9 @@ pl_inet_to_datum(VALUE obj, VALUE a)
     return plruby_datum_set(a, (Datum)ip1);
 }
 
+PL_MLOADVAR(pl_inet_mload, inet_recv, inet, VARSIZE);
+PL_MDUMP(pl_inet_mdump, inet_send);
+
 static VALUE
 pl_inet_init(int argc, VALUE *argv, VALUE obj)
 {
@@ -115,10 +92,10 @@ pl_inet_init(int argc, VALUE *argv, VALUE obj)
     a = plruby_to_s(a);
     Data_Get_Struct(obj, inet, inst);
     if (cidr) {
-	v = (void *)DFC1(cidr_in, RSTRING(a)->ptr);
+	v = (void *)plruby_dfc1(cidr_in, RSTRING(a)->ptr);
     }
     else {
-	v = (void *)DFC1(inet_in, RSTRING(a)->ptr);
+	v = (void *)plruby_dfc1(inet_in, RSTRING(a)->ptr);
     }
     free(inst);
     inst = (inet *)ALLOC_N(char, VARSIZE(v));
@@ -137,8 +114,8 @@ pl_inet_cmp(VALUE a, VALUE b)
     }
     Data_Get_Struct(a, inet, inst0);
     Data_Get_Struct(b, inet, inst1);
-    if (DFC2(network_eq, inst0, inst1)) return INT2NUM(0);
-    if (DFC2(network_lt, inst0, inst1)) return INT2NUM(-1);
+    if (plruby_dfc2(network_eq, inst0, inst1)) return INT2NUM(0);
+    if (plruby_dfc2(network_lt, inst0, inst1)) return INT2NUM(-1);
     return INT2FIX(1);
 }
 
@@ -153,7 +130,7 @@ NAME_(VALUE obj, VALUE a)                                       \
     }                                                           \
     Data_Get_Struct(obj, inet, inst0);                          \
     Data_Get_Struct(a, inet, inst1);                            \
-    if (DFC2(FUNCTION_, inst0, inst1)) return Qtrue;            \
+    if (plruby_dfc2(FUNCTION_, inst0, inst1)) return Qtrue;     \
     return Qfalse;                                              \
 }
 
@@ -171,7 +148,7 @@ NAME_(VALUE obj)						\
     VALUE res;							\
 								\
     Data_Get_Struct(obj, inet, src);				\
-    str = (char *)DFC1(FUNCTION_, src);				\
+    str = (char *)plruby_dfc1(FUNCTION_, src);			\
     if (OBJ_TAINTED(obj)) {					\
 	res = rb_tainted_str_new((char *)VARDATA(str),		\
 				 VARSIZE(str) - VARHDRSZ);	\
@@ -195,7 +172,7 @@ pl_inet_to_s(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, inet, src);
-    str = (char *)DFC1(inet_out, src);
+    str = (char *)plruby_dfc1(inet_out, src);
     if (OBJ_TAINTED(obj)) {
 	res = rb_tainted_str_new2(str);
     }
@@ -211,7 +188,7 @@ pl_inet_masklen(VALUE obj)
 {
     inet *src;
     Data_Get_Struct(obj, inet, src);
-    return INT2NUM((int)DFC1(network_masklen, src));
+    return INT2NUM(DatumGetInt32(plruby_dfc1(network_masklen, src)));
 }
 
 static VALUE
@@ -221,7 +198,7 @@ pl_inet_setmasklen(VALUE obj, VALUE a)
     VALUE res;
 
     Data_Get_Struct(obj, inet, s0);
-    s1 = (inet *)DFC2(inet_set_masklen, s0, NUM2INT(a));
+    s1 = (inet *)plruby_dfc2(inet_set_masklen, s0, Int32GetDatum(NUM2INT(a)));
     s2 = (inet *)ALLOC_N(char, VARSIZE(s1));
     CPY_FREE(s2, s1, VARSIZE(s1));
     res = Data_Wrap_Struct(rb_obj_class(obj), pl_inet_mark, free, s2);
@@ -238,7 +215,7 @@ pl_inet_family(VALUE obj)
     VALUE str;
 
     Data_Get_Struct(obj, inet, s);
-    switch ((int)DFC1(network_family, s)) {
+    switch (DatumGetInt32(plruby_dfc1(network_family, s))) {
     case 4:
 	str = rb_str_new2("AF_INET");
 	break;
@@ -265,7 +242,7 @@ NAME_(VALUE obj)							\
     Data_Get_Struct(obj, inet, ip0);					\
     res = Data_Make_Struct(rb_obj_class(obj), inet,			\
 			   pl_inet_mark, free, ip1);			\
-    ip2 = (inet *)DFC1(FUNCTION_, ip0);					\
+    ip2 = (inet *)plruby_dfc1(FUNCTION_, ip0);                          \
     ip1 = (inet *)ALLOC_N(char, VARSIZE(ip2));				\
     CPY_FREE(ip1, ip2, VARSIZE(ip2));					\
     res = Data_Wrap_Struct(rb_obj_class(obj), pl_inet_mark, free, ip1);	\
@@ -359,6 +336,9 @@ pl_mac_to_datum(VALUE obj, VALUE a)
     return plruby_datum_set(a, (Datum)mac1);
 }
 
+PL_MLOAD(pl_mac_mload, macaddr_recv, macaddr);
+PL_MDUMP(pl_mac_mdump, macaddr_send);
+
 static VALUE
 pl_mac_init(VALUE obj, VALUE a)
 {
@@ -366,7 +346,7 @@ pl_mac_init(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     Data_Get_Struct(obj, struct macaddr, m0);
-    m1 = (macaddr *)DFC1(macaddr_in, RSTRING(a)->ptr);
+    m1 = (macaddr *)plruby_dfc1(macaddr_in, RSTRING(a)->ptr);
     CPY_FREE(m0, m1, sizeof(macaddr));
     return obj;
 }
@@ -382,7 +362,7 @@ pl_mac_cmp(VALUE obj, VALUE a)
     }
     Data_Get_Struct(obj, macaddr, m0);
     Data_Get_Struct(a, macaddr, m1);
-    res = (int)DFC2(macaddr_cmp, m0, m1);
+    res = DatumGetInt32(plruby_dfc2(macaddr_cmp, m0, m1));
     return INT2NUM(res);
 }
 
@@ -394,7 +374,7 @@ pl_mac_to_s(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, macaddr, m);
-    s = (char *)DFC1(macaddr_out, m);
+    s = (char *)plruby_dfc1(macaddr_out, m);
     res = rb_str_new2(s);
     pfree(s);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
@@ -408,7 +388,7 @@ pl_mac_truncate(VALUE obj)
     VALUE res;
 
     Data_Get_Struct(obj, macaddr, m0);
-    m2 = (macaddr *)DFC1(macaddr_trunc, m0);
+    m2 = (macaddr *)plruby_dfc1(macaddr_trunc, m0);
     res = Data_Make_Struct(rb_obj_class(obj), macaddr, pl_mac_mark, free, m1);
     CPY_FREE(m1, m2, sizeof(macaddr));
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
@@ -421,6 +401,7 @@ void Init_plruby_network()
 
     pl_cInet = rb_define_class("NetAddr", rb_cObject);
     rb_include_module(pl_cInet, rb_mComparable);
+    rb_undef_method(CLASS_OF(pl_cInet), "method_missing");
 #if HAVE_RB_DEFINE_ALLOC_FUNC
     rb_define_alloc_func(pl_cInet, pl_inet_s_alloc);
 #else
@@ -435,6 +416,14 @@ void Init_plruby_network()
     rb_define_method(pl_cInet, "clone", plruby_clone, 0);
 #endif
     rb_define_method(pl_cInet, "initialize_copy", pl_inet_init_copy, 1);
+#if PG_PL_VERSION >= 74
+    rb_define_method(pl_cInet, "marshal_load", pl_inet_mload, 1);
+    rb_define_method(pl_cInet, "marshal_dump", pl_inet_mdump, -1);
+#ifndef RUBY_CAN_USE_MARSHAL_LOAD
+    rb_define_singleton_method(pl_cInet, "_load", plruby_s_load, 1);
+    rb_define_alias(pl_cInet, "_dump", "marshal_dump");
+#endif
+#endif
     rb_define_method(pl_cInet, "<=>", pl_inet_cmp, 1);
     rb_define_method(pl_cInet, "contained?", pl_inet_contained, 1);
     rb_define_method(pl_cInet, "contained_or_equal?", pl_inet_containedeq, 1);
@@ -458,6 +447,7 @@ void Init_plruby_network()
     rb_define_method(pl_cInet, "last", pl_inet_last, 0);
     pl_cMac = rb_define_class("MacAddr", rb_cObject);
     rb_include_module(pl_cMac, rb_mComparable);
+    rb_undef_method(CLASS_OF(pl_cMac), "method_missing");
 #if HAVE_RB_DEFINE_ALLOC_FUNC
     rb_define_alloc_func(pl_cMac, pl_mac_s_alloc);
 #else
@@ -472,6 +462,14 @@ void Init_plruby_network()
     rb_define_method(pl_cMac, "clone", plruby_clone, 0);
 #endif
     rb_define_method(pl_cMac, "initialize_copy", pl_mac_init_copy, 1);
+#if PG_PL_VERSION >= 74
+    rb_define_method(pl_cMac, "marshal_load", pl_mac_mload, 1);
+    rb_define_method(pl_cMac, "marshal_dump", pl_mac_mdump, -1);
+#ifndef RUBY_CAN_USE_MARSHAL_LOAD
+    rb_define_singleton_method(pl_cMac, "_load", plruby_s_load, 1);
+    rb_define_alias(pl_cMac, "_dump", "marshal_dump");
+#endif
+#endif
     rb_define_method(pl_cMac, "<=>", pl_mac_cmp, 1);
     rb_define_method(pl_cMac, "to_s", pl_mac_to_s, 0);
     rb_define_method(pl_cMac, "truncate", pl_mac_truncate, 0);

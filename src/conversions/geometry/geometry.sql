@@ -18,8 +18,7 @@ create or replace function box_val(box[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-box_val(ARRAY['(2.0,2.0,0.0,0.0)'::box,'(1.0,1.0,3.0,3.0)'::box,
-        '(2.5,2.5,2.5,3.5)'::box, '(3.0,3.0,3.0,3.0)'::box]::box[]);
+box_val('{(2.0,2.0,0.0,0.0);(1.0,1.0,3.0,3.0);(2.5,2.5,2.5,3.5);(3.0,3.0,3.0,3.0)'::box[]);
 
 drop table pl_box cascade;
 
@@ -37,8 +36,7 @@ create or replace function box_val(box[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-box_val(ARRAY['(2.0,2.0,0.0,0.0)'::box,'(1.0,1.0,3.0,3.0)'::box,
-        '(2.5,2.5,2.5,3.5)'::box, '(3.0,3.0,3.0,3.0)'::box]::box[]);
+box_val('{(2.0,2.0,0.0,0.0);(1.0,1.0,3.0,3.0);(2.5,2.5,2.5,3.5);(3.0,3.0,3.0,3.0)}'::box[]);
 
 drop table pl_box cascade;
 
@@ -60,8 +58,7 @@ create or replace function box_val(box[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-box_val(ARRAY['(2.0,2.0,0.0,0.0)'::box,'(1.0,1.0,3.0,3.0)'::box,
-        '(2.5,2.5,2.5,3.5)'::box, '(3.0,3.0,3.0,3.0)'::box]::box[]);
+box_val('{(2.0,2.0,0.0,0.0);(1.0,1.0,3.0,3.0);(2.5,2.5,2.5,3.5);(3.0,3.0,3.0,3.0)}'::box[]);
 
 drop table pl_box cascade;
 
@@ -79,8 +76,7 @@ create or replace function box_val(box[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-box_val(ARRAY['(2.0,2.0,0.0,0.0)'::box,'(1.0,1.0,3.0,3.0)'::box,
-        '(2.5,2.5,2.5,3.5)'::box, '(3.0,3.0,3.0,3.0)'::box]::box[]);
+box_val('{(2.0,2.0,0.0,0.0);(1.0,1.0,3.0,3.0);(2.5,2.5,2.5,3.5);(3.0,3.0,3.0,3.0)}'::box[]);
 
 drop table pl_box cascade;
 
@@ -95,8 +91,7 @@ create or replace function path_val(path[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-path_val(ARRAY['[(1,2),(3,4)]'::path,'[(0,0),(3,0),(4,5),(1,6)]'::path,
-               '[11,12,13,14,25,12]'::path]::path[]);
+path_val('{[1,2,3,4],(0,0),(3,0),(4,5),(1,6),11,12,13,14,25,12}'::path[]);
 
 drop table pl_box cascade;
 
@@ -112,8 +107,7 @@ create or replace function path_val(path[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-path_val(ARRAY['[(1,2),(3,4)]'::path,'[(0,0),(3,0),(4,5),(1,6)]'::path,
-               '[11,12,13,14,25,12]'::path]::path[]);
+path_val('{"[1,2,3,4]","(0,0),(3,0),(4,5),(1,6)","11,12,13,14,25,12"}'::path[]);
 
 drop table pl_box cascade;
 
@@ -129,8 +123,7 @@ create or replace function path_val(path[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-path_val(ARRAY['[(1,2),(3,4)]'::path,'[(0,0),(3,0),(4,5),(1,6)]'::path,
-               '[11,12,13,14,25,12]'::path]::path[]);
+path_val('{"[1,2,3,4]","(0,0),(3,0),(4,5),(1,6)","11,12,13,14,25,12"}'::path[]);
 
 drop table pl_box cascade;
 
@@ -145,9 +138,7 @@ create or replace function circle_val(circle[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-circle_val(ARRAY['<(5,1),3>'::circle, '<(1,2),100>'::circle, 
-               '<(100,200),10>'::circle, '<(100,1),115>'::circle, 
-               '1,3,5'::circle]::circle[]);
+circle_val('{"<(5,1),3>","<(1,2),100>","<(100,200),10>","<(100,1),115>","1,3,5"}'::circle[]);
 
 
 drop table pl_box cascade;
@@ -164,9 +155,7 @@ create or replace function circle_val(circle[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-circle_val(ARRAY['<(5,1),3>'::circle, '<(1,2),100>'::circle, 
-               '<(100,200),10>'::circle, '<(100,1),115>'::circle, 
-               '1,3,5'::circle]::circle[]);
+circle_val('{"<(5,1),3>","<(1,2),100>","<(100,200),10>","<(100,1),115>","1,3,5"}'::circle[]);
 
 drop table pl_box cascade;
 
@@ -182,9 +171,7 @@ create or replace function circle_val(circle[]) returns setof pl_box as '
 ' language 'plruby';
 
 select * from 
-circle_val(ARRAY['<(5,1),3>'::circle, '<(1,2),100>'::circle, 
-               '<(100,200),10>'::circle, '<(100,1),115>'::circle, 
-               '1,3,5'::circle]::circle[]);
+circle_val('{"<(5,1),3>","<(1,2),100>","<(100,200),10>","<(100,1),115>","1,3,5"}'::circle[]);
 
 drop table pl_box cascade;
 

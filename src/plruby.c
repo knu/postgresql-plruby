@@ -64,8 +64,8 @@ static Datum pl_func_handler(struct pl_thread_st *);
 static HeapTuple pl_trigger_handler(struct pl_thread_st *);
 
 #ifdef PLRUBY_TIMEOUT
-static int pl_in_progress = 0;
-static int pl_interrupted = 0;
+int plruby_in_progress = 0;
+int plruby_interrupted = 0;
 #endif
 
 static ID id_to_s, id_raise, id_kill, id_alive, id_value, id_call, id_thr;
@@ -75,7 +75,6 @@ static int      pl_call_level = 0;
 static VALUE    pl_ePLruby, pl_eCatch;
 static VALUE    pl_mPLtemp, pl_sPLtemp;
 static VALUE    PLruby_hash;
-int      plruby_fatal = 0;
 
 VALUE
 plruby_s_new(int argc, VALUE *argv, VALUE obj)
@@ -126,6 +125,210 @@ perm_fmgr_info(Oid functionId, FmgrInfo *finfo)
 
 #endif
 
+static int pl_fatal = 0;
+
+#ifdef PLRUBY_ENABLE_CONVERSION
+
+VALUE plruby_classes;
+VALUE plruby_conversions;
+
+static VALUE
+protect_require(VALUE name)
+{
+    return rb_require((char *)name);
+}
+
+static void
+plruby_require(char *name)
+{
+    int status;
+
+    rb_protect(protect_require, (VALUE)name, &status);
+    if (status) {
+        pl_fatal = 1;
+        elog(ERROR, "can't find %s : try first `make install'", name);
+    }
+}
+
+#ifndef HAVE_RB_INITIALIZE_COPY
+
+VALUE
+plruby_clone(VALUE obj)
+{
+    VALUE res = rb_funcall2(rb_obj_class(obj), rb_intern("allocate"), 0, 0);
+    CLONESETUP(res, obj);
+    rb_funcall(res, rb_intern("initialize_copy"), 1, obj);
+    return res;
+}
+
+#endif
+
+#if !defined(RUBY_CAN_USE_AUTOLOAD) || defined(PLRUBY_TIMEOUT)
+static VALUE pl_require_thread = Qnil;
+#endif
+
+#ifndef RUBY_CAN_USE_AUTOLOAD
+
+static VALUE file_to_load = Qnil;
+static VALUE class_to_load = Qnil;
+static VALUE exec_th = Qnil;
+
+static VALUE
+pl_require_th(VALUE th)
+{
+    while (1) {
+        rb_thread_stop();
+        if (RTEST(exec_th)) {
+            if (TYPE(file_to_load) == T_STRING && 
+                RSTRING(file_to_load)->ptr) {
+                rb_undef_method(CLASS_OF(class_to_load), "method_missing");
+                rb_protect(rb_require, (VALUE)RSTRING(file_to_load)->ptr, 0);
+                file_to_load = Qnil;
+            }
+            rb_thread_wakeup(exec_th);
+        }
+    }
+    return Qnil;
+}
+
+static VALUE pl_each(VALUE *);
+
+static VALUE
+pl_conversions_missing(int argc, VALUE *argv, VALUE obj)
+{
+    VALUE file;
+    ID id;
+
+    if (argc <= 0) { 
+        rb_raise(rb_eArgError, "no id given");
+    }
+    id = SYM2ID(argv[0]);
+    file = rb_hash_aref(plruby_conversions, obj);
+    if (TYPE(file) != T_STRING || !RSTRING(file)->ptr || 
+        !RTEST(pl_require_thread)) {
+        rb_raise(pl_ePLruby, "undefined method %s", rb_id2name(id));
+    }
+    file_to_load = file;
+    class_to_load = obj;
+    exec_th = rb_thread_current();
+    PLRUBY_BEGIN(1);
+    rb_thread_wakeup(pl_require_thread);
+    rb_thread_stop();
+    PLRUBY_END;
+    exec_th = Qnil;
+    id = SYM2ID(argv[0]);
+    argc--; argv++;
+    if (rb_block_given_p()) {
+        VALUE tmp[4];
+
+        tmp[0] = obj;
+        tmp[1] = (VALUE)id;
+        tmp[2] = (VALUE)argc;
+        tmp[3] = (VALUE)argv;
+        return rb_iterate(pl_each, (VALUE)tmp, rb_yield, 0);
+    }
+    return rb_funcall2(obj, id, argc, argv);
+}
+
+VALUE
+plruby_define_void_class(char *name, char *path)
+{
+    VALUE klass, loadp;
+
+    klass = rb_define_class(name, rb_cObject);
+#if HAVE_RB_DEFINE_ALLOC_FUNC
+    rb_undef_alloc_func(klass);
+#else
+    rb_undef_method(CLASS_OF(klass), "allocate");
+#endif
+    rb_undef_method(CLASS_OF(klass), "new");
+    rb_undef_method(CLASS_OF(klass), "from_string");
+    rb_undef_method(CLASS_OF(klass), "from_datum");
+    rb_undef_method(CLASS_OF(klass), "_load");
+    rb_define_singleton_method(klass, "method_missing", pl_conversions_missing, -1);
+    rb_hash_aset(plruby_conversions, klass, rb_str_new2(path));
+    return klass;
+}
+
+#endif
+
+#ifndef RUBY_CAN_USE_MARSHAL_LOAD
+
+VALUE
+plruby_s_load(VALUE obj, VALUE a)
+{
+    VALUE res = rb_funcall2(obj, rb_intern("allocate"), 0, 0);
+    rb_funcall(res, rb_intern("marshal_load"), 1, a);
+    return res;
+}
+
+#endif
+
+#endif
+
+Datum
+plruby_dfc1(PGFunction func, Datum arg1)
+{
+    sigjmp_buf save_restart;
+    Datum result;
+    
+    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
+    if (sigsetjmp(Warn_restart, 1) != 0) {
+        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+        rb_raise(pl_eCatch, "propagate");
+    }
+    result = DirectFunctionCall1(func, arg1);
+    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+    return result;
+}
+
+Datum
+plruby_dfc2(PGFunction func, Datum arg1, Datum arg2)
+{
+    sigjmp_buf save_restart;
+    Datum result;
+    
+    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
+    if (sigsetjmp(Warn_restart, 1) != 0) {
+        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+        rb_raise(pl_eCatch, "propagate");
+    }
+    result = DirectFunctionCall2(func, arg1, arg2);
+    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+    return result;
+}
+
+Datum
+plruby_dfc3(PGFunction func, Datum arg1, Datum arg2, Datum arg3)
+{
+    sigjmp_buf save_restart;
+    Datum result;
+    
+    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
+    if (sigsetjmp(Warn_restart, 1) != 0) {
+        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+        rb_raise(pl_eCatch, "propagate");
+    }
+    result = DirectFunctionCall3(func, arg1, arg2, arg3);
+    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
+    return result;
+}
+
+static void
+pl_init_conversions()
+{
+#if PLRUBY_ENABLE_CONVERSION
+#ifndef RUBY_CAN_USE_AUTOLOAD
+    pl_require_thread = rb_thread_create(pl_require_th, 0);
+#endif
+    plruby_classes = rb_hash_new();
+    rb_global_variable(&plruby_classes);
+    plruby_conversions = rb_hash_new();
+    rb_global_variable(&plruby_conversions);
+#include "conversions.h"
+#endif
+}
+
 static void pl_result_mark(VALUE obj) {}
 
 static VALUE
@@ -169,14 +372,14 @@ pl_timer(VALUE th)
     struct timeval time;
 
     rb_thread_sleep(PLRUBY_TIMEOUT);
-    pl_interrupted = 1;
+    plruby_interrupted = 1;
     time.tv_sec = 0;
     time.tv_usec = 50000;
     while (1) {
         if (!RTEST(rb_funcall2(th, id_alive, 0, 0))) {
             return Qnil;
         }
-        if (!pl_in_progress) {
+        if (!plruby_in_progress) {
             rb_protect(pl_thread_raise, th, 0);
         }
         rb_thread_wait_for(time);
@@ -333,11 +536,11 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
         VALUE th;
         int state;
 
-        pl_interrupted = pl_in_progress = 0;
+        plruby_interrupted = plruby_in_progress = 0;
         plth.timeout = 1;
         th = rb_thread_create(pl_real_handler, (void *)&plth);
         result = rb_protect(pl_thread_value, th, &state);
-        pl_interrupted = pl_in_progress = pl_call_level = 0;
+        plruby_interrupted = plruby_in_progress = pl_call_level = 0;
         if (state) {
             result = rb_str_new2("Unknown error");
         }
@@ -372,22 +575,25 @@ PLRUBY_CALL_HANDLER(FmgrInfo *proinfo,
     if (!pl_call_level) {
         int i, in_progress;
         VALUE thread, threads;
+        int ntpth;
         VALUE main_th = rb_thread_main();
-        
-        in_progress = pl_in_progress;
-        pl_in_progress = 1;
+
+        if (RTEST(pl_require_thread)) ntpth = 2;
+        else ntpth = 1;
+        in_progress = plruby_in_progress;
+        plruby_in_progress = 1;
         while (1) {
             threads = rb_thread_list();
-            if (RARRAY(threads)->len <= 1) break;
+            if (RARRAY(threads)->len <= ntpth) break;
             for (i = 0; i < RARRAY(threads)->len; i++) {
                 thread = RARRAY(threads)->ptr[i];
-                if (thread != main_th) {
+                if (thread != main_th && thread != pl_require_thread) {
                     rb_protect(pl_thread_kill, thread, 0);
                 }
             }
         }
         pl_call_level = 0;
-        pl_in_progress = in_progress;
+        plruby_in_progress = in_progress;
     }
 #endif
 
@@ -631,7 +837,7 @@ pl_func_handler(struct pl_thread_st *plth)
 #endif
 
         prodesc->result_elem = (Oid)typeStruct->typelem;
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
         prodesc->result_is_array = 0;
         if (NameStr(typeStruct->typname)[0] == '_') {
             FmgrInfo  inputproc;
@@ -697,7 +903,7 @@ pl_func_handler(struct pl_thread_st *plth)
             }
 
             PLRUBY_BEGIN(1);
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
             prodesc->arg_is_array[i] = 0;
             if (NameStr(typeStruct->typname)[0] == '_') {
                 FmgrInfo  outputproc;
@@ -729,7 +935,7 @@ pl_func_handler(struct pl_thread_st *plth)
             PLRUBY_END;
         }
 
-        PLRUBY_BEGIN(1);
+        PLRUBY_BEGIN_PROTECT(1);
 #ifdef NEW_STYLE_FUNCTION
         proc_source = DatumGetCString(DFC1(textout,
                                            PointerGetDatum(&procStruct->prosrc)));
@@ -740,7 +946,7 @@ pl_func_handler(struct pl_thread_st *plth)
                                      strlen(argf) + strlen(proc_source) + 1);
         sprintf(proc_internal_def, definition, internal_proname, argf, proc_source);
         pfree(proc_source);
-        PLRUBY_END;
+        PLRUBY_END_PROTECT;
 
         rb_eval_string_protect(proc_internal_def, &status);
         if (status) {
@@ -804,20 +1010,17 @@ for_numvals(obj, argobj)
     typeTup = SearchSysCacheTuple(RUBY_TYPOID,
                                   ObjectIdGetDatum(arg->tupdesc->attrs[attnum]->atttypid),
                                   0, 0, 0);
-    PLRUBY_END;
-
     if (!HeapTupleIsValid(typeTup)) {   
         rb_raise(pl_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
              RSTRING(key)->ptr,
              ObjectIdGetDatum(arg->tupdesc->attrs[attnum]->atttypid));
     }
     fpg = (Form_pg_type) GETSTRUCT(typeTup);
-    PLRUBY_BEGIN(1);
     ReleaseSysCache(typeTup);
     arg->modnulls[attnum] = ' ';
     fmgr_info(fpg->typinput, &finfo);
     PLRUBY_END;
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
     if (fpg->typelem != 0 && fpg->typlen == -1) {
         pl_proc_desc prodesc;
 
@@ -946,7 +1149,7 @@ pl_trigger_handler(struct pl_thread_st *plth)
         prodesc->fn_xmin = HeapTupleHeaderGetXmin(procTup->t_data);
         prodesc->fn_cmin = HeapTupleHeaderGetCmin(procTup->t_data);
 #endif
-        PLRUBY_BEGIN(1);
+        PLRUBY_BEGIN_PROTECT(1);
 #ifdef NEW_STYLE_FUNCTION
         proc_source = DatumGetCString(
             DFC1(textout, PointerGetDatum(&procStruct->prosrc)));
@@ -957,7 +1160,7 @@ pl_trigger_handler(struct pl_thread_st *plth)
                                      strlen(argt) + strlen(proc_source) + 1);
         sprintf(proc_internal_def, definition, internal_proname, argt, proc_source);
         pfree(proc_source);
-        PLRUBY_END;
+        PLRUBY_END_PROTECT;
 
         rb_eval_string_protect(proc_internal_def, &status);
         if (status) {
@@ -982,25 +1185,25 @@ pl_trigger_handler(struct pl_thread_st *plth)
     {
         char *s;
         
-        PLRUBY_BEGIN(1);
+        PLRUBY_BEGIN_PROTECT(1);
         s = DatumGetCString(
             DFC1(nameout, NameGetDatum(
                      &(trigdata->tg_relation->rd_rel->relname))));
         rb_hash_aset(TG, rb_str_freeze_new2("relname"),rb_str_freeze_new2(s));
         pfree(s);
-        PLRUBY_END;
+        PLRUBY_END_PROTECT;
     }
 #else
     rb_hash_aset(TG, rb_str_freeze_new2("relname"), 
                  rb_str_freeze_new2(nameout(&(trigdata->tg_relation->rd_rel->relname))));
 #endif
 
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     stroid = DatumGetCString(DFC1(oidout,
                                   ObjectIdGetDatum(trigdata->tg_relation->rd_id)));
     rb_hash_aset(TG, rb_str_freeze_new2("relid"), rb_str_freeze_new2(stroid));
     pfree(stroid);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
 
     tmp = rb_ary_new2(tupdesc->natts);
     for (i = 0; i < tupdesc->natts; i++) {
@@ -1178,7 +1381,7 @@ static VALUE
 pl_each(tmp)
     VALUE *tmp;
 {
-    return rb_funcall2(pl_mPLtemp, (ID)tmp[0], (int)tmp[1], (VALUE *)tmp[2]);
+    return rb_funcall2(tmp[0], (ID)tmp[1], (int)tmp[2], (VALUE *)tmp[3]);
 }
 
 static VALUE
@@ -1195,10 +1398,9 @@ pl_load_singleton(argc, argv, obj)
     char *sinm;
     int in_singleton = 0;
 
-    if (argc == 0) { 
+    if (argc <= 0) { 
         rb_raise(rb_eArgError, "no id given");
     }
- 
     id = SYM2ID(argv[0]);
     argc--; argv++;
     nom = rb_id2name(id);
@@ -1255,10 +1457,12 @@ pl_load_singleton(argc, argv, obj)
                  RSTRING(s)->ptr, sinm);
     }
     if (rb_block_given_p()) {
-        VALUE tmp[3];
-        tmp[0] = (VALUE)id;
-        tmp[1] = (VALUE)argc;
-        tmp[2] = (VALUE)argv;
+        VALUE tmp[4];
+
+        tmp[0] = obj;
+        tmp[1] = (VALUE)id;
+        tmp[2] = (VALUE)argc;
+        tmp[3] = (VALUE)argv;
         return rb_iterate(pl_each, (VALUE)tmp, rb_yield, 0);
     }
     return rb_funcall2(pl_mPLtemp, id, argc, argv);
@@ -1273,24 +1477,18 @@ pl_init_all(void)
 {
     VALUE pl_mPL;
 
-    if (plruby_fatal) {
+    if (pl_fatal) {
         elog(ERROR, "initialization not possible");
     }
     if (!pl_firstcall) {
         return;
     }
-    plruby_fatal = 1;
+    pl_fatal = 1;
     ruby_init();
-#if defined(PLRUBY_ENABLE_AUTOLOAD) && MAIN_SAFE_LEVEL >= 3
-    {
-        VALUE path = rb_gv_get("$LOAD_PATH");
-        rb_ary_push(path, rb_str_new2(PLRUBY_ENABLE_AUTOLOAD));
-    }
-#else
-    if (MAIN_SAFE_LEVEL < 3) {
-        ruby_init_loadpath();
-    }
+#if PLRUBY_ENABLE_CONVERSION || MAIN_SAFE_LEVEL < 3
+    ruby_init_loadpath();
 #endif
+    pl_init_conversions();
 #ifdef DEBUG
     rb_define_global_const("DEBUG", INT2FIX(DEBUG));
 #else
@@ -1372,6 +1570,6 @@ pl_init_all(void)
     if (SPI_finish() != SPI_OK_FINISH) {
         elog(ERROR, "plruby_singleton_methods : SPI_finish failed");
     }
-    plruby_fatal = pl_firstcall = 0;
+    pl_fatal = pl_firstcall = 0;
     return;
 }

@@ -11,16 +11,16 @@
   * ((<module PL>)) : general module
   * ((<class PL::Plan>)) : class for prepared plans
   * ((<class PL::Cursor>)) : class for cursors
-  * ((<class BitString>)) : only if compiled with --enable-bitstring
-  * ((<class Tinterval>)) : only if compiled with --enable-conversion
-  * ((<class NetAddr>)) : only if compiled with --enable-network
-  * ((<class MacAddr>)) : only if compiled with --enable-network
-  * ((<class Box>)) : only if compiled with --enable-geometry
-  * ((<class Circle>)) : only if compiled with --enable-geometry
-  * ((<class Path>)) : only if compiled with --enable-geometry
-  * ((<class Point>)) : only if compiled with --enable-geometry
-  * ((<class Polygon>)) : only if compiled with --enable-geometry
-  * ((<class Segment>)) : only if compiled with --enable-geometry
+  * ((<class BitString>))
+  * ((<class Tinterval>))
+  * ((<class NetAddr>))
+  * ((<class MacAddr>))
+  * ((<class Box>))
+  * ((<class Circle>))
+  * ((<class Path>))
+  * ((<class Point>))
+  * ((<class Polygon>))
+  * ((<class Segment>))
 
 PL/Ruby is a loadable procedural language for the Postgres database
 system  that enable the Ruby language to create functions and trigger
@@ -29,7 +29,7 @@ procedures
 Functions and triggers are singleton methods of the module PLtemp.
 
 = WARNING
-((*if PL/Ruby was *NOT* compiled with ((%--enable-conversion%)),
+((*if PL/Ruby was compiled with ((%--disable-conversion%)),
 all arguments (to the function or the triggers) are passed as string 
 values, except for NULL values represented by ((%Qnil%)).*))
 ((*In this case you must explicitely call a conversion function (like to_i)
@@ -406,8 +406,8 @@ test/plp/test_setup.sql)
 
 == Conversion
 
-When compiled with --enable-conversion the following conversions are
-made
+If the conversions was not disabled (--disable-conversion),  the following
+conversions are made
 
                   PostgreSQL             Ruby
                   ----------             ----
@@ -429,26 +429,17 @@ made
                   DATEOID                Time
                   INTERVALOID            Time
                   TINTERVALOID           Tinterval (new Ruby class)
-
-The following conversions are added when compiled with --enable-bitstring
-
                   BITOID                 BitString (new Ruby class)
                   VARBITOID              BitString (new Ruby class)
-
-The following conversions are added when compiled with --enable-network
-
-                  INETOID                NetAddr (new Ruby class)
-                  CIDROID                NetAddr (new Ruby class)
-                  MACADDROID             MacAddr (new Ruby class)
-
-The following conversions are added when compiled with --enable-geometry
-
-                  POINTOID               Point   (new Ruby class)
-                  LSEGOID                Segment (new Ruby class)
-                  BOXOID                 Box     (new Ruby class)
-                  PATHOID                Path    (new Ruby class)
-                  POLYGONOID             Polygon (new Ruby class)
-                  CIRCLEOID              Circle  (new Ruby class)
+                  INETOID                NetAddr   (new Ruby class)
+                  CIDROID                NetAddr   (new Ruby class)
+                  MACADDROID             MacAddr   (new Ruby class)
+                  POINTOID               Point     (new Ruby class)
+                  LSEGOID                Segment   (new Ruby class)
+                  BOXOID                 Box       (new Ruby class)
+                  PATHOID                Path      (new Ruby class)
+                  POLYGONOID             Polygon   (new Ruby class)
+                  CIRCLEOID              Circle    (new Ruby class)
 
 all others OID are converted to a String object
 

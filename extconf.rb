@@ -1,13 +1,40 @@
 #!/usr/bin/ruby
 ARGV.collect! {|x| 
    x = x.sub(/\A--with-pgsql-prefix=/, "--with-pgsql-dir=") 
-   x = x.sub(/\A--enable-conversion\z/, "--enable-basic")
    x = x.sub(/\A--((?:en|dis)able)-shared\z/) { "--#$1-plruby-shared" }
 }
 
 orig_argv = ARGV.dup
 
 require 'mkmf'
+
+class AX
+   def marshal_dump
+      "abc"
+   end
+end
+
+def check_autoload(safe = 12)
+   File.open("a.rb", "w") {|f| f.puts "class A; end" }
+   autoload :A, "a.rb"
+   Thread.new do
+      begin
+         $SAFE = safe
+         A.new
+      rescue Exception
+         false
+      end
+   end.value
+ensure
+   File.unlink("a.rb")
+end
+      
+def check_md
+   Marshal.load(Marshal.dump(AX.new))
+   false
+rescue
+   true
+end
 
 def create_lang(version = 74, suffix = '', safe = 0)
    language, procedural = 'C', 'procedural'
@@ -40,7 +67,7 @@ def create_lang(version = 74, suffix = '', safe = 0)
    puts <<-EOT
 
  ========================================================================
- After the installation use something like this to create the language 
+ After the installation use *something like this* to create the language 
  plruby#{suffix}
 
 
@@ -109,8 +136,8 @@ if timeout = with_config("timeout")
       raise "Invalid value for timeout #{timeout}"
    end
    $CFLAGS += " -DPLRUBY_TIMEOUT=#{timeout}"
-   if safe = with_config("main-safe-level")
-      $CFLAGS += " -DMAIN_SAFE_LEVEL=#{safe}"
+   if mainsafe = with_config("main-safe-level")
+      $CFLAGS += " -DMAIN_SAFE_LEVEL=#{mainsafe}"
    end
 end
 
@@ -121,8 +148,8 @@ if ! have_library("pq", "PQsetdbLogin")
     raise "libpq is missing"
 end
 
-unless have_func("rb_hash_delete", "ruby.h")
-   $CFLAGS += " -DPLRUBY_HASH_DELETE"
+if have_func("rb_hash_delete", "ruby.h")
+   $CFLAGS += " -DHAVE_RB_HASH_DELETE"
 end
 
 if ! version = with_config("pgsql-version")
@@ -174,49 +201,44 @@ if version.to_i >= 74
    end
 end
 
-conversions = {}
-subdirs = []
-enable_autoload = false
-
-if version.to_i >= 71
-   all_conversions = enable_config("all-conversions")
-   Dir.foreach("src/conversions") do |dir| 
-      next if dir[0] == ?. || !File.directory?("src/conversions/" + dir)
-      conversions[dir] = if all_conversions
-                            true
-                         else 
-                            enable_config(dir)
-                         end
-   end
-
-   if conversions.find {|k,v| v}
+enable_conversion = false
+if version.to_i >= 72
+   if enable_conversion = enable_config("conversion", true)
       $CFLAGS += " -DPLRUBY_ENABLE_CONVERSION"
-      conversions["basic"] = true
-      File.open("src/conversions.h", "w") do |conv|
-	 conversions.each do |key, val|
-	    if val
-	       conv.puts "#include \"conversions/#{key}/conversions.h\""
-	       subdirs << "src/conversions/#{key}"
-	    end
-	 end
+      if check_autoload(safe.to_i)
+         $CFLAGS += " -DRUBY_CAN_USE_AUTOLOAD"
+      end
+      if check_md
+         $CFLAGS += " -DRUBY_CAN_USE_MARSHAL_DUMP"
       end
    end
-   if !subdirs.empty?
-      enable_autoload = enable_config("autoload")
-      if enable_autoload
-         if RUBY_VERSION < "1.8.1"
-            enable_autoload = false
-            puts <<-EOT
+else
+   if enable_config("conversion")
+      puts <<-EOT
 
 ====================== WARNING ==========
 
- --enable-autoload is disabled because it
- can work *only* with ruby >= 1.8.1
+ --enable-conversion is disabled because it
+ can work *only* with PostgreSQL >= 71
 
 ====================== WARNING ==========
-            EOT
-         else
-            $CFLAGS += " -DPLRUBY_ENABLE_AUTOLOAD='\"#{Config::CONFIG["sitearchdir"]}/plruby\"'"
+      EOT
+   end
+end
+
+conversions = {}
+subdirs = []
+
+if enable_conversion
+   Dir.foreach("src/conversions") do |dir| 
+      next if dir[0] == ?. || !File.directory?("src/conversions/" + dir)
+      conversions[dir] = true
+   end
+   if !conversions.empty?
+      File.open("src/conversions.h", "w") do |conv|
+	 conversions.each do |key, val|
+            conv.puts "#include \"conversions/#{key}/conversions.h\""
+            subdirs << "src/conversions/#{key}"
          end
       end
    end
@@ -227,22 +249,11 @@ $CFLAGS += " -DPG_PL_VERSION=#{version}"
 suffix = with_config('suffix').to_s
 $CFLAGS += " -DPLRUBY_CALL_HANDLER=plruby#{suffix}_call_handler"
 
-if safe.to_i >= 3 && !enable_autoload
-   $objs = ["plruby.o", "plplan.o", "plpl.o"]
-   subdirs.each do |key|
-      Dir.foreach(key) do |f|
-         next if /\.c\z/ !~ f
-         $objs << f.sub(/\.c\z/, '.o')
-      end
-   end
-   subdirs = []
-else
-   subdirs.each do |key|
-      orig_argv << "with-cflags=\"#$CFLAGS\""
-      orig_argv << "with-ldflags=\"#$LDFLAGS\""
-      cmd = "#{CONFIG['RUBY_INSTALL_NAME']} extconf.rb #{orig_argv.join(' ')}"
-      system("cd #{key}; #{cmd}")
-   end
+subdirs.each do |key|
+   orig_argv << "with-cflags=\"#$CFLAGS -I.. -I ../..\""
+   orig_argv << "with-ldflags=\"#$LDFLAGS\""
+   cmd = "#{CONFIG['RUBY_INSTALL_NAME']} extconf.rb #{orig_argv.join(' ')}"
+   system("cd #{key}; #{cmd}")
 end
 
 subdirs.unshift("src")

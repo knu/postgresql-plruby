@@ -2,15 +2,15 @@ drop function inet_val(inet);
 drop table pl_inet;
 
 create table pl_inet (
-  host text, abbrev text, masklen int, family text,
-  network inet, netmask inet, hostmask inet, first inet, last inet
+  host text, abbrev text, masklen int,
+  network inet, netmask inet, first inet, last inet
 );
 
 
 create or replace function inet_val(inet) returns pl_inet as '
    a = args[0]
-   [a.host, a.abbrev, a.masklen, a.family, a.network, a.netmask, 
-    a.hostmask, a.first, a.last]
+   [a.host, a.abbrev, a.masklen, a.network, a.netmask, 
+    a.first, a.last]
  ' language 'plruby';
 
 

@@ -44,7 +44,8 @@
 #
 # * PLRuby::Description::Conversion
 #
-#   What conversions are done when compiled with <em>--enable-conversion</em>
+#   What conversions are done when this option is not disabled
+#   (<em>--disable-conversion</em>)
 #
 # = Class hierarchy
 #
@@ -54,25 +55,25 @@
 #
 # * PLRuby::PL::Cursor
 #
-# * PLRuby::BitString (only with <em>--enable-bitstring</em>)
+# * PLRuby::BitString
 #
-# * PLRuby::Tinterval (only with <em>--enable-conversion</em>)
+# * PLRuby::Tinterval
 #
-# * PLRuby::NetAddr (only with <em>--enable-network</em>)
+# * PLRuby::NetAddr
 #
-# * PLRuby::MacAddr (only with <em>--enable-network</em>)
+# * PLRuby::MacAddr
 #
-# * PLRuby::Box (only with <em>--enable-geometry</em>)
+# * PLRuby::Box
 #
-# * PLRuby::Circle (only with <em>--enable-geometry</em>)
+# * PLRuby::Circle
 #
-# * PLRuby::Path (only with <em>--enable-geometry</em>)
+# * PLRuby::Path
 #
-# * PLRuby::Point (only with <em>--enable-geometry</em>)
+# * PLRuby::Point
 #
-# * PLRuby::Polygon (only with <em>--enable-geometry</em>)
+# * PLRuby::Polygon
 #
-# * PLRuby::Segment (only with <em>--enable-geometry</em>)
+# * PLRuby::Segment
 #
 # Global variable
 #
@@ -115,8 +116,8 @@ end
 #
 # * PLRuby::Description::Conversion
 #
-#   What conversions are done when compiled with <em>--enable-conversion</em>
-#
+#   What conversions are done when this option is not disabled
+#   (<em>--disable-conversion</em>)
 module PLRuby::Description
 end
 # 
@@ -509,8 +510,8 @@ end
 # 
 class PLRuby::Description::Singleton_method
 end
-#When compiled with <em>--enable-conversion</em> the following conversions are
-#made
+#If the conversions was not disabled (--disable-conversion),  the following
+#conversions are made
 #
 #                  PostgreSQL             Ruby
 #                  ----------             ----
@@ -532,29 +533,17 @@ end
 #                  DATEOID                Time
 #                  INTERVALOID            Time
 #                  TINTERVALOID           Tinterval (new Ruby class)
-#
-#The following conversions are added when compiled with 
-#<em>--enable-bitstring</em>
-#
 #                  BITOID                 BitString (new Ruby class)
 #                  VARBITOID              BitString (new Ruby class)
-#
-#The following conversions are added when compiled with 
-#<em>--enable-network</em>
-#
-#                  INETOID                NetAddr (new Ruby class)
-#                  CIDROID                NetAddr (new Ruby class)
-#                  MACADDROID             MacAddr (new Ruby class)
-#
-#The following conversions are added when compiled with 
-#<em>--enable-geometry</em>
-# 
-#                  POINTOID               Point   (new Ruby class)
-#                  LSEGOID                Segment (new Ruby class)
-#                  BOXOID                 Box     (new Ruby class)
-#                  PATHOID                Path    (new Ruby class)
-#                  POLYGONOID             Polygon (new Ruby class)
-#                  CIRCLEOID              Circle  (new Ruby class)
+#                  INETOID                NetAddr   (new Ruby class)
+#                  CIDROID                NetAddr   (new Ruby class)
+#                  MACADDROID             MacAddr   (new Ruby class)
+#                  POINTOID               Point     (new Ruby class)
+#                  LSEGOID                Segment   (new Ruby class)
+#                  BOXOID                 Box       (new Ruby class)
+#                  PATHOID                Path      (new Ruby class)
+#                  POLYGONOID             Polygon   (new Ruby class)
+#                  CIRCLEOID              Circle    (new Ruby class)
 #
 #all others OID are converted to a String object
 #
@@ -946,7 +935,6 @@ end
 # The class PLRuby::BitString implement the PostgreSQL type <em>bit</em>
 # and <em>bit varying</em>
 #
-# only available if PL/Ruby was compiled with <em>--enable-bitstring</em>
 class PLRuby::BitString
    include Comparable
    include Enumerable
@@ -1074,7 +1062,6 @@ end
 # The class PLRuby::NetAddr implement the PostgreSQL type <em>inet</em>
 # and <em>cidr</em>
 #
-# only available if PL/Ruby was compiled with <em>--enable-network</em>
 class PLRuby::NetAddr
    include Comparable
 
@@ -1165,8 +1152,6 @@ end
 #
 # The class PLRuby::MacAddr implement the PostgreSQL type <em>macaddr</em>
 #
-# only available if PL/Ruby was compiled with <em>--enable-network</em>
-#
 class PLRuby::MacAddr
    include Comparable
 
@@ -1197,8 +1182,6 @@ end
 
 #
 # The class PLRuby::Tinterval implement the PostgreSQL type <em>tinterval</em>
-#
-# only available if PL/Ruby was compiled with <em>--enable-conversion</em>
 #
 class PLRuby::Tinterval
    class << self
@@ -1238,8 +1221,6 @@ end
 
 #
 # The class PLRuby::Box implement the PostgreSQL type <em>box</em>
-#
-# only available if PL/Ruby was compiled with <em>--enable-geometry</em>
 #
 class PLRuby::Box
    include Comparable
@@ -1393,8 +1374,6 @@ end
 #
 # The class PLRuby::Path implement the PostgreSQL type <em>path</em>
 #
-# only available if PL/Ruby was compiled with <em>--enable-geometry</em>
-#
 class PLRuby::Path
    include Comparable
 
@@ -1465,8 +1444,6 @@ class PLRuby::Path
 end
 #
 # The class PLRuby::Point implement the PostgreSQL type <em>point</em>
-#
-# only available if PL/Ruby was compiled with <em>--enable-geometry</em>
 #
 class PLRuby::Point
    include Comparable
@@ -1585,8 +1562,6 @@ end
 #
 # The class PLRuby::Segment implement the PostgreSQL type <em>lseg</em>
 #
-# only available if PL/Ruby was compiled with <em>--enable-geometry</em>
-#
 class PLRuby::Segment
    include Comparable
 
@@ -1669,8 +1644,6 @@ class PLRuby::Segment
 end
 #
 # The class PLRuby::Polygon implement the PostgreSQL type <em>polygon</em>
-#
-# only available if PL/Ruby was compiled with <em>--enable-geometry</em>
 #
 class PLRuby::Polygon
    class << self
@@ -1768,8 +1741,6 @@ end
 
 #
 # The class PLRuby::Circle implement the PostgreSQL type <em>circle</em>
-#
-# only available if PL/Ruby was compiled with <em>--enable-geometry</em>
 #
 class PLRuby::Circle
    include Comparable

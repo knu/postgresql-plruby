@@ -1,24 +1,7 @@
 {
-    VALUE pl_cTint;
+    extern void plruby_require(char *);
 
-#if MAIN_SAFE_LEVEL >= 3 && !defined(PLRUBY_ENABLE_AUTOLOAD)
-    {
-	extern void Init_plruby_basic();
-
-	Init_plruby_basic();
-    }
-#else
-    {
-        extern void plruby_require(char *);
-
-#ifdef PLRUBY_ENABLE_AUTOLOAD
-        plruby_require("plruby_basic");
-#else
-        plruby_require("plruby/plruby_basic");
-#endif
-    }
-#endif
-
+    plruby_require("plruby/plruby_basic");
     rb_hash_aset(plruby_classes, INT2NUM(OIDOID), rb_cFixnum);
     rb_hash_aset(plruby_classes, INT2NUM(INT2OID), rb_cFixnum);
     rb_hash_aset(plruby_classes, INT2NUM(INT4OID), rb_cFixnum);
@@ -37,7 +20,4 @@
     rb_hash_aset(plruby_classes, INT2NUM(INTERVALOID), rb_cTime);
     rb_hash_aset(plruby_classes, INT2NUM(TIMETZOID), rb_cTime);
     rb_hash_aset(plruby_classes, INT2NUM(TIMEOID), rb_cTime);
-
-    pl_cTint = rb_const_get(rb_cObject, rb_intern("Tinterval"));
-    rb_hash_aset(plruby_classes, INT2NUM(TINTERVALOID), pl_cTint);
 }

@@ -21,12 +21,7 @@ when 72
    language = 'C'
    extension = "_new"
    procedural = ""
-when 73
-   language = 'C'
-   extension = "_new_trigger"
-   procedural = ""
-   opaque = 'language_handler'
-when 74
+when 73, 74
    language = 'C'
    extension = "_new_trigger_array"
    procedural = ""

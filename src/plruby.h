@@ -23,7 +23,7 @@
 #include "funcapi.h"
 #endif
 
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
 #include "utils/array.h"
 #endif
 
@@ -75,27 +75,65 @@ extern VALUE rb_thread_list();
 
 #ifdef PLRUBY_TIMEOUT
 
-#define PLRUBY_BEGIN(lvl)			\
-    do {					\
-        int in_progress = pl_in_progress;	\
-         if (pl_interrupted) {			\
-	    rb_raise(pl_ePLruby, "timeout");	\
-        }					\
-        pl_in_progress = lvl
+extern int plruby_in_progress;
+extern int plruby_interrupted;
 
-#define PLRUBY_END				\
-        pl_in_progress = in_progress;		\
-        if (pl_interrupted) {			\
-	    rb_raise(pl_ePLruby, "timeout");	\
-        }					\
-    } while (0)
+#define PLRUBY_BEGIN(lvl_) do {                 \
+    int in_progress = plruby_in_progress;       \
+    if (plruby_interrupted) {                   \
+	rb_raise(pl_ePLruby, "timeout");        \
+    }                                           \
+    plruby_in_progress = lvl_;
+
+#define PLRUBY_END                                              \
+    plruby_in_progress = in_progress;                           \
+    if (plruby_interrupted) {                                   \
+        rb_raise(pl_ePLruby, "timeout");                        \
+    }                                                           \
+} while (0)
+
+#define PLRUBY_BEGIN_PROTECT(lvl_) do {                                 \
+    sigjmp_buf save_restart;                                            \
+    int in_progress = plruby_in_progress;                               \
+    if (plruby_interrupted) {                                           \
+	rb_raise(pl_ePLruby, "timeout");                                \
+    }                                                                   \
+    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));         \
+    if (sigsetjmp(Warn_restart, 1) != 0) {                              \
+        plruby_in_progress = in_progress;                               \
+        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));     \
+        rb_raise(pl_eCatch, "propagate");                               \
+    }                                                                   \
+    plruby_in_progress = lvl_;
+
+#define PLRUBY_END_PROTECT                                      \
+    plruby_in_progress = in_progress;                           \
+    memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart)); \
+    if (plruby_interrupted) {                                   \
+        rb_raise(pl_ePLruby, "timeout");                        \
+    }                                                           \
+} while (0)
 
 #else
-#define PLRUBY_BEGIN(lvl)
 
+#define PLRUBY_BEGIN(lvl_)
 #define PLRUBY_END
 
+#define PLRUBY_BEGIN_PROTECT(lvl_) do {                                 \
+    sigjmp_buf save_restart;                                            \
+    memcpy(&save_restart, &Warn_restart, sizeof(save_restart));         \
+    if (sigsetjmp(Warn_restart, 1) != 0) {                              \
+        memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));     \
+        rb_raise(pl_eCatch, "propagate");                               \
+    }
+
+#define PLRUBY_END_PROTECT                                              \
+     memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));        \
+} while (0)
+   
 #endif
+
+   
 
 enum { TG_OK, TG_SKIP };
 enum { TG_BEFORE, TG_AFTER, TG_ROW, TG_STATEMENT, TG_INSERT,
@@ -123,7 +161,7 @@ typedef struct pl_proc_desc
     Oid		result_elem;
     Oid		result_oid;
     int		result_len;
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
     bool	result_is_array;
     bool	result_val;
     char	result_align;
@@ -133,7 +171,7 @@ typedef struct pl_proc_desc
     Oid		arg_elem[RUBY_ARGS_MAXFMGR];
     Oid		arg_type[RUBY_ARGS_MAXFMGR];
     int		arg_len[RUBY_ARGS_MAXFMGR];
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
     bool	arg_is_array[RUBY_ARGS_MAXFMGR];
     bool	arg_val[RUBY_ARGS_MAXFMGR];
     char	arg_align[RUBY_ARGS_MAXFMGR];
@@ -157,7 +195,7 @@ typedef struct pl_query_desc
     FmgrInfo *arginfuncs;
     Oid *argtypelems;
     int	*arglen;
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
     bool       *arg_is_array;
     bool       *arg_val;
     char       *arg_align;
@@ -204,7 +242,7 @@ extern VALUE plruby_create_args _((struct pl_thread_st *, pl_proc_desc *));
 extern VALUE plruby_i_each _((VALUE, struct portal_options *));
 extern void plruby_exec_output _((VALUE, int, int *));
 extern VALUE plruby_to_s _((VALUE));
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
 extern Datum plruby_return_array _((VALUE, pl_proc_desc *));
 #endif
 
@@ -212,11 +250,16 @@ extern Datum plruby_return_array _((VALUE, pl_proc_desc *));
 extern MemoryContext plruby_spi_context;
 #endif
 
+extern Datum plruby_dfc1 _((PGFunction, Datum));
+extern Datum plruby_dfc2 _((PGFunction, Datum, Datum));
+extern Datum plruby_dfc3 _((PGFunction, Datum, Datum, Datum));
+
 #ifdef PLRUBY_ENABLE_CONVERSION
-extern int plruby_fatal;
+extern VALUE plruby_classes, plruby_conversions;
 extern Oid plruby_datum_oid _((VALUE, int *));
 extern VALUE plruby_datum_set _((VALUE, Datum));
 extern VALUE plruby_datum_get _((VALUE, Oid *));
+extern VALUE plruby_define_void_class _((char *, char *));
 #endif
 
 #ifdef NEW_STYLE_FUNCTION

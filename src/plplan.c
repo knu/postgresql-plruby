@@ -1,6 +1,7 @@
 #include "plruby.h"
 
 static VALUE pl_cPLPlan, pl_cPLCursor, pl_ePLruby;
+static VALUE pl_eCatch;
 
 static void
 query_free(qdesc)
@@ -10,7 +11,7 @@ query_free(qdesc)
     if (qdesc->arginfuncs) free(qdesc->arginfuncs);
     if (qdesc->argtypelems) free(qdesc->argtypelems);
     if (qdesc->arglen) free(qdesc->arglen);
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
     if (qdesc->arg_is_array) free(qdesc->arg_is_array);
     if (qdesc->arg_val) free(qdesc->arg_val);
     if (qdesc->arg_align) free(qdesc->arg_align);
@@ -40,6 +41,7 @@ pl_plan_save(VALUE obj)
     void *tmp;
 
     GetPlan(obj, qdesc);
+
     PLRUBY_BEGIN(1);
     tmp = qdesc->plan;
     qdesc->plan = SPI_saveplan(tmp);
@@ -115,7 +117,7 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
         qdesc->arginfuncs = ALLOC_N(FmgrInfo, qdesc->nargs);
         qdesc->argtypelems = ALLOC_N(Oid, qdesc->nargs);
         qdesc->arglen = ALLOC_N(int, qdesc->nargs);
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
         qdesc->arg_is_array = ALLOC_N(bool, qdesc->nargs);
         qdesc->arg_val = ALLOC_N(bool, qdesc->nargs);
         qdesc->arg_align = ALLOC_N(char, qdesc->nargs);
@@ -127,8 +129,6 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             List *names = NIL;
             List  *lp;
             TypeName *typename;
-#endif
-#if PG_PL_VERSION >= 74
             Form_pg_type fpgt;
 #endif
             int arg_is_array = 0;
@@ -143,7 +143,6 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
                 typename->names = lappend(typename->names, makeString(lfirst(lp)));
             typeTup = typenameType(typename);
             qdesc->argtypes[i] = HeapTupleGetOid(typeTup);
-#if PG_PL_VERSION >= 74
             fpgt = (Form_pg_type) GETSTRUCT(typeTup);
             arg_is_array = qdesc->arg_is_array[i] = NameStr(fpgt->typname)[0] == '_';
             if (qdesc->arg_is_array[i]) {
@@ -162,7 +161,6 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
                 qdesc->arg_align[i] = fpgt->typalign;
                 ReleaseSysCache(typeTuple);
             }
-#endif
 #else
             typeTup = SearchSysCacheTuple(RUBY_TYPNAME,
                                           PointerGetDatum(RSTRING(args)->ptr),
@@ -172,6 +170,7 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             }
             qdesc->argtypes[i] = typeTup->t_data->t_oid;
 #endif
+
             qdesc->argtypelems[i] = ((Form_pg_type) GETSTRUCT(typeTup))->typelem;
             if (!arg_is_array) {
                 fmgr_info(((Form_pg_type) GETSTRUCT(typeTup))->typinput,
@@ -289,7 +288,7 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
                 portal->argvalues[j] = (Datum)NULL;
             }
             else {
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
                 if (qdesc->arg_is_array[j]) {
                     pl_proc_desc prodesc;
 
@@ -818,6 +817,7 @@ void Init_plruby_plan()
 
     pl_mPL = rb_const_get(rb_cObject, rb_intern("PL"));
     pl_ePLruby = rb_const_get(pl_mPL, rb_intern("Error"));
+    pl_eCatch = rb_const_get(pl_mPL, rb_intern("Catch"));
     /* deprecated */
     rb_define_module_function(pl_mPL, "spi_prepare", pl_plan_prepare, -1);
     rb_define_module_function(pl_mPL, "prepare", pl_plan_prepare, -1);

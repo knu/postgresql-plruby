@@ -1,62 +1,16 @@
 #include "plruby.h"
 
 static VALUE pl_ePLruby, pl_mPLtemp;
-static VALUE pl_mPL, pl_cPLPlan;
+static VALUE pl_mPL, pl_cPLPlan, pl_eCatch;
 
 static ID id_thr;
 
 static VALUE pl_SPI_exec _((int, VALUE *, VALUE));
 
-#ifdef PLRUBY_HASH_DELETE
+#ifndef HAVE_RB_HASH_DELETE
 static ID id_delete;
 
 #define rb_hash_delete(a, b) rb_funcall((a), id_delete, 1, (b))
-
-#endif
-
-#ifdef PLRUBY_ENABLE_CONVERSION
-
-static VALUE plruby_classes;
-static VALUE plruby_conversions;
-static ID id_from_datum;
-static ID id_to_datum;
-
-static VALUE
-protect_require(VALUE name)
-{
-    return rb_require((char *)name);
-}
-
-static void
-plruby_require(char *name)
-{
-    int status;
-
-    rb_protect(protect_require, (VALUE)name, &status);
-    if (status) {
-        plruby_fatal = 1;
-        elog(ERROR, "can't find %s : try first `make install'", name);
-    }
-}
-
-static void
-pl_init_conversions()
-{
-#include "conversions.h"
-}
-
-#ifndef HAVE_RB_INITIALIZE_COPY
-
-VALUE
-plruby_clone(VALUE obj)
-{
-    VALUE res = rb_funcall2(rb_obj_class(obj), rb_intern("allocate"), 0, 0);
-    CLONESETUP(res, obj);
-    rb_funcall(res, rb_intern("initialize_copy"), 1, obj);
-    return res;
-}
-
-#endif
 
 #endif
 
@@ -384,6 +338,9 @@ pl_tuple_s_new(PG_FUNCTION_ARGS, pl_proc_desc *prodesc)
 
 #ifdef PLRUBY_ENABLE_CONVERSION
 
+static ID id_from_datum;
+static ID id_to_datum;
+
 struct datum_value {
     Datum d;
     Oid typoid;
@@ -461,18 +418,18 @@ plruby_to_datum(VALUE obj, FmgrInfo *finfo, Oid typoid,
     }
 #endif
     obj = plruby_to_s(obj);
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
 #ifdef NEW_STYLE_FUNCTION
     d = FunctionCall3(finfo, PointerGetDatum(RSTRING(obj)->ptr),
                       ObjectIdGetDatum(typelem), Int32GetDatum(typlen));
 #else
     d = (Datum)(*fmgr_faddr(finfo))(RSTRING(obj)->ptr, typelem, typlen);
 #endif
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     return d;
 }
 
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
 
 Datum
 plruby_return_array(VALUE ary, pl_proc_desc *p)
@@ -499,6 +456,11 @@ plruby_return_array(VALUE ary, pl_proc_desc *p)
         tmp = RARRAY(tmp)->ptr[0];
     }
     ndim = i;
+#if PG_PL_VERSION < 74
+    if (ndim != 1) {
+        rb_raise(rb_eNotImpError, "multi-dimensional array only for >= 7.4");
+    }
+#endif
     ary = rb_funcall2(ary, rb_intern("flatten"), 0, 0);
     if (RARRAY(ary)->len != total) {
         elog(WARNING, "not a regular array");
@@ -510,11 +472,16 @@ plruby_return_array(VALUE ary, pl_proc_desc *p)
                                     p->result_oid, p->result_elem,
                                     p->result_len);
     }
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
+#if PG_PL_VERSION >= 74
     array = construct_md_array(values, ndim, dim, lbs,
-                               p->result_elem,  p->result_len,
-                               p->result_val,  p->result_align);
-    PLRUBY_END;
+                               p->result_elem, p->result_len,
+                               p->result_val, p->result_align);
+#else
+    array = construct_array(values, dim[0], p->result_elem, p->result_len,
+                            p->result_val, p->result_align);
+#endif
+    PLRUBY_END_PROTECT;
     return PointerGetDatum(array);
 }
 
@@ -525,7 +492,7 @@ return_base_type(VALUE c, pl_proc_desc *prodesc)
 {
     Datum retval;
 
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
     if (prodesc->result_is_array) {
         retval = plruby_return_array(c, prodesc);
     }
@@ -574,7 +541,6 @@ pl_tuple_heap(VALUE c, VALUE tuple)
         else {
             nulls[i] = ' ';
             typid =  tpl->att->tupdesc->attrs[i]->atttypid;
-#if PG_PL_VERSION >= 74
             if (tpl->att->tupdesc->attrs[i]->attndims != 0) {
                 pl_proc_desc prodesc;
                 FmgrInfo func;
@@ -592,6 +558,7 @@ pl_tuple_heap(VALUE c, VALUE tuple)
                 typid = fpg->typelem;
                 ReleaseSysCache(hp);
                 hp = SearchSysCacheTuple(RUBY_TYPOID, ObjectIdGetDatum(typid), 0, 0, 0);
+                PLRUBY_END;
                 if (!HeapTupleIsValid(hp)) {
                     rb_raise(pl_ePLruby, "cache lookup failed for type %u",
                              typid);
@@ -605,12 +572,9 @@ pl_tuple_heap(VALUE c, VALUE tuple)
                 prodesc.result_len = fpg->typlen;
                 prodesc.result_align = fpg->typalign;
                 ReleaseSysCache(hp);
-                PLRUBY_END;
                 dvalues[i] = plruby_return_array(RARRAY(c)->ptr[i], &prodesc);
             }
-            else
-#endif
-            {
+            else  {
                 dvalues[i] = plruby_to_datum(RARRAY(c)->ptr[i],
                                              &tpl->att->attinfuncs[i],
                                              typid,
@@ -739,7 +703,9 @@ pl_warn(argc, argv, obj)
         case NOTICE:
 #endif
 #ifdef LOG
+#if !defined(DEBUG) || LOG != DEBUG
         case LOG:
+#endif
 #endif
 #ifdef NOIND
         case NOIND:
@@ -770,9 +736,9 @@ pl_warn(argc, argv, obj)
     default:
         rb_raise(pl_ePLruby, "invalid syntax");
     }
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
     elog(level, RSTRING(res)->ptr);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     return Qnil;
 }
 
@@ -968,7 +934,7 @@ pl_convert_arg(Datum value, Oid typoid, FmgrInfo *finfo, Oid typelem,
         }
     }
 #endif
-    PLRUBY_BEGIN(1);
+    PLRUBY_BEGIN_PROTECT(1);
 #ifdef NEW_STYLE_FUNCTION
     outstr = DatumGetCString(FunctionCall3(finfo, value,
                                            ObjectIdGetDatum(typelem),
@@ -978,11 +944,11 @@ pl_convert_arg(Datum value, Oid typoid, FmgrInfo *finfo, Oid typelem,
 #endif
     result = rb_tainted_str_new2(outstr);
     pfree(outstr);
-    PLRUBY_END;
+    PLRUBY_END_PROTECT;
     return result;
 }
 
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
 
 static VALUE
 create_array(index, ndim, dim, p, prodesc, curr, typoid)
@@ -1107,7 +1073,7 @@ plruby_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
             VALUE s;
 
             PLRUBY_BEGIN(1);
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
             if (NameStr(fpgt->typname)[0] == '_') {
                 ArrayType *array;
                 int ndim, *dim;
@@ -1280,7 +1246,7 @@ plruby_create_args(struct pl_thread_st *plth, pl_proc_desc *prodesc)
             rb_ary_push(ary, Qnil);
         }
 #endif
-#if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 73
         else if (prodesc->arg_is_array[i]) {
             ArrayType *array;
             int ndim, *dim;
@@ -1468,9 +1434,9 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
 
         res = rb_funcall2(c, rb_intern("portal_name"), 0, 0);
         res = plruby_to_s(res);
-        PLRUBY_BEGIN(1);
+        PLRUBY_BEGIN_PROTECT(1);
         retval = DFC1(textin, CStringGetDatum(RSTRING(res)->ptr));
-        PLRUBY_END;
+        PLRUBY_END_PROTECT;
         return retval;
     }
         
@@ -1482,7 +1448,7 @@ extern void Init_plruby_plan();
 
 void Init_plruby_pl()
 {
-    VALUE pl_sPLtemp, pl_eCatch;
+    VALUE pl_sPLtemp;
 
     pl_mPL = rb_define_module("PL");
     rb_const_set(rb_cObject, rb_intern("PLruby"), pl_mPL);
@@ -1527,17 +1493,12 @@ void Init_plruby_pl()
 #endif
     }
     id_thr = rb_intern("__functype__");
-#ifdef PLRUBY_HASH_DELETE
+#ifndef HAVE_RB_HASH_DELETE
     id_delete = rb_intern("delete");
 #endif
 #ifdef PLRUBY_ENABLE_CONVERSION
     id_from_datum = rb_intern("from_datum");
     id_to_datum = rb_intern("to_datum");
-    plruby_classes = rb_hash_new();
-    rb_global_variable(&plruby_classes);
-    plruby_conversions = rb_hash_new();
-    rb_global_variable(&plruby_conversions);
-    pl_init_conversions();
 #endif
     Init_plruby_plan();
     pl_cPLPlan = rb_const_get(pl_mPL, rb_intern("Plan"));
