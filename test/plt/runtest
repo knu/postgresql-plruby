@@ -4,7 +4,11 @@ DBNAME=plruby_test
 export DBNAME
 
 echo "**** Destroy old database $DBNAME ****"
-destroydb $DBNAME
+if [ %$1 = %7 ]; then
+    dropdb $DBNAME
+else
+    destroydb $DBNAME
+fi
 
 echo "**** Create test database $DBNAME ****"
 createdb $DBNAME
@@ -19,10 +23,10 @@ psql -q -n $DBNAME <test_setup.sql
 echo "**** Running test queries ****"
 psql -q -n -e $DBNAME <test_queries.sql > test.out 2>&1
 
-if diff test.expected test.out >/dev/null 2>&1 ; then
+if diff test.expected.$1 test.out >/dev/null 2>&1 ; then
     echo "    Tests passed O.K."
 else
     echo "    Tests faild - look at diffs between"
-    echo "    test.expected and test.out"
+    echo "    test.expected.$1 and test.out"
 fi
 

@@ -70,6 +70,18 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 
+#ifndef MAXFMGRARGS
+#define RUBY_ARGS_MAXFMGR FUNC_MAX_ARGS
+#define RUBY_TYPOID TYPEOID
+#define RUBY_PROOID PROCOID
+#define RUBY_TYPNAME TYPENAME
+#else
+#define RUBY_ARGS_MAXFMGR MAXFMGRARGS
+#define RUBY_TYPOID TYPOID
+#define RUBY_PROOID PROOID
+#define RUBY_TYPNAME TYPNAME
+#endif
+
 #include <ruby.h>
 
 enum { TG_OK, TG_SKIP };
@@ -88,10 +100,10 @@ typedef struct plruby_proc_desc
     Oid			result_in_elem;
     int			result_in_len;
     int			nargs;
-    FmgrInfo	arg_out_func[MAXFMGRARGS];
-    Oid			arg_out_elem[MAXFMGRARGS];
-    int			arg_out_len[MAXFMGRARGS];
-    int			arg_is_rel[MAXFMGRARGS];
+    FmgrInfo	arg_out_func[RUBY_ARGS_MAXFMGR];
+    Oid			arg_out_elem[RUBY_ARGS_MAXFMGR];
+    int			arg_out_len[RUBY_ARGS_MAXFMGR];
+    int			arg_is_rel[RUBY_ARGS_MAXFMGR];
 } plruby_proc_desc;
 
 static void
@@ -267,7 +279,7 @@ plruby_func_handler(proinfo, proargs, isNull)
 
 	value_proc_desc = Data_Make_Struct(rb_cObject, plruby_proc_desc, 0, plruby_proc_free, prodesc);
 	rb_obj_call_init(value_proc_desc, 0, 0);
-	procTup = SearchSysCacheTuple(PROOID,
+	procTup = SearchSysCacheTuple(RUBY_PROOID,
 				      ObjectIdGetDatum(proinfo->fn_oid),
 				      0, 0, 0);
 	if (!HeapTupleIsValid(procTup))	{
@@ -275,7 +287,7 @@ plruby_func_handler(proinfo, proargs, isNull)
 	}
 	procStruct = (Form_pg_proc) GETSTRUCT(procTup);
 	
-	typeTup = SearchSysCacheTuple(TYPOID,
+	typeTup = SearchSysCacheTuple(RUBY_TYPOID,
 				      ObjectIdGetDatum(procStruct->prorettype),
 				      0, 0, 0);
 	if (!HeapTupleIsValid(typeTup))	{
@@ -293,7 +305,7 @@ plruby_func_handler(proinfo, proargs, isNull)
 	prodesc->nargs = proinfo->fn_nargs;
 	proc_internal_args[0] = '\0';
 	for (i = 0; i < proinfo->fn_nargs; i++)	{
-	    typeTup = SearchSysCacheTuple(TYPOID,
+	    typeTup = SearchSysCacheTuple(RUBY_TYPOID,
 					  ObjectIdGetDatum(procStruct->proargtypes[i]),
 					  0, 0, 0);
 	    if (!HeapTupleIsValid(typeTup)) {
@@ -388,7 +400,7 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, int iterat)
     for (i = 0; i < tupdesc->natts; i++) {
 	attname = tupdesc->attrs[i]->attname.data;
 	attr = heap_getattr(tuple, i + 1, tupdesc, &isnull);
-	typeTup = SearchSysCacheTuple(TYPOID,
+	typeTup = SearchSysCacheTuple(RUBY_TYPOID,
 				      ObjectIdGetDatum(tupdesc->attrs[i]->atttypid),
 				      0, 0, 0);
 	if (!HeapTupleIsValid(typeTup))	{
@@ -466,7 +478,7 @@ for_numvals(obj, arg)
     attnum = SPI_fnumber(arg->tupdesc, RSTRING(key)->ptr);
     if (attnum == SPI_ERROR_NOATTRIBUTE)
 	rb_raise(pg_ePLruby, "invalid attribute '%s'", RSTRING(key)->ptr);
-    typeTup = SearchSysCacheTuple(TYPOID,
+    typeTup = SearchSysCacheTuple(RUBY_TYPOID,
 				  ObjectIdGetDatum(arg->tupdesc->attrs[attnum - 1]->atttypid),
 				  0, 0, 0);
     if (!HeapTupleIsValid(typeTup)) {	
@@ -530,7 +542,7 @@ plruby_trigger_handler(FmgrInfo *proinfo)
 	value_proc_desc = Data_Make_Struct(rb_cObject, plruby_proc_desc, 0, plruby_proc_free, prodesc);
 	rb_obj_call_init(value_proc_desc, 0, 0);
 
-	procTup = SearchSysCacheTuple(PROOID,
+	procTup = SearchSysCacheTuple(RUBY_PROOID,
 				      ObjectIdGetDatum(proinfo->fn_oid),
 				      0, 0, 0);
 	if (!HeapTupleIsValid(procTup))
@@ -900,7 +912,7 @@ plruby_SPI_prepare(obj, a, b)
 
     for (i = 0; i < nargs; i++)	{
 	VALUE args = rb_funcall(RARRAY(b)->ptr[i], to_s_id, 0);
-	typeTup = SearchSysCacheTuple(TYPNAME,
+	typeTup = SearchSysCacheTuple(RUBY_TYPNAME,
 				      PointerGetDatum(RSTRING(args)->ptr),
 				      0, 0, 0);
 	if (!HeapTupleIsValid(typeTup)) {
