@@ -68,6 +68,7 @@
 #include "tcop/tcopprot.h"
 #include "utils/syscache.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_language.h"
 #include "catalog/pg_type.h"
 
 #ifndef MAXFMGRARGS
@@ -80,6 +81,10 @@
 #define RUBY_TYPOID TYPOID
 #define RUBY_PROOID PROOID
 #define RUBY_TYPNAME TYPNAME
+#endif
+
+#ifdef PG_FUNCTION_ARGS
+#define NEW_STYLE_FUNCTION
 #endif
 
 #include <ruby.h>
@@ -149,6 +154,11 @@ end
  **********************************************************************/
 static void plruby_init_all(void);
 
+#ifdef NEW_STYLE_FUNCTION
+Datum plruby_call_handler(PG_FUNCTION_ARGS);
+static Datum plruby_func_handler(PG_FUNCTION_ARGS);
+static HeapTuple plruby_trigger_handler(PG_FUNCTION_ARGS);
+#else
 Datum plruby_call_handler(FmgrInfo *proinfo,
 			  FmgrValues *proargs, bool *isNull);
 
@@ -156,6 +166,8 @@ static Datum plruby_func_handler(FmgrInfo *proinfo,
 				 FmgrValues *proargs, bool *isNull);
 
 static HeapTuple plruby_trigger_handler(FmgrInfo *proinfo);
+#endif
+
 static VALUE plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc,
 					 int iterat);
 
@@ -170,12 +182,19 @@ plruby_protect(args)
 	return pg_eCatch;
     res = Data_Make_Struct(rb_cObject, Datum, 0, free, retval);
     rb_obj_call_init(res, 0, 0);
+#ifdef NEW_STYLE_FUNCTION
+    if (CALLED_AS_TRIGGER((FunctionCallInfo)args))
+	*retval = PointerGetDatum(plruby_trigger_handler((FunctionCallInfo)args));
+    else
+	*retval = plruby_func_handler((FunctionCallInfo)args);
+#else
     if (CurrentTriggerData == NULL)
 	*retval = plruby_func_handler((FmgrInfo *)args[0], 
 				     (FmgrValues *)args[1],
 				     (bool *)args[2]);
     else
 	*retval = (Datum) plruby_trigger_handler((FmgrInfo *)args[0]);
+#endif
     return res;
 }
 
@@ -187,9 +206,13 @@ plruby_protect(args)
  *				  ruby procedures.
  **********************************************************************/
 Datum
+#ifdef NEW_STYLE_FUNCTION
+plruby_call_handler(PG_FUNCTION_ARGS)
+#else
 plruby_call_handler(FmgrInfo *proinfo,
 		    FmgrValues *proargs,
 		    bool *isNull)
+#endif
 {
     VALUE *args, c;
     sigjmp_buf save_restart;
@@ -207,10 +230,15 @@ plruby_call_handler(FmgrInfo *proinfo,
 	    elog(ERROR, "cannot connect to SPI manager");
     }
 
+
+#ifdef NEW_STYLE_FUNCTION
+    args = (VALUE *)fcinfo;
+#else
     args = ALLOCA_N(VALUE, 3);
     args[0] = (VALUE)proinfo;
     args[1] = (VALUE)proargs;
     args[2] = (VALUE)isNull;
+#endif
 
     state = 0;
     plruby_call_level++;
@@ -243,15 +271,21 @@ plruby_call_handler(FmgrInfo *proinfo,
  * plruby_func_handler()		- Handler for regular function calls
  **********************************************************************/
 static Datum
+#ifdef NEW_STYLE_FUNCTION
+plruby_func_handler(PG_FUNCTION_ARGS)
+#else
 plruby_func_handler(proinfo, proargs, isNull)
     FmgrInfo *proinfo;
     FmgrValues *proargs;
     bool *isNull;
+#endif
 {
     int			i;
     char		internal_proname[512];
     int		proname_len;
+#ifndef NEW_STYLE_FUNCTION
     char	   *stroid;
+#endif
     plruby_proc_desc *prodesc;
     VALUE value_proc_desc;
     Datum    retval;
@@ -260,10 +294,14 @@ plruby_func_handler(proinfo, proargs, isNull)
     VALUE ary, c;
     static char *argf = "args";
     
+#ifdef NEW_STYLE_FUNCTION
+    sprintf(internal_proname, "proc_%u", fcinfo->flinfo->fn_oid);
+#else
     stroid = oidout(proinfo->fn_oid);
     strcpy(internal_proname, "proc_");
     strcat(internal_proname, stroid);
     pfree(stroid);
+#endif
     proname_len = strlen(internal_proname);
 
     value_proname = rb_tainted_str_new(internal_proname, proname_len);
@@ -279,9 +317,15 @@ plruby_func_handler(proinfo, proargs, isNull)
 
 	value_proc_desc = Data_Make_Struct(rb_cObject, plruby_proc_desc, 0, plruby_proc_free, prodesc);
 	rb_obj_call_init(value_proc_desc, 0, 0);
+#ifdef NEW_STYLE_FUNCTION
+	procTup = SearchSysCacheTuple(RUBY_PROOID,
+				      ObjectIdGetDatum(fcinfo->flinfo->fn_oid),
+				      0, 0, 0);
+#else
 	procTup = SearchSysCacheTuple(RUBY_PROOID,
 				      ObjectIdGetDatum(proinfo->fn_oid),
 				      0, 0, 0);
+#endif
 	if (!HeapTupleIsValid(procTup))	{
 	    rb_raise(pg_ePLruby, "cache lookup from pg_proc failed");
 	}
@@ -302,9 +346,9 @@ plruby_func_handler(proinfo, proargs, isNull)
 	fmgr_info(typeStruct->typinput, &(prodesc->result_in_func));
 	prodesc->result_in_elem = (Oid) (typeStruct->typelem);
 	prodesc->result_in_len = typeStruct->typlen;
-	prodesc->nargs = proinfo->fn_nargs;
+	prodesc->nargs = procStruct->pronargs;
 	proc_internal_args[0] = '\0';
-	for (i = 0; i < proinfo->fn_nargs; i++)	{
+	for (i = 0; i < prodesc->nargs; i++)	{
 	    typeTup = SearchSysCacheTuple(RUBY_TYPOID,
 					  ObjectIdGetDatum(procStruct->proargtypes[i]),
 					  0, 0, 0);
@@ -324,7 +368,12 @@ plruby_func_handler(proinfo, proargs, isNull)
 
 	}
 
+#ifdef NEW_STYLE_FUNCTION
+	proc_source = DatumGetCString(DirectFunctionCall1(textout,
+							  PointerGetDatum(&procStruct->prosrc)));
+#else
 	proc_source = textout(&(procStruct->prosrc));
+#endif
 	proc_internal_def = ALLOCA_N(char, strlen(definition) + proname_len +
 				     strlen(argf) + strlen(proc_source) + 1);
 	sprintf(proc_internal_def, definition, internal_proname, argf, proc_source);
@@ -347,31 +396,71 @@ plruby_func_handler(proinfo, proargs, isNull)
     ary = rb_ary_new2(prodesc->nargs);
     for (i = 0; i < prodesc->nargs; i++) {
 	if (prodesc->arg_is_rel[i]) {
-	    rb_ary_push(ary, plruby_build_tuple_argument(
-		((TupleTableSlot *) (proargs->data[i]))->val,
-		((TupleTableSlot *) (proargs->data[i]))->ttc_tupleDescriptor, 0));
+#ifdef NEW_STYLE_FUNCTION
+	    TupleTableSlot *slot = (TupleTableSlot *) fcinfo->arg[i];
+#else
+	    TupleTableSlot *slot = (TupleTableSlot *) proargs->data[i];
+#endif
+	    rb_ary_push(ary, plruby_build_tuple_argument(slot->val,
+							 slot->ttc_tupleDescriptor, 
+							 0));
 	} 
 	else {
-	    char *tmp = (*fmgr_faddr(&(prodesc->arg_out_func[i])))
-		(proargs->data[i],
-		 prodesc->arg_out_elem[i],
-		 prodesc->arg_out_len[i]);
-	    rb_ary_push(ary, rb_tainted_str_new2(tmp));
-	    pfree(tmp);
+#ifdef NEW_STYLE_FUNCTION
+	    if (fcinfo->argnull[i]) {
+		rb_ary_push(ary, Qnil);
+ 	    }
+	    else {
+#endif
+		char *tmp;
+#ifdef NEW_STYLE_FUNCTION
+		tmp = DatumGetCString(FunctionCall3(&prodesc->arg_out_func[i],
+						    fcinfo->arg[i],
+						    ObjectIdGetDatum(prodesc->arg_out_elem[i]),
+						    Int32GetDatum(prodesc->arg_out_len[i])));
+#else
+		tmp = (*fmgr_faddr(&(prodesc->arg_out_func[i])))
+		    (proargs->data[i],
+		     prodesc->arg_out_elem[i],
+		     prodesc->arg_out_len[i]);
+#endif
+		rb_ary_push(ary, rb_tainted_str_new2(tmp));
+		pfree(tmp);
+	    }
 	}
+#ifdef NEW_STYLE_FUNCTION
     }
+#endif
 
     c = rb_funcall(pg_mPLtemp, rb_intern(RSTRING(value_proname)->ptr), 1, ary);
-    rubyret = rb_funcall(c, to_s_id, 0);
 
     if (SPI_finish() != SPI_OK_FINISH)
 	rb_raise(pg_ePLruby, "SPI_finish() failed");
     
+    if (c == Qnil) {
+#ifdef NEW_STYLE_FUNCTION
+	PG_RETURN_NULL();
+#else
+	*isNull = true;
+	return (Datum)0;
+#endif
+    }
+
+    rubyret = rb_funcall(c, to_s_id, 0);
+
+#ifdef NEW_STYLE_FUNCTION
+    retval = FunctionCall3(&prodesc->result_in_func,
+			   PointerGetDatum(RSTRING(rubyret)->ptr),
+			   ObjectIdGetDatum(prodesc->result_in_elem),
+			   Int32GetDatum(prodesc->result_in_len));
+#else
     retval = (Datum) (*fmgr_faddr(&prodesc->result_in_func))
 	(RSTRING(rubyret)->ptr,
 	 prodesc->result_in_elem,
 	 prodesc->result_in_len);
+#endif
     return retval;
+
 }
 
 /**********************************************************************
@@ -398,7 +487,11 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, int iterat)
 	output = Qtrue;
 
     for (i = 0; i < tupdesc->natts; i++) {
+#ifdef NEW_STYLE_FUNCTION
+	attname = NameStr(tupdesc->attrs[i]->attname);
+#else
 	attname = tupdesc->attrs[i]->attname.data;
+#endif
 	attr = heap_getattr(tuple, i + 1, tupdesc, &isnull);
 	typeTup = SearchSysCacheTuple(RUBY_TYPOID,
 				      ObjectIdGetDatum(tupdesc->attrs[i]->atttypid),
@@ -411,14 +504,21 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc, int iterat)
 	typoutput = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typoutput);
 	typelem = (Oid) (((Form_pg_type) GETSTRUCT(typeTup))->typelem);
 	if (!isnull && OidIsValid(typoutput)) {
-	    FmgrInfo	finfo;
 	    VALUE s;
+#ifdef NEW_STYLE_FUNCTION
+	    outputstr = DatumGetCString(OidFunctionCall3(typoutput,
+							 attr,
+							 ObjectIdGetDatum(typelem),
+							 Int32GetDatum(tupdesc->attrs[i]->attlen)));
+#else
+	    FmgrInfo	finfo;
 	    
 	    fmgr_info(typoutput, &finfo);
 	    
 	    outputstr = (*fmgr_faddr(&finfo))
 		(attr, typelem,
 		 tupdesc->attrs[i]->attlen);
+#endif
 	    s = rb_tainted_str_new2(outputstr);
 	    pfree(outputstr);
 	    if (iterat)
@@ -494,6 +594,15 @@ for_numvals(obj, arg)
      ************************************************************/
     arg->modnulls[attnum - 1] = ' ';
     fmgr_info(typinput, &finfo);
+#ifdef NEW_STYLE_FUNCTION
+    arg->modvalues[attnum - 1] =
+	FunctionCall3(&finfo,
+		      CStringGetDatum(RSTRING(value)->ptr),
+		      ObjectIdGetDatum(typelem),
+		      Int32GetDatum((!VARLENA_FIXED_SIZE(arg->tupdesc->attrs[attnum - 1]))
+		      ? arg->tupdesc->attrs[attnum - 1]->attlen
+		      : arg->tupdesc->attrs[attnum - 1]->atttypmod));
+#else
     arg->modvalues[attnum - 1] = (Datum) (*fmgr_faddr(&finfo))
 	(RSTRING(value)->ptr,
 	 typelem,
@@ -501,12 +610,17 @@ for_numvals(obj, arg)
 	 ? arg->tupdesc->attrs[attnum - 1]->attlen
 	 : arg->tupdesc->attrs[attnum - 1]->atttypmod
 	    );
+#endif
     return Qnil;
 }
  
 
 static HeapTuple
+#ifdef NEW_STYLE_FUNCTION
+plruby_trigger_handler(PG_FUNCTION_ARGS)
+#else
 plruby_trigger_handler(FmgrInfo *proinfo)
+#endif
 {
     TriggerData *trigdata;
     char		internal_proname[512];
@@ -524,13 +638,19 @@ plruby_trigger_handler(FmgrInfo *proinfo)
     char *proc_internal_def;
     static char *argt = "new, old, args, tg";
     
+#ifdef NEW_STYLE_FUNCTION
+    trigdata = (TriggerData *) fcinfo->context;
+
+    sprintf(internal_proname, "proc_%u", fcinfo->flinfo->fn_oid);
+#else
     trigdata = CurrentTriggerData;
     CurrentTriggerData = NULL;
-    
+
     stroid = oidout(proinfo->fn_oid);
     strcpy(internal_proname, "proc_");
     strcat(internal_proname, stroid);
     pfree(stroid);
+#endif
     proname_len = strlen(internal_proname);
 
     value_proname = rb_tainted_str_new(internal_proname, proname_len);
@@ -542,14 +662,25 @@ plruby_trigger_handler(FmgrInfo *proinfo)
 	value_proc_desc = Data_Make_Struct(rb_cObject, plruby_proc_desc, 0, plruby_proc_free, prodesc);
 	rb_obj_call_init(value_proc_desc, 0, 0);
 
+#ifdef NEW_STYLE_FUNCTION
+	procTup = SearchSysCacheTuple(RUBY_PROOID,
+				      ObjectIdGetDatum(fcinfo->flinfo->fn_oid),
+				      0, 0, 0);
+#else
 	procTup = SearchSysCacheTuple(RUBY_PROOID,
 				      ObjectIdGetDatum(proinfo->fn_oid),
 				      0, 0, 0);
+#endif
 	if (!HeapTupleIsValid(procTup))
 	    rb_raise(pg_ePLruby, "cache lookup from pg_proc failed");
 	procStruct = (Form_pg_proc) GETSTRUCT(procTup);
 
+#ifdef NEW_STYLE_FUNCTION
+	proc_source = DatumGetCString(DirectFunctionCall1(textout,
+							  PointerGetDatum(&procStruct->prosrc)));
+#else
 	proc_source = textout(&(procStruct->prosrc));
+#endif
 	proc_internal_def = ALLOCA_N(char, strlen(definition) + proname_len +
 				     strlen(argt) + strlen(proc_source) + 1);
 	sprintf(proc_internal_def, definition, internal_proname, argt, proc_source);
@@ -577,7 +708,12 @@ plruby_trigger_handler(FmgrInfo *proinfo)
     rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("relname")), 
 		 rb_str_freeze(rb_tainted_str_new2(nameout(&(trigdata->tg_relation->rd_rel->relname)))));
 
+#ifdef NEW_STYLE_FUNCTION
+    stroid = DatumGetCString(DirectFunctionCall1(oidout,
+						 ObjectIdGetDatum(trigdata->tg_relation->rd_id)));
+#else
     stroid = oidout(trigdata->tg_relation->rd_id);
+#endif
     rb_hash_aset(TG, rb_str_freeze(rb_tainted_str_new2("relid")), 
 		 rb_str_freeze(rb_tainted_str_new2(stroid)));
     pfree(stroid);
@@ -1031,8 +1167,16 @@ plruby_SPI_execp(argc, argv, obj)
 	    else {
 		VALUE args = rb_funcall(RARRAY(argsv)->ptr[j], to_s_id, 0);
 		nulls[j] = ' ';
+#ifdef NEW_STYLE_FUNCTION
+		qdesc->argvalues[j] =
+		    FunctionCall3(&qdesc->arginfuncs[j],
+				  CStringGetDatum(RSTRING(args)->ptr),
+				  ObjectIdGetDatum(qdesc->argtypelems[j]),
+				  Int32GetDatum(qdesc->arglen[j]));
+#else
 		qdesc->argvalues[j] = (Datum) (*fmgr_faddr(&qdesc->arginfuncs[j]))
 		    (RSTRING(args)->ptr, qdesc->argtypelems[j], qdesc->arglen[j]);
+#endif
 	    }
 	}
 	nulls[callnargs] = '\0';
@@ -1201,7 +1345,9 @@ plruby_init_all(void)
 {
     if (!plruby_firstcall)
 	return;
+#if SAFE_LEVEL >= 1
     rb_set_safe_level(1);
+#endif
     ruby_init();
     rb_define_global_const("NOTICE", INT2FIX(NOTICE));
     rb_define_global_const("DEBUG", INT2FIX(DEBUG));

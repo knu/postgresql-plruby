@@ -4,6 +4,11 @@
 system  that enable the Ruby language to create functions and trigger
 procedures
 
+ This version can be compiled for the new interface of fmgr
+(Postgresql > 7.0.2 : postgresql.snapshot.tar.gz). The language must
+be 'newC' in this case
+ 
+
 * Prerequisite
 
    ruby >= 1.4.4
@@ -23,6 +28,8 @@ procedures
 
   --with-pgsql-srcinc-dir=<include file *from* the source of PostgreSQL>
      pgsql-srcinc-dir must contains, for example, the file catalog/pg_proc.h
+
+  --with-pgsql-version=<release number for PostgreSQL, actually 6 or 7>
 
  Example :
 
@@ -59,6 +66,10 @@ procedures
         create trusted procedural language 'plruby'
                 handler plruby_call_handler
                 lancompiler 'PL/Ruby';
+
+
+    *WARNING* for the new interface to fmgr (for PostgreSQL > 7.0.2), the 
+              language must be specified as 'newC' rather than 'C'
 
     The trusted keyword on create procedural language tells PostgreSQL,
     that all users (not only those with superuser privilege) are

@@ -21,7 +21,6 @@ end
 if safe = with_config("safe-level")
     $CFLAGS += " -DSAFE_LEVEL=#{safe}"
 end
-print "#$CFLAGS\n"
 if ! have_header("catalog/pg_proc.h")
     raise  "Some include file are missing (see README for the installation)"
 end
@@ -31,23 +30,26 @@ end
 if ! have_library("ruby", "rb_gvar_get")
     raise "ruby must be > 1.4.3"
 end
+$LDFLAGS += " -L${archdir} "
 create_makefile("plruby")
-version = 6
-begin
-    IO.foreach("#{srcdir}/version.h.in") do |line|
-	if /PG_RELEASE\s+\"(\d)\"/ =~ line
+version = 7
+if ! version = with_config("pgsql-version")
+   begin
+      IO.foreach("#{srcdir}/version.h.in") do |line|
+	 if /PG_RELEASE\s+\"(\d)\"/ =~ line
 	    version = $1
 	    break
-	end
-    end
-rescue
-    print <<-EOT
+	 end
+      end
+   rescue
+      print <<-EOT
  ************************************************************************
  I can't find the version of PostgreSQL, the test will be make against
- the output of 6.*. If the test fail, verify the result in the directories
+ the output of 7.*. If the test fail, verify the result in the directories
  test/plt and test/plp
  ************************************************************************
-   EOT
+      EOT
+   end
 end
 open("Makefile", "a") do |make|
     make.print <<-EOF
