@@ -56,3 +56,7 @@
  #each return nil for PL::Plan
  protected PL::PLan::new against parse error
  protected thread value when there is a timeout
+
+--- 0.3.8
+
+ stupid bug portalActive (only 7.4)

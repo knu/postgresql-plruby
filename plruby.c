@@ -714,7 +714,7 @@ pl_real_handler(struct pl_thread_st *plth)
 	struct extra_args *exa;
 	ReturnSetInfo *rsi;
 
-	res = Data_Make_Struct(rb_cData, struct extra_args, extra_args_mark, 0, exa);
+	res = Data_Make_Struct(rb_cData, struct extra_args, extra_args_mark, free, exa);
 	exa->context = plth->fcinfo->context;
 	rsi = (ReturnSetInfo *)plth->fcinfo->resultinfo;
 	if (rsi) {
@@ -2792,6 +2792,12 @@ pl_plan_execp(argc, argv, obj)
     return result;
 }
 
+#if PG_PL_VERSION >= 74
+#define PORTAL_ACTIVE(port) ((port)->portalActive)
+#else
+#define PORTAL_ACTIVE(port) 0
+#endif
+
 static VALUE
 pl_close(VALUE vortal)
 {
@@ -2799,7 +2805,7 @@ pl_close(VALUE vortal)
 
     GetPortal(vortal, portal);
     PLRUBY_BEGIN(1);
-    if (!portal->portal->portalActive) {
+    if (!PORTAL_ACTIVE(portal->portal)) {
 	SPI_cursor_close(portal->portal);
     }
     portal->portal = 0;
