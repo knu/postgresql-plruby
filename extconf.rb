@@ -1,5 +1,13 @@
 #!/usr/bin/ruby
 require 'mkmf'
+
+stat_lib = if CONFIG.key?("LIBRUBYARG_STATIC")
+	      $LDFLAGS += " -L#{CONFIG['libdir']}"
+	      CONFIG["LIBRUBYARG_STATIC"]
+	   else
+	      "-lruby"
+	   end.sub(/^-l/, '')
+            
 src_dir = ""
 if srcdir = with_config("pgsql-srcinc-dir")
    $CFLAGS = "-I#{srcdir}"
@@ -31,7 +39,7 @@ end
 if ! have_library("pq", "PQsetdbLogin")
     raise "libpq is missing"
 end
-$libs = append_library($libs, "ruby")
+$libs = append_library($libs, stat_lib)
 if ! version = with_config("pgsql-version")
    for version_in in [
 	 "#{include_dir}/config.h", 

@@ -2,7 +2,7 @@
 require 'rbconfig'
 include Config
 pwd = Dir.pwd
-pwd.sub!("[^/]+/[^/]+$", "")
+pwd.sub!(%r{[^/]+/[^/]+$}, "")
 language, extension = 'C', '_new'
 opaque = 'opaque'
 case ARGV[0].to_i

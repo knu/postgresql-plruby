@@ -188,26 +188,24 @@ static VALUE
 plruby_protect(args)
     VALUE *args;
 {
-    Datum *retval;
-    VALUE res;
+    Datum retval;
 
     if (sigsetjmp(Warn_restart, 1) != 0)
 	return pg_eCatch;
-    res = Data_Make_Struct(rb_cObject, Datum, 0, free, retval);
 #ifdef NEW_STYLE_FUNCTION
     if (CALLED_AS_TRIGGER((FunctionCallInfo)args))
-	*retval = PointerGetDatum(plruby_trigger_handler((FunctionCallInfo)args));
+	retval = PointerGetDatum(plruby_trigger_handler((FunctionCallInfo)args));
     else
-	*retval = plruby_func_handler((FunctionCallInfo)args);
+	retval = plruby_func_handler((FunctionCallInfo)args);
 #else
     if (CurrentTriggerData == NULL)
-	*retval = plruby_func_handler((FmgrInfo *)args[0], 
+	retval = plruby_func_handler((FmgrInfo *)args[0], 
 				     (FmgrValues *)args[1],
 				     (bool *)args[2]);
     else
-	*retval = (Datum) plruby_trigger_handler((FmgrInfo *)args[0]);
+	retval = (Datum) plruby_trigger_handler((FmgrInfo *)args[0]);
 #endif
-    return res;
+    return Data_Wrap_Struct(rb_cObject, 0, 0, (void *)retval);
 }
 
 Datum
@@ -221,7 +219,7 @@ plruby_call_handler(FmgrInfo *proinfo,
 {
     VALUE *args, c;
     sigjmp_buf save_restart;
-    Datum *result;
+    Datum result;
     int state;
 
     if (plruby_firstcall)
@@ -268,8 +266,9 @@ plruby_call_handler(FmgrInfo *proinfo,
 	else
 	    rb_raise(pg_ePLruby, "%.*s", RSTRING(d)->len, RSTRING(d)->ptr);
     }
-    Data_Get_Struct(c, Datum, result);
-    return *result;
+    Check_Type(c, T_DATA);
+    result = (Datum)DATA_PTR(c);
+    return result;
 }
 
 static Datum

@@ -15,4 +15,7 @@
   
  adapted for 7.3b3
 
- 
+--- 0.2.9
+
+ adapted for 1.8.0
+ corrected stupid bug with GC 
