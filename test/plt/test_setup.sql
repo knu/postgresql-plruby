@@ -213,27 +213,17 @@ create function ruby_int4add(int4,int4) returns int4 as '
 ' language 'plruby';
 
 create function ruby_int4_accum(_int4, int4) returns _int4 as '
-    if /\\{(\\d+),(\\d+)\\}/ =~ args[0]
-        a, b = $1, $2
-        newsum = a.to_i + args[1].to_i
-        newcnt = b.to_i + 1
-    else
-        raise "unexpected value #{args[0]}"
-    end
-    "{#{newsum},#{newcnt}}"
+   a = args[0]
+   [a[0].to_i + args[1].to_i, a[1].to_i + 1]
 ' language 'plruby';
 
 create function ruby_int4_avg(_int4) returns int4 as '
-    if /\\{(\\d+),(\\d+)\\}/ =~ args[0]
-        a, b = $1, $2
-        if b.to_i == 0
-	    return nil
-        else
-            return a.to_i / b.to_i
-        end
-    else
-        raise "unexpected value #{args[0]}"
-    end
+   a = args[0]
+   if a[1].to_i == 0
+      nil
+   else
+      a[0].to_i / a[1].to_i
+   end
 ' language 'plruby';
 
 create aggregate ruby_avg (

@@ -1,6 +1,7 @@
 SELECT * FROM pg_settings WHERE name LIKE 'enable%';
        name       | setting 
 ------------------+---------
+ enable_hashagg   | on
  enable_hashjoin  | on
  enable_indexscan | on
  enable_mergejoin | on
@@ -8,7 +9,7 @@ SELECT * FROM pg_settings WHERE name LIKE 'enable%';
  enable_seqscan   | on
  enable_sort      | on
  enable_tidscan   | on
-(7 rows)
+(8 rows)
 
 CREATE TABLE foo2(fooid int, f2 int);
 INSERT INTO foo2 VALUES(1, 11);
@@ -18,7 +19,6 @@ CREATE FUNCTION foot(int) returns setof foo2 as '
 "SELECT * FROM foo2 WHERE fooid = #{args[0]}"' 
 LANGUAGE 'plruby';
 select * from foo2, foot(foo2.fooid) z where foo2.f2 = z.f2;
-NOTICE:  Adding missing FROM-clause entry for table "foo2"
 ERROR:  FROM function expression may not refer to other relations of same query level
 select * from foo2 where f2 in (
 	select f2 from foot(foo2.fooid) z where z.fooid = foo2.fooid

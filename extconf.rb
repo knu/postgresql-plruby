@@ -2,17 +2,14 @@
 ARGV.collect! {|x| x.sub(/^--with-pgsql-prefix=/, "--with-pgsql-dir=") }
 
 require 'mkmf'
+libs = if CONFIG.key?("LIBRUBYARG_STATIC")
+	  Config::expand(CONFIG["LIBRUBYARG_STATIC"].dup).sub(/^-l/, '')
+       else
+	  Config::expand(CONFIG["LIBRUBYARG"].dup).sub(/lib([^.]*).*/, '\\1')
+       end
 
-def resolve(key)
-   name = key.dup
-   true while name.gsub!(/\$\((\w+)\)/) { CONFIG[$1] }
-   name
-end
-
-if ! find_library(resolve(CONFIG["LIBRUBY"]).sub(/^lib(.*)\.\w+\z/, '\\1'), 
-		  "ruby_init", resolve(CONFIG["archdir"]))
-   raise "can't find -lruby"
-end
+unknown = find_library(libs, "ruby_init", 
+		       Config::expand(CONFIG["archdir"].dup))
 
 if srcdir = with_config("pgsql-srcinc-dir")
    $CFLAGS = "-I#{srcdir} "
