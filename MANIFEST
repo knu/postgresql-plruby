@@ -1,0 +1,16 @@
+MANIFEST
+README.en
+extconf.rb
+plruby.c
+plruby.html
+plruby.rd
+test/plt/runtest
+test/plt/test_queries.sql
+test/plt/b.rb
+test/plt/test_setup.sql
+test/plt/test.expected
+test/plp/b.rb
+test/plp/runtest
+test/plp/test_setup.sql
+test/plp/test_queries.sql
+test/plp/test.expected
