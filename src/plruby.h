@@ -195,27 +195,50 @@ struct PLportal {
 #define RET_DESC_ARR 12
 #define RET_BASIC    16
 
-static VALUE pl_i_each _((VALUE, struct portal_options *));
-static VALUE pl_build_tuple(HeapTuple, TupleDesc, int);
-static Datum return_base_type(VALUE, pl_proc_desc *);
-static VALUE pl_SPI_exec _((int, VALUE *, VALUE));
-static void pl_init_all(void);
-static void portal_free _((struct PLportal *));
+extern VALUE plruby_s_new _((int, VALUE *, VALUE));
+extern VALUE plruby_build_tuple _((HeapTuple, TupleDesc, int));
+extern Datum plruby_to_datum _((VALUE, FmgrInfo *, Oid, Oid, int));
+extern Datum plruby_return_value _((struct pl_thread_st *,  pl_proc_desc *,
+                                    VALUE, VALUE));
+extern VALUE plruby_create_args _((struct pl_thread_st *, pl_proc_desc *));
+extern VALUE plruby_i_each _((VALUE, struct portal_options *));
+extern void plruby_exec_output _((VALUE, int, int *));
+extern VALUE plruby_to_s _((VALUE));
+#if PG_PL_VERSION >= 74
+extern Datum plruby_return_array _((VALUE, pl_proc_desc *));
+#endif
+
+#if PG_PL_VERSION >= 73
+extern MemoryContext plruby_spi_context;
+#endif
+
+#ifdef PLRUBY_ENABLE_CONVERSION
+extern int plruby_fatal;
+#endif
 
 #ifdef NEW_STYLE_FUNCTION
-#if PG_PL_VERSION >= 71
-PG_FUNCTION_INFO_V1(PLRUBY_CALL_HANDLER);
-#else
-Datum PLRUBY_CALL_HANDLER(PG_FUNCTION_ARGS);
-#endif
-static Datum pl_func_handler(PG_FUNCTION_ARGS);
-static HeapTuple pl_trigger_handler(PG_FUNCTION_ARGS);
-#else
-Datum plruby_call_handler(FmgrInfo *, FmgrValues *, bool *);
 
-static Datum pl_func_handler(FmgrInfo *, FmgrValues *, bool *);
+#define DFC1(a_, b_) DirectFunctionCall1((a_), (b_))
 
-static HeapTuple pl_trigger_handler(FmgrInfo *);
+#else
+
+#define DFC1(a_, b_) ((a_)(b_))
+#define CALLED_AS_TRIGGER(x) (CurrentTriggerData != NULL)
+#define DatumGetCString(x_) (x_)
+
 #endif
 
+#ifndef BoolGetDatum
+#define BoolGetDatum(a_) (a_)
+#define DatumGetBool(a_) (a_)
+#endif
+
+#if PG_PL_VERSION < 71
+#define ReleaseSysCache(a_)
+#endif
+
+#if PG_PL_VERSION < 72
+#define SPI_freetuptable(a_) 
+#define SPI_freeplan(a_) 
+#endif
 

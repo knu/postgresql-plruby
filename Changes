@@ -70,3 +70,8 @@
  conversion plfunction ==> method (only with --enable-conversion)
  add network, geometry (experimental)
  corrected function returning table
+
+--- 0.4.0
+
+ --enable-shared
+ array for trigger

@@ -25,7 +25,7 @@
 
 extern VALUE plruby_to_s _((VALUE));
 extern VALUE plruby_s_new _((int, VALUE *, VALUE));
-#ifndef HAVE_RB_DEFINE_ALLOC_FUNC
+#ifndef HAVE_RB_INITIALIZE_COPY
 extern VALUE plruby_clone _((VALUE));
 #endif
 
@@ -2128,13 +2128,15 @@ void Init_plruby_geometry()
     rb_define_alloc_func(pl_cPoint, pl_point_s_alloc);
 #else
     rb_define_singleton_method(pl_cPoint, "allocate", pl_point_s_alloc, 0);
-    rb_define_method(pl_cPoint, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cPoint, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cPoint, "from_string", pl_point_s_str, 1);
     rb_define_singleton_method(pl_cPoint, "from_datum", pl_point_s_datum, 1);
     rb_define_method(pl_cPoint, "to_datum", pl_point_to_datum, 2);
     rb_define_method(pl_cPoint, "initialize", pl_point_init, 2);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cPoint, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cPoint, "initialize_copy", pl_point_init_copy, 1);
     rb_define_method(pl_cPoint, "x", pl_point_x, 0);
     rb_define_method(pl_cPoint, "x=", pl_point_setx, 1);
@@ -2164,13 +2166,15 @@ void Init_plruby_geometry()
     rb_define_alloc_func(pl_cLseg, pl_lseg_s_alloc);
 #else
     rb_define_singleton_method(pl_cLseg, "allocate", pl_lseg_s_alloc, 0);
-    rb_define_method(pl_cLseg, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cLseg, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cLseg, "from_string", pl_lseg_s_str, 1);
     rb_define_singleton_method(pl_cLseg, "from_datum", pl_lseg_s_datum, 2);
     rb_define_method(pl_cLseg, "to_datum", pl_lseg_to_datum, 2);
     rb_define_method(pl_cLseg, "initialize", pl_lseg_init, 2);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cLseg, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cLseg, "initialize_copy", pl_lseg_init_copy, 1);
     rb_define_method(pl_cLseg, "[]", pl_lseg_aref, 1);
     rb_define_method(pl_cLseg, "[]=", pl_lseg_aset, 2);
@@ -2193,13 +2197,15 @@ void Init_plruby_geometry()
     rb_define_alloc_func(pl_cBox, pl_box_s_alloc);
 #else
     rb_define_singleton_method(pl_cBox, "allocate", pl_box_s_alloc, 0);
-    rb_define_method(pl_cBox, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cBox, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cBox, "from_string", pl_box_s_str, 1);
     rb_define_singleton_method(pl_cBox, "from_datum", pl_box_s_datum, 2);
     rb_define_method(pl_cBox, "to_datum", pl_box_to_datum, 2);
     rb_define_method(pl_cBox, "initialize", pl_box_init, -1);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cBox, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cBox, "initialize_copy", pl_box_init_copy, 1);
     rb_define_method(pl_cBox, "low", pl_box_low, 0);
     rb_define_method(pl_cBox, "high", pl_box_high, 0);
@@ -2245,13 +2251,15 @@ void Init_plruby_geometry()
     rb_define_alloc_func(pl_cPath, pl_path_s_alloc);
 #else
     rb_define_singleton_method(pl_cPath, "allocate", pl_path_s_alloc, 0);
-    rb_define_method(pl_cPath, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cPath, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cPath, "from_string", pl_path_s_str, 1);
     rb_define_singleton_method(pl_cPath, "from_datum", pl_path_s_datum, 2);
     rb_define_method(pl_cPath, "to_datum", pl_path_to_datum, 2);
     rb_define_method(pl_cPath, "initialize", pl_path_init, -1);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cPath, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cPath, "initialize_copy", pl_path_init_copy, 1);
     rb_define_method(pl_cPath, "to_s", pl_path_to_s, 0);
     rb_define_method(pl_cPath, "<=>", pl_path_cmp, 1);
@@ -2273,13 +2281,15 @@ void Init_plruby_geometry()
     rb_define_alloc_func(pl_cPoly, pl_poly_s_alloc);
 #else
     rb_define_singleton_method(pl_cPoly, "allocate", pl_poly_s_alloc, 0);
-    rb_define_method(pl_cPoly, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cPoly, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cPoly, "from_string", pl_poly_s_str, 1);
     rb_define_singleton_method(pl_cPoly, "from_datum", pl_poly_s_datum, 2);
     rb_define_method(pl_cPoly, "to_datum", pl_poly_to_datum, 2);
     rb_define_method(pl_cPoly, "initialize", pl_poly_init, -1);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cPoly, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cPoly, "initialize_copy", pl_poly_init_copy, 1);
     rb_define_method(pl_cPoly, "to_s", pl_poly_to_s, 0);
     rb_define_method(pl_cPoly, "left?", pl_poly_left, 1);
@@ -2304,13 +2314,15 @@ void Init_plruby_geometry()
     rb_define_alloc_func(pl_cCircle, pl_circle_s_alloc);
 #else
     rb_define_singleton_method(pl_cCircle, "allocate", pl_circle_s_alloc, 0);
-    rb_define_method(pl_cCircle, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cCircle, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cCircle, "from_string", pl_circle_s_str, 1);
     rb_define_singleton_method(pl_cCircle, "from_datum", pl_circle_s_datum, 2);
     rb_define_method(pl_cCircle, "to_datum", pl_circle_to_datum, 2);
     rb_define_method(pl_cCircle, "initialize", pl_circle_init, 2);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cCircle, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cCircle, "initialize_copy", pl_circle_init_copy, 1);
     rb_define_method(pl_cCircle, "to_s", pl_circle_to_s, 0);
     rb_define_method(pl_cCircle, "left?", pl_circle_left, 1);

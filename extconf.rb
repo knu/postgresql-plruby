@@ -1,7 +1,8 @@
 #!/usr/bin/ruby
 ARGV.collect! {|x| 
-   x.sub(/\A--with-pgsql-prefix=/, "--with-pgsql-dir=") 
-   x.sub(/\A--enable-conversion\z/, "--enable-basic")
+   x = x.sub(/\A--with-pgsql-prefix=/, "--with-pgsql-dir=") 
+   x = x.sub(/\A--enable-conversion\z/, "--enable-basic")
+   x = x.sub(/\A--((?:en|dis)able)-shared\z/) { "--#$1-plruby-shared" }
 }
 
 orig_argv = ARGV.dup
@@ -79,7 +80,7 @@ unknown = find_library(libs, "ruby_init",
 		       Config::expand(CONFIG["archdir"].dup))
 
 if srcdir = with_config("pgsql-srcinc")
-   $CFLAGS = "-I#{srcdir} "
+   $CFLAGS += " -Wall -I#{srcdir} "
 end
 
 include_dir, = dir_config("pgsql", "/usr/local/pgsql/include", "/usr/local/pgsql/lib")
@@ -88,16 +89,22 @@ $CFLAGS += if File.exist?("#{include_dir}/server")
 	      " -I#{include_dir}/server"
 	   elsif File.exist?("#{include_dir}/postgresql/server")
               " -I#{include_dir}/postgresql/server"
+           else
+              ""
 	   end
 
 if safe = with_config("safe-level")
-    $CFLAGS += " -DSAFE_LEVEL=#{safe}"
+   safe = Integer(safe)
+   if safe < 0
+      raise "invalid value for safe #{safe}"
+   end
+   $CFLAGS += " -DSAFE_LEVEL=#{safe}"
 else
    safe = 12
 end
 
 if timeout = with_config("timeout")
-   timeout = timeout.to_i
+   timeout = Integer(timeout)
    if timeout < 2
       raise "Invalid value for timeout #{timeout}"
    end
@@ -154,6 +161,10 @@ unless version
    EOT
 end
 
+if "aa".respond_to?(:initialize_copy, true)
+   $CFLAGS += " -DHAVE_RB_INITIALIZE_COPY"
+end
+
 if version.to_i >= 74
    if !have_header("server/utils/array.h")
       if !have_header("utils/array.h")
@@ -195,7 +206,7 @@ suffix = with_config('suffix').to_s
 $CFLAGS += " -DPLRUBY_CALL_HANDLER=plruby#{suffix}_call_handler"
 
 if safe.to_i >= 3 
-   $objs = ["plruby.o"]
+   $objs = ["plruby.o", "plplan.o", "plpl.o"]
    subdirs.each do |key|
       Dir.foreach(key) do |f|
          next if /\.c\z/ !~ f
@@ -216,7 +227,11 @@ subdirs.unshift("src")
 
 begin
    Dir.chdir("src")
-   $objs = ["plruby.o"] unless $objs
+   if CONFIG["LIBRUBYARG"] == "$(LIBRUBYARG_SHARED)" && 
+         !enable_config("plruby-shared")
+      $LIBRUBYARG = ""
+   end
+   $objs = ["plruby.o", "plplan.o", "plpl.o"] unless $objs
    create_makefile("plruby#{suffix}")
    version.sub!(/\.\d/, '')
 ensure

@@ -20,7 +20,7 @@
 
 extern VALUE plruby_to_s _((VALUE));
 extern VALUE plruby_s_new _((int, VALUE *, VALUE));
-#ifndef HAVE_RB_DEFINE_ALLOC_FUNC
+#ifndef HAVE_RB_INITIALIZE_COPY
 extern VALUE plruby_clone _((VALUE));
 #endif
 
@@ -389,13 +389,15 @@ void Init_plruby_network()
     rb_define_alloc_func(pl_cInet, pl_inet_s_alloc);
 #else
     rb_define_singleton_method(pl_cInet, "allocate", pl_inet_s_alloc, 0);
-    rb_define_method(pl_cInet, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cInet, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cInet, "from_string", plruby_s_new, -1);
     rb_define_singleton_method(pl_cInet, "from_datum", pl_inet_s_datum, 2);
     rb_define_method(pl_cInet, "to_datum", pl_inet_to_datum, 2);
     rb_define_method(pl_cInet, "initialize", pl_inet_init, -1);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cInet, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cInet, "initialize_copy", pl_inet_init_copy, 1);
     rb_define_method(pl_cInet, "<=>", pl_inet_cmp, 1);
     rb_define_method(pl_cInet, "contained?", pl_inet_contained, 1);
@@ -424,13 +426,15 @@ void Init_plruby_network()
     rb_define_alloc_func(pl_cMac, pl_mac_s_alloc);
 #else
     rb_define_singleton_method(pl_cMac, "allocate", pl_mac_s_alloc, 0);
-    rb_define_method(pl_cMac, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cMac, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cMac, "from_string", plruby_s_new, -1);
     rb_define_singleton_method(pl_cMac, "from_datum", pl_mac_s_datum, 2);
     rb_define_method(pl_cMac, "to_datum", pl_mac_to_datum, 2);
     rb_define_method(pl_cMac, "initialize", pl_mac_init, 1);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cMac, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cMac, "initialize_copy", pl_mac_init_copy, 1);
     rb_define_method(pl_cMac, "<=>", pl_mac_cmp, 1);
     rb_define_method(pl_cMac, "to_s", pl_mac_to_s, 0);

@@ -15,7 +15,7 @@
 #define DFC1(a, b) DirectFunctionCall1((a), (b))
 
 extern VALUE plruby_s_new _((int, VALUE *, VALUE));
-#ifndef HAVE_RB_DEFINE_ALLOC_FUNC
+#ifndef HAVE_RB_INITIALIZE_COPY
 extern VALUE plruby_clone _((VALUE));
 #endif
 
@@ -376,12 +376,14 @@ void Init_plruby_basic()
     rb_define_alloc_func(pl_cTinter, pl_tint_s_alloc);
 #else
     rb_define_singleton_method(pl_cTinter, "allocate", pl_tint_s_alloc, 0);
-    rb_define_method(pl_cTinter, "clone", plruby_clone, 0);
 #endif
     rb_define_singleton_method(pl_cTinter, "new", plruby_s_new, -1);
     rb_define_singleton_method(pl_cTinter, "from_string", pl_tint_s_from_string, 1);
     rb_define_singleton_method(pl_cTinter, "from_datum", pl_tint_s_datum, 2);
     rb_define_method(pl_cTinter, "initialize", pl_tint_init, 2);
+#ifndef HAVE_RB_INITIALIZE_COPY
+    rb_define_method(pl_cTinter, "clone", plruby_clone, 0);
+#endif
     rb_define_method(pl_cTinter, "initialize_copy", pl_tint_init_copy, 1);
     rb_define_method(pl_cTinter, "low", pl_tint_low, 0);
     rb_define_method(pl_cTinter, "low=", pl_tint_lowset, 1);
