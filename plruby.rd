@@ -262,8 +262,8 @@ The previous example can be written (you have a more complete example in ???)
  string given to spi_exec or spi_prepare (not for the value list on
  execp).
 
-:exec(string [, count])
-:spi_exec(string [, count])
+:exec(string [, count [, type]])
+:spi_exec(string [, count [, type]])
  Call parser/planner/optimizer/executor for query. The optional
  ((%count%)) value tells spi_exec the maximum number of rows to be
  processed by the query.
@@ -286,6 +286,58 @@ The previous example can be written (you have a more complete example in ???)
       end
       return res.size
       ' LANGUAGE 'plruby';
+
+    if type is specified it can take the value
+      * "array" return an array with the element ["name", "value", "type", "len", "typeid"]
+      *  "hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}
+
+      Example :
+
+      create table T_pkey1 (
+          skey1        int4,
+          skey2        varchar(20),
+          stxt         varchar(40)
+      );
+        
+      create function toto() returns bool as '
+             warn("=======")
+             PLruby.exec("select * from T_pkey1", 1, "hash") do |a|
+                warn(a.inspect)
+             end
+             warn("=======")
+             PLruby.exec("select * from T_pkey1", 1, "array") do |a|
+                warn(a.inspect)
+             end
+             warn("=======")
+             PLruby.exec("select * from T_pkey1", 1) do |a|
+                warn(a.inspect)
+             end
+             warn("=======")
+             return true
+      ' language 'plruby';
+
+        
+      plruby_test=# select toto();
+      NOTICE:  =======
+      NOTICE:  {"name"=>"skey1", "typeid"=>23, "type"=>"int4", "value"=>"12", "len"=>4}
+      NOTICE:  {"name"=>"skey2", "typeid"=>1043, "type"=>"varchar", "value"=>"a", "len"=>20}
+      NOTICE:  {"name"=>"stxt", "typeid"=>1043, "type"=>"varchar", "value"=>"b", "len"=>40}
+      NOTICE:  =======
+      NOTICE:  ["skey1", "12", "int4", 4, 23]
+      NOTICE:  ["skey2", "a", "varchar", 20, 1043]
+      NOTICE:  ["stxt", "b", "varchar", 40, 1043]
+      NOTICE:  =======
+      NOTICE:  ["skey1", "12"]
+      NOTICE:  ["skey2", "a"]
+      NOTICE:  ["stxt", "b"]
+      NOTICE:  =======
+       toto 
+      ------
+       t
+      (1 row)
+        
+      plruby_test=# 
+
 
     A block can be specified, in this case a call to yield() will be
     made.
@@ -321,8 +373,11 @@ The previous example can be written (you have a more complete example in ???)
 
 === class PLrubyplan
 
-:exec(values, [count])
-:execp(values, [count])
+:exec(values, [count [, type]])
+:execp(values, [count [, type]])
+:exec("values" => values, "count" => count, "output" => type)
+:execp("values" => values, "count" => count, "output" => type)
+
  Execute a prepared plan from ((%PLruby#prepare%)) with variable
  substitution. The optional ((%count%)) value tells
  ((%PLrubyplan#exec%)) the maximum number of rows to be processed by the
@@ -337,6 +392,10 @@ The previous example can be written (you have a more complete example in ???)
  ((%PLruby#exec%)) happens for the loop-body and the variables for
  the fields selected.
 
+ If type is specified it can take the values
+   * "array" return an array with the element ["name", "value", "type", "len", "typeid"]
+   *  "hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}
+
  Here's an example for a PL/Ruby function using a prepared plan : 
 
     CREATE FUNCTION t1_count(int4, int4) RETURNS int4 AS '
@@ -350,4 +409,51 @@ The previous example can be written (you have a more complete example in ???)
         n["cnt"]
     ' LANGUAGE 'plruby';
  
+:each(values, [count [, type ]]) { ... }
+:fetch(values, [count [, type ]]) { ... }
+:each("values" => values, "count" => count, "output" => type) { ... }
+:fetch("values" => values, "count" => count, "output" => type) { ... }
+
+ Same then #exec but a call to SPI_cursor_open(), SPI_cursor_fetch() is made.
+
+ Can be used only with a block and a SELECT statement
+
+    create function toto() returns bool as '
+           plan = PLruby.prepare("select * from T_pkey1")
+           warn "=====> ALL"
+           plan.each do |x|
+              warn(x.inspect)
+           end
+           warn "=====> FIRST 2"
+           plan.each("count" => 2) do |x|
+              warn(x.inspect)
+           end
+           return true
+    ' language 'plruby';
+    
+    plruby_test=# select * from T_pkey1;
+     skey1 | skey2 | stxt 
+    -------+-------+------
+        12 | a     | b
+        24 | c     | d
+        36 | e     | f
+    (3 rows)
+    
+    plruby_test=# 
+    plruby_test=# select toto();
+    NOTICE:  =====> ALL
+    NOTICE:  {"skey1"=>"12", "skey2"=>"a", "stxt"=>"b"}
+    NOTICE:  {"skey1"=>"24", "skey2"=>"c", "stxt"=>"d"}
+    NOTICE:  {"skey1"=>"36", "skey2"=>"e", "stxt"=>"f"}
+    NOTICE:  =====> FIRST 2
+    NOTICE:  {"skey1"=>"12", "skey2"=>"a", "stxt"=>"b"}
+    NOTICE:  {"skey1"=>"24", "skey2"=>"c", "stxt"=>"d"}
+     toto 
+    ------
+     t
+    (1 row)
+    
+    plruby_test=# 
+ 
+
 =end

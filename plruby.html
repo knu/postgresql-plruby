@@ -1,182 +1,147 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
-<HTML>
-<HEAD><TITLE>plruby.rd</TITLE>
-</HEAD>
-<BODY>
-<H1><A NAME="label:0">PL/Ruby</A></H1>
-<UL>
-<LI><P>
-<A HREF="#label:2">Defining function in PL/Ruby</A>
-</P>
-<LI><P>
-<A HREF="#label:3">Trigger procedures in PL/Ruby</A>
-</P>
-<LI><P>
-<A HREF="#label:4">plruby_singleton_methods</A>
-</P>
-<LI><P>
-<A HREF="#label:5">Class and modules</A>
-</P>
-</UL>
-<P>
-PL/Ruby is a loadable procedural language for the Postgres database
+<?xml version="1.0" ?>
+<!DOCTYPE html 
+  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>plruby.rd</title>
+</head>
+<body>
+<h1><a name="label:0" id="label:0">PL/Ruby</a></h1><!-- RDLabel: "PL/Ruby" -->
+<ul>
+<li><a href="Defining function in PL">Ruby</a></li>
+<li><a href="Trigger procedures in PL">Ruby</a></li>
+<li><a href="#label:15">plruby_singleton_methods</a></li>
+<li><a href="#label:16">Class and modules</a></li>
+</ul>
+<p>PL/Ruby is a loadable procedural language for the Postgres database
 system  that enable the Ruby language to create functions and trigger
-procedures
-</P>
-<P>
-Functions and triggers are singleton methods of the module PLtemp.
-</P>
-<H1><A NAME="label:1">WARNING</A></H1>
-<P>
-<EM>All arguments (to the function or the triggers) are passed as string 
-values, except for NULL values represented by <KBD>Qnil</KBD>.</EM>
-<EM>You must explicitely call a conversion function (like to_i) if you want 
-to use an argument as an integer</EM>
-</P>
-<H2><A NAME="label:2">Defining function in PL/Ruby</A></H2>
-<P>
-To create a function in the PL/Ruby language use the syntax
-</P>
-<BLOCKQUOTE><PRE>
-CREATE FUNCTION funcname(arguments_type) RETURNS type AS '
+procedures</p>
+<p>Functions and triggers are singleton methods of the module PLtemp.</p>
+<h1><a name="label:1" id="label:1">WARNING</a></h1><!-- RDLabel: "WARNING" -->
+<p><em>All arguments (to the function or the triggers) are passed as string 
+values, except for NULL values represented by <kbd>Qnil</kbd>.</em>
+<em>You must explicitely call a conversion function (like to_i) if you want 
+to use an argument as an integer</em></p>
+<h2><a name="label:2" id="label:2">Defining function in PL/Ruby</a></h2><!-- RDLabel: "Defining function in PL/Ruby" -->
+<p>To create a function in the PL/Ruby language use the syntax</p>
+<pre>CREATE FUNCTION funcname(arguments_type) RETURNS type AS '
 
  # PL/Ruby function body
 
-' LANGUAGE 'plruby';
-
-</PRE></BLOCKQUOTE>
-<P>
-when calling the function in a query, the arguments are given <EM>as
-string values</EM> in the array <KBD>args</KBD>. To create a little max
-function returning the higher of two int4 values write :
-</P>
-<BLOCKQUOTE><PRE>
-CREATE FUNCTION ruby_max(int4, int4) RETURNS int4 AS '
+' LANGUAGE 'plruby';</pre>
+<p>when calling the function in a query, the arguments are given <em>as
+string values</em> in the array <kbd>args</kbd>. To create a little max
+function returning the higher of two int4 values write :</p>
+<pre>CREATE FUNCTION ruby_max(int4, int4) RETURNS int4 AS '
     if args[0].to_i &gt; args[1].to_i
         return args[0]
     else
         return args[1]
     end
-' LANGUAGE 'plruby';
-
-
-</PRE></BLOCKQUOTE>
-<P>
-Tuple arguments are given as hash. Here is an example that defines
+' LANGUAGE 'plruby';</pre>
+<p>Tuple arguments are given as hash. Here is an example that defines
 the overpaid_2 function (as found in the older Postgres documentation)
-in PL/Ruby.
-</P>
-<BLOCKQUOTE><PRE>
-CREATE FUNCTION overpaid_2 (EMP) RETURNS bool AS '
+in PL/Ruby.</p>
+<pre>CREATE FUNCTION overpaid_2 (EMP) RETURNS bool AS '
     args[0]["salary"].to_f &gt; 200000 || 
        (args[0]["salary"].to_f &gt; 100000 &amp;&amp; args[0]["age"].to_i &lt; 30)
-' LANGUAGE 'plruby';
-
-
-</PRE></BLOCKQUOTE>
-<H2><A NAME="label:3">Trigger procedures in PL/Ruby</A></H2>
-<P>
-Trigger procedures are defined in Postgres as functions without
+' LANGUAGE 'plruby';</pre>
+<h2><a name="label:3" id="label:3">Trigger procedures in PL/Ruby</a></h2><!-- RDLabel: "Trigger procedures in PL/Ruby" -->
+<p>Trigger procedures are defined in Postgres as functions without
 arguments and a return type of opaque. In PL/Ruby the procedure is
-called with 4 arguments :
-</P>
-<DL>
-<DT><A NAME="label:9">new (hash, tainted)</A>
-<DD>
-<P>
-an hash containing the values of the new table row on INSERT/UPDATE
-actions, or empty on DELETE. 
-</P>
-</DD>
-<DT><A NAME="label:10">old (hash, tainted)</A>
-<DD>
-<P>
-an hash containing the values of the old table row on UPDATE/DELETE
-actions, or empty on INSERT 
-</P>
-</DD>
-<DT><A NAME="label:11">args (array, tainted, frozen)</A>
-<DD>
-<P>
-An array of the arguments to the procedure as given in the CREATE
-TRIGGER statement 
-</P>
-</DD>
-<DT><A NAME="label:12">tg (hash, tainted, frozen)</A>
-<DD>
-<P>
-The following keys are defined
-</P>
-
-<DL>
-<DT><A NAME="label:13">name</A>
-<DD>
-<P>
-The name of the trigger from the CREATE TRIGGER statement.
-</P>
-</DD>
-<DT><A NAME="label:14">relname</A>
-<DD>
-<P>
-The name of the relation who has fired the trigger
-</P>
-</DD>
-<DT><A NAME="label:15">relid</A>
-<DD>
-<P>
-The object ID of the table that caused the trigger procedure to be invoked.
-</P>
-</DD>
-<DT><A NAME="label:16">relatts</A>
-<DD>
-<P>
-An array containing the name of the tables field.
-</P>
-</DD>
-<DT><A NAME="label:17">when</A>
-<DD>
-<P>
-The constant <KBD>PLruby::BEFORE</KBD>, <KBD>PLruby::AFTER</KBD> or
-<KBD>PLruby::UNKNOWN</KBD> depending on the event of the trigger call.
-</P>
-</DD>
-<DT><A NAME="label:18">level</A>
-<DD>
-<P>
-The constant <KBD>PLruby::ROW</KBD> or <KBD>PLruby::STATEMENT</KBD>
-depending on the event of the trigger call.
-</P>
-</DD>
-<DT><A NAME="label:19">op</A>
-<DD>
-<P>
-The constant <KBD>PLruby::INSERT</KBD>, <KBD>PLruby::UPDATE</KBD> or 
-<KBD>PLruby::DELETE</KBD> depending on the event of the trigger call.
-</P>
-</DD>
-</DL>
-</DD>
-</DL>
-<P>
-The return value from a trigger procedure is one of the constant
-<KBD>PLruby::OK</KBD> or <KBD>PLruby::SKIP</KBD>, or an hash. If the
-return value is <KBD>PLruby::OK</KBD>, the normal operation
+called with 4 arguments :</p>
+<dl>
+<dt><a name="label:4" id="label:4">new (hash, tainted)
+</a></dt><!-- RDLabel: "new (hash, tainted)
+" -->
+<dd>
+<p>an hash containing the values of the new table row on INSERT/UPDATE
+actions, or empty on DELETE. </p>
+</dd>
+<dt><a name="label:5" id="label:5">old (hash, tainted)
+</a></dt><!-- RDLabel: "old (hash, tainted)
+" -->
+<dd>
+<p>an hash containing the values of the old table row on UPDATE/DELETE
+actions, or empty on INSERT </p>
+</dd>
+<dt><a name="label:6" id="label:6">args (array, tainted, frozen)
+</a></dt><!-- RDLabel: "args (array, tainted, frozen)
+" -->
+<dd>
+<p>An array of the arguments to the procedure as given in the CREATE
+TRIGGER statement </p>
+</dd>
+<dt><a name="label:7" id="label:7">tg (hash, tainted, frozen)
+</a></dt><!-- RDLabel: "tg (hash, tainted, frozen)
+" -->
+<dd>
+<p>The following keys are defined</p>
+<dl>
+<dt><a name="label:8" id="label:8">name
+</a></dt><!-- RDLabel: "name
+" -->
+<dd>
+<p>The name of the trigger from the CREATE TRIGGER statement.</p>
+</dd>
+<dt><a name="label:9" id="label:9">relname
+</a></dt><!-- RDLabel: "relname
+" -->
+<dd>
+<p>The name of the relation who has fired the trigger</p>
+</dd>
+<dt><a name="label:10" id="label:10">relid
+</a></dt><!-- RDLabel: "relid
+" -->
+<dd>
+<p>The object ID of the table that caused the trigger procedure to be invoked.</p>
+</dd>
+<dt><a name="label:11" id="label:11">relatts
+</a></dt><!-- RDLabel: "relatts
+" -->
+<dd>
+<p>An array containing the name of the tables field.</p>
+</dd>
+<dt><a name="label:12" id="label:12">when
+</a></dt><!-- RDLabel: "when
+" -->
+<dd>
+<p>The constant <kbd>PLruby::BEFORE</kbd>, <kbd>PLruby::AFTER</kbd> or
+<kbd>PLruby::UNKNOWN</kbd> depending on the event of the trigger call.</p>
+</dd>
+<dt><a name="label:13" id="label:13">level
+</a></dt><!-- RDLabel: "level
+" -->
+<dd>
+<p>The constant <kbd>PLruby::ROW</kbd> or <kbd>PLruby::STATEMENT</kbd>
+depending on the event of the trigger call.</p>
+</dd>
+<dt><a name="label:14" id="label:14">op
+</a></dt><!-- RDLabel: "op
+" -->
+<dd>
+<p>The constant <kbd>PLruby::INSERT</kbd>, <kbd>PLruby::UPDATE</kbd> or 
+<kbd>PLruby::DELETE</kbd> depending on the event of the trigger call.</p>
+</dd>
+</dl>
+</dd>
+</dl>
+<p>The return value from a trigger procedure is one of the constant
+<kbd>PLruby::OK</kbd> or <kbd>PLruby::SKIP</kbd>, or an hash. If the
+return value is <kbd>PLruby::OK</kbd>, the normal operation
 (INSERT/UPDATE/DELETE) that fired this trigger will take
-place. Obviously, <KBD>PLruby::SKIP</KBD> tells the trigger manager to
+place. Obviously, <kbd>PLruby::SKIP</kbd> tells the trigger manager to
 silently suppress the operation. The hash tells
 PL/Ruby to return a modified row to the trigger manager that will be
-inserted instead of the one given in <KBD>new</KBD> (INSERT/UPDATE
+inserted instead of the one given in <kbd>new</kbd> (INSERT/UPDATE
 only). Needless to say that all this is only meaningful when the
-trigger is BEFORE and FOR EACH ROW.
-</P>
-<P>
-Here's a little example trigger procedure that forces an integer
+trigger is BEFORE and FOR EACH ROW.</p>
+<p>Here's a little example trigger procedure that forces an integer
 value in a table to keep track of the # of updates that are performed
 on the row. For new row's inserted, the value is initialized to 0 and
-then incremented on every update operation :
-</P>
-<BLOCKQUOTE><PRE>
-CREATE FUNCTION trigfunc_modcount() RETURNS OPAQUE AS '
+then incremented on every update operation :</p>
+<pre>CREATE FUNCTION trigfunc_modcount() RETURNS OPAQUE AS '
     case tg["op"]
     when PLruby::INSERT
         new[args[0]] = 0
@@ -191,18 +156,11 @@ CREATE FUNCTION trigfunc_modcount() RETURNS OPAQUE AS '
 CREATE TABLE mytab (num int4, modcnt int4, descr text);
 
 CREATE TRIGGER trig_mytab_modcount BEFORE INSERT OR UPDATE ON mytab
-    FOR EACH ROW EXECUTE PROCEDURE trigfunc_modcount('modcnt');
-
-
-
-</PRE></BLOCKQUOTE>
-<P>
-A more complex example (extract from test_setup.sql in the distribution)
-which use the global variable <KBD>$Plans</KBD> to store a prepared
-plan
-</P>
-<BLOCKQUOTE><PRE>
-create function trig_pkey2_after() returns opaque as '
+    FOR EACH ROW EXECUTE PROCEDURE trigfunc_modcount('modcnt');</pre>
+<p>A more complex example (extract from test_setup.sql in the distribution)
+which use the global variable <kbd>$Plans</kbd> to store a prepared
+plan</p>
+<pre>create function trig_pkey2_after() returns opaque as '
    if ! $Plans.key?("plan_dta2_upd")
        $Plans["plan_dta2_upd"] = 
             PLruby.prepare("update T_dta2 
@@ -243,32 +201,18 @@ new["key2"]])
 
 create trigger pkey2_after after update or delete on T_pkey2
  for each row execute procedure
- trig_pkey2_after();
-
-
-</PRE></BLOCKQUOTE>
-<H2><A NAME="label:4">plruby_singleton_methods</A></H2>
-<P>
-Sometime it can be usefull to define methods (in pure Ruby) which can be
-called from a PL/Ruby function or a PL/Ruby trigger.
-</P>
-<P>
-In this case, you have 2 possibilities
-</P>
-<UL>
-<LI><P>
-the "stupid" way <CODE>:-) :-) :-)</CODE>
-</P>
-</UL>
-<P>
-just close the current definition of the function (or trigger) with a
-<CODE>end</CODE> and define your singleton method without the final <CODE>end</CODE>
-</P>
-<P>
-Here a small and useless example
-</P>
-<BLOCKQUOTE><PRE>
-toto=&gt; CREATE FUNCTION tutu() RETURNS int4 AS '
+ trig_pkey2_after();</pre>
+<h2><a name="label:15" id="label:15">plruby_singleton_methods</a></h2><!-- RDLabel: "plruby_singleton_methods" -->
+<p>Sometime it can be usefull to define methods (in pure Ruby) which can be
+called from a PL/Ruby function or a PL/Ruby trigger.</p>
+<p>In this case, you have 2 possibilities</p>
+<ul>
+<li>the "stupid" way <code>:-) :-) :-)</code></li>
+</ul>
+<p>just close the current definition of the function (or trigger) with a
+<code>end</code> and define your singleton method without the final <code>end</code></p>
+<p>Here a small and useless example</p>
+<pre>toto=&gt; CREATE FUNCTION tutu() RETURNS int4 AS '
 toto'&gt;     toto(1, 3) + toto(4, 4)
 toto'&gt; end
 toto'&gt; 
@@ -282,30 +226,17 @@ tutu
   12
 (1 row)
 
-toto=&gt;
-
-
-</PRE></BLOCKQUOTE>
-<UL>
-<LI><P>
-create a table plruby_singleton_methods with the columns (name, args, body)
-</P>
-</UL>
-<P>
-At load time, PL/Ruby look if it exist a table plruby_singleton_methods and if
-found try, for each row, to define singleton methods with the template :
-</P>
-<BLOCKQUOTE><PRE>
-def PLtemp.#{name} (#{args})
+toto=&gt;</pre>
+<ul>
+<li>create a table plruby_singleton_methods with the columns (name, args, body)</li>
+</ul>
+<p>At load time, PL/Ruby look if it exist a table plruby_singleton_methods and if
+found try, for each row, to define singleton methods with the template :</p>
+<pre>def PLtemp.#{name} (#{args})
     #{body}
-end
-
-</PRE></BLOCKQUOTE>
-<P>
-The previous example can be written (you have a more complete example in ???)
-</P>
-<BLOCKQUOTE><PRE>
-toto=&gt; SELECT * FROM plruby_singleton_methods;
+end</pre>
+<p>The previous example can be written (you have a more complete example in ???)</p>
+<pre>toto=&gt; SELECT * FROM plruby_singleton_methods;
 name|args|body 
 ----+----+-----
 toto|a, b|a + b
@@ -321,66 +252,56 @@ tutu
   12
 (1 row)
 
-toto=&gt;
-
-
-</PRE></BLOCKQUOTE>
-<H2><A NAME="label:5">Class and modules</A></H2>
-<H3><A NAME="label:6">Global</A></H3>
-<DL>
-<DT><A NAME="label:20">warn [level], message</A>
-<DD>
-<P>
-Ruby interface to PostgreSQL elog()
-</P>
-
-<P>
-Possible value for <KBD>level</KBD> are <KBD>NOTICE</KBD>, <KBD>DEBUG</KBD> and <KBD>NOIND</KBD>
-</P>
-
-<P>
-Use <KBD>raise()</KBD> if you want to simulate <KBD>elog(ERROR, "...")</KBD>
-</P>
-</DD>
-<DT><A NAME="label:21">$Plans (hash, tainted)</A>
-<DD>
-<P>
-can be used to store prepared plans.
-</P>
-</DD>
-</DL>
-<H3><A NAME="label:7">module PLruby</A></H3>
-<DL>
-<DT><A NAME="label:22">quote string</A>
-<DD>
-<P>
-Duplicates all occurences of single quote and backslash
+toto=&gt;</pre>
+<h2><a name="label:16" id="label:16">Class and modules</a></h2><!-- RDLabel: "Class and modules" -->
+<h3><a name="label:17" id="label:17">Global</a></h3><!-- RDLabel: "Global" -->
+<dl>
+<dt><a name="label:18" id="label:18">warn [level], message
+</a></dt><!-- RDLabel: "warn [level], message
+" -->
+<dd>
+<p>Ruby interface to PostgreSQL elog()</p>
+<p>Possible value for <kbd>level</kbd> are <kbd>NOTICE</kbd>, <kbd>DEBUG</kbd> and <kbd>NOIND</kbd></p>
+<p>Use <kbd>raise()</kbd> if you want to simulate <kbd>elog(ERROR, "...")</kbd></p>
+</dd>
+<dt><a name="label:19" id="label:19">$Plans (hash, tainted)
+</a></dt><!-- RDLabel: "$Plans (hash, tainted)
+" -->
+<dd>
+<p>can be used to store prepared plans.</p>
+</dd>
+</dl>
+<h3><a name="label:20" id="label:20">module PLruby</a></h3><!-- RDLabel: "module PLruby" -->
+<dl>
+<dt><a name="label:21" id="label:21">quote string
+</a></dt><!-- RDLabel: "quote string
+" -->
+<dd>
+<p>Duplicates all occurences of single quote and backslash
 characters. It should be used when variables are used in the query
 string given to spi_exec or spi_prepare (not for the value list on
-execp).
-</P>
-</DD>
-<DT><A NAME="label:23">exec(string [, count])</A>
-<DT><A NAME="label:24">spi_exec(string [, count])</A>
-<DD>
-<P>
-Call parser/planner/optimizer/executor for query. The optional
-<KBD>count</KBD> value tells spi_exec the maximum number of rows to be
-processed by the query.
-</P>
-
-<DL>
-<DT><A NAME="label:27">SELECT</A>
-<DD>
-<P>
-If the query is a SELECT statement, an array is return (if count is
+execp).</p>
+</dd>
+<dt><a name="label:22" id="label:22">exec(string [, count [, type]])
+</a></dt><!-- RDLabel: "exec(string [, count [, type]])
+" -->
+<dt><a name="label:23" id="label:23">spi_exec(string [, count [, type]])
+</a></dt><!-- RDLabel: "spi_exec(string [, count [, type]])
+" -->
+<dd>
+<p>Call parser/planner/optimizer/executor for query. The optional
+<kbd>count</kbd> value tells spi_exec the maximum number of rows to be
+processed by the query.</p>
+<dl>
+<dt><a name="label:24" id="label:24">SELECT
+</a></dt><!-- RDLabel: "SELECT
+" -->
+<dd>
+<p>If the query is a SELECT statement, an array is return (if count is
 not specified or with a value &gt; 1). Each element of this array is an
 hash where the key is the column name.  For example this procedure
-display all rows in the table pg_table.
-</P>
-
-<BLOCKQUOTE><PRE>
-CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
+display all rows in the table pg_table.</p>
+<pre>CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
 res = PLruby.exec("select * from pg_class")
 res.each do |x|
     warn "======================"
@@ -390,93 +311,133 @@ res.each do |x|
     warn "======================"
 end
 return res.size
-' LANGUAGE 'plruby';
+' LANGUAGE 'plruby';</pre>
+<p>if type is specified it can take the value</p>
+<ul>
+<li>"array" return an array with the element ["name", "value", "type", "len", "typeid"]</li>
+<li>"hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}</li>
+</ul>
+<pre>Example :
 
-</PRE></BLOCKQUOTE>
+create table T_pkey1 (
+    skey1        int4,
+    skey2        varchar(20),
+    stxt         varchar(40)
+);
 
-<P>
-A block can be specified, in this case a call to yield() will be
-made.
-</P>
+create function toto() returns bool as '
+       warn("=======")
+       PLruby.exec("select * from T_pkey1", 1, "hash") do |a|
+          warn(a.inspect)
+       end
+       warn("=======")
+       PLruby.exec("select * from T_pkey1", 1, "array") do |a|
+          warn(a.inspect)
+       end
+       warn("=======")
+       PLruby.exec("select * from T_pkey1", 1) do |a|
+          warn(a.inspect)
+       end
+       warn("=======")
+       return true
+' language 'plruby';
 
-<P>
-If count is specified with the value 1, only the first row (or
-FALSE if it fail) is returned as a hash. Here a little example :
-</P>
 
-<BLOCKQUOTE><PRE>
-CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
+plruby_test=# select toto();
+NOTICE:  =======
+NOTICE:  {"name"=&gt;"skey1", "typeid"=&gt;23, "type"=&gt;"int4", "value"=&gt;"12", "len"=&gt;4}
+NOTICE:  {"name"=&gt;"skey2", "typeid"=&gt;1043, "type"=&gt;"varchar", "value"=&gt;"a", "len"=&gt;20}
+NOTICE:  {"name"=&gt;"stxt", "typeid"=&gt;1043, "type"=&gt;"varchar", "value"=&gt;"b", "len"=&gt;40}
+NOTICE:  =======
+NOTICE:  ["skey1", "12", "int4", 4, 23]
+NOTICE:  ["skey2", "a", "varchar", 20, 1043]
+NOTICE:  ["stxt", "b", "varchar", 40, 1043]
+NOTICE:  =======
+NOTICE:  ["skey1", "12"]
+NOTICE:  ["skey2", "a"]
+NOTICE:  ["stxt", "b"]
+NOTICE:  =======
+ toto 
+------
+ t
+(1 row)
+
+plruby_test=# </pre>
+<p>A block can be specified, in this case a call to yield() will be
+made.</p>
+<p>If count is specified with the value 1, only the first row (or
+FALSE if it fail) is returned as a hash. Here a little example :</p>
+<pre>CREATE FUNCTION pg_table_dis() RETURNS int4 AS '
    PLruby.exec("select * from pg_class", 1) { |y, z|
       warn "name = #{y} -- value = #{z}"
   }
   return 1
-' LANGUAGE 'plruby';
-
-</PRE></BLOCKQUOTE>
-</DD>
-<DT><A NAME="label:28">SELECT INTO, INSERT, UPDATE, DELETE</A>
-<DD>
-<P>
-return the number of rows insered, updated, deleted, ...
-</P>
-</DD>
-<DT><A NAME="label:29">UTILITY</A>
-<DD>
-<P>
-return TRUE
-</P>
-</DD>
-</DL>
-</DD>
-<DT><A NAME="label:25">prepare(string, [array])</A>
-<DT><A NAME="label:26">spi_prepare(string, [array])</A>
-<DD>
-<P>
-Prepares AND SAVES a query plan for later execution. It is a bit
+' LANGUAGE 'plruby';</pre>
+</dd>
+<dt><a name="label:25" id="label:25">SELECT INTO, INSERT, UPDATE, DELETE
+</a></dt><!-- RDLabel: "SELECT INTO, INSERT, UPDATE, DELETE
+" -->
+<dd>
+<p>return the number of rows insered, updated, deleted, ...</p>
+</dd>
+<dt><a name="label:26" id="label:26">UTILITY
+</a></dt><!-- RDLabel: "UTILITY
+" -->
+<dd>
+<p>return TRUE</p>
+</dd>
+</dl>
+</dd>
+<dt><a name="label:27" id="label:27">prepare(string, [array])
+</a></dt><!-- RDLabel: "prepare(string, [array])
+" -->
+<dt><a name="label:28" id="label:28">spi_prepare(string, [array])
+</a></dt><!-- RDLabel: "spi_prepare(string, [array])
+" -->
+<dd>
+<p>Prepares AND SAVES a query plan for later execution. It is a bit
 different from the C level SPI_prepare in that the plan is
 automatically copied to the toplevel memory context. Thus, there is
-currently no way of preparing a plan without saving it.
-</P>
-
-<P>
-If the query references arguments, the type names must be given as a
+currently no way of preparing a plan without saving it.</p>
+<p>If the query references arguments, the type names must be given as a
 Ruby array of strings. The return value from prepare is a
-<KBD>PLrubyplan</KBD> object to be used in subsequent calls to
-<KBD>PLrubyplan#exec</KBD>.
-</P>
-</DD>
-</DL>
-<H3><A NAME="label:8">class PLrubyplan</A></H3>
-<DL>
-<DT><A NAME="label:30">exec(values, [count])</A>
-<DT><A NAME="label:31">execp(values, [count])</A>
-<DD>
-<P>
-Execute a prepared plan from <KBD>PLruby#prepare</KBD> with variable
-substitution. The optional <KBD>count</KBD> value tells
-<KBD>PLrubyplan#exec</KBD> the maximum number of rows to be processed by the
-query.
-</P>
-
-<P>
-If there was a typelist given to <KBD>PLruby#prepare</KBD>, an array
-of <KBD>values</KBD> of exactly the same length must be given to
-<KBD>PLrubyplan#exec</KBD> as first argument. If the type list on
-<KBD>PLruby#prepare</KBD> was empty, this argument must be omitted.
-</P>
-
-<P>
-If the query is a SELECT statement, the same as described for
-<KBD>PLruby#exec</KBD> happens for the loop-body and the variables for
-the fields selected.
-</P>
-
-<P>
-Here's an example for a PL/Ruby function using a prepared plan : 
-</P>
-
-<BLOCKQUOTE><PRE>
-CREATE FUNCTION t1_count(int4, int4) RETURNS int4 AS '
+<kbd>PLrubyplan</kbd> object to be used in subsequent calls to
+<kbd>PLrubyplan#exec</kbd>.</p>
+</dd>
+</dl>
+<h3><a name="label:29" id="label:29">class PLrubyplan</a></h3><!-- RDLabel: "class PLrubyplan" -->
+<dl>
+<dt><a name="label:30" id="label:30">exec(values, [count [, type]])
+</a></dt><!-- RDLabel: "exec(values, [count [, type]])
+" -->
+<dt><a name="label:31" id="label:31">execp(values, [count [, type]])
+</a></dt><!-- RDLabel: "execp(values, [count [, type]])
+" -->
+<dt><a name="label:32" id="label:32">exec("values" =&gt; values, "count" =&gt; count, "output" =&gt; type)
+</a></dt><!-- RDLabel: "exec("values" => values, "count" => count, "output" => type)
+" -->
+<dt><a name="label:33" id="label:33">execp("values" =&gt; values, "count" =&gt; count, "output" =&gt; type)
+</a></dt><!-- RDLabel: "execp("values" => values, "count" => count, "output" => type)
+" -->
+<dd>
+<p>Execute a prepared plan from <kbd>PLruby#prepare</kbd> with variable
+substitution. The optional <kbd>count</kbd> value tells
+<kbd>PLrubyplan#exec</kbd> the maximum number of rows to be processed by the
+query.</p>
+<p>If there was a typelist given to <kbd>PLruby#prepare</kbd>, an array
+of <kbd>values</kbd> of exactly the same length must be given to
+<kbd>PLrubyplan#exec</kbd> as first argument. If the type list on
+<kbd>PLruby#prepare</kbd> was empty, this argument must be omitted.</p>
+<p>If the query is a SELECT statement, the same as described for
+<kbd>PLruby#exec</kbd> happens for the loop-body and the variables for
+the fields selected.</p>
+<p>If type is specified it can take the values</p>
+<ul>
+<li>"array" return an array with the element ["name", "value", "type", "len", "typeid"]</li>
+<li>"hash" return an hash with the keys {"name", "value", "type", "len", "typeid"}</li>
+</ul>
+<p>Here's an example for a PL/Ruby function using a prepared plan : </p>
+<pre>CREATE FUNCTION t1_count(int4, int4) RETURNS int4 AS '
     if ! $Plans.key?("plan")
         # prepare the saved plan on the first call
         $Plans["plan"] = PLruby.prepare("SELECT count(*) AS cnt FROM t1 
@@ -485,13 +446,61 @@ CREATE FUNCTION t1_count(int4, int4) RETURNS int4 AS '
     end
     n = $Plans["plan"].exec([args[0], args[1]], 1)
     n["cnt"]
-' LANGUAGE 'plruby';
+' LANGUAGE 'plruby';</pre>
+</dd>
+<dt><a name="label:34" id="label:34">each(values, [count [, type ]]) { ... }
+</a></dt><!-- RDLabel: "each(values, [count [, type ]]) { ... }
+" -->
+<dt><a name="label:35" id="label:35">fetch(values, [count [, type ]]) { ... }
+</a></dt><!-- RDLabel: "fetch(values, [count [, type ]]) { ... }
+" -->
+<dt><a name="label:36" id="label:36">each("values" =&gt; values, "count" =&gt; count, "output" =&gt; type) { ... }
+</a></dt><!-- RDLabel: "each("values" => values, "count" => count, "output" => type) { ... }
+" -->
+<dt><a name="label:37" id="label:37">fetch("values" =&gt; values, "count" =&gt; count, "output" =&gt; type) { ... }
+</a></dt><!-- RDLabel: "fetch("values" => values, "count" => count, "output" => type) { ... }
+" -->
+<dd>
+<p>Same then #exec but a call to SPI_cursor_open(), SPI_cursor_fetch() is made.</p>
+<p>Can be used only with a block and a SELECT statement</p>
+<pre>create function toto() returns bool as '
+       plan = PLruby.prepare("select * from T_pkey1")
+       warn "=====&gt; ALL"
+       plan.each do |x|
+          warn(x.inspect)
+       end
+       warn "=====&gt; FIRST 2"
+       plan.each("count" =&gt; 2) do |x|
+          warn(x.inspect)
+       end
+       return true
+' language 'plruby';
 
+plruby_test=# select * from T_pkey1;
+ skey1 | skey2 | stxt 
+-------+-------+------
+    12 | a     | b
+    24 | c     | d
+    36 | e     | f
+(3 rows)
 
+plruby_test=# 
+plruby_test=# select toto();
+NOTICE:  =====&gt; ALL
+NOTICE:  {"skey1"=&gt;"12", "skey2"=&gt;"a", "stxt"=&gt;"b"}
+NOTICE:  {"skey1"=&gt;"24", "skey2"=&gt;"c", "stxt"=&gt;"d"}
+NOTICE:  {"skey1"=&gt;"36", "skey2"=&gt;"e", "stxt"=&gt;"f"}
+NOTICE:  =====&gt; FIRST 2
+NOTICE:  {"skey1"=&gt;"12", "skey2"=&gt;"a", "stxt"=&gt;"b"}
+NOTICE:  {"skey1"=&gt;"24", "skey2"=&gt;"c", "stxt"=&gt;"d"}
+ toto 
+------
+ t
+(1 row)
 
-</PRE></BLOCKQUOTE>
-</DD>
-</DL>
+plruby_test=# </pre>
+</dd>
+</dl>
 
-</BODY>
-</HTML>
+</body>
+</html>

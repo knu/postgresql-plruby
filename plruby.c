@@ -121,14 +121,15 @@ plruby_proc_free(proc)
 
 typedef struct plruby_query_desc
 {
-    char		qname[20];
-    void	   *plan;
-    int			nargs;
-    Oid		   *argtypes;
+    char qname[20];
+    void *plan;
+    int	 nargs;
+    Oid	*argtypes;
     FmgrInfo   *arginfuncs;
-    Oid		   *argtypelems;
-    Datum	   *argvalues;
-    int		   *arglen;
+    Oid	 *argtypelems;
+    Datum *argvalues;
+    int	*arglen;
+    char *nulls;
 } plruby_query_desc;
 
 static int	plruby_firstcall = 1;
@@ -176,7 +177,6 @@ plruby_protect(args)
     if (sigsetjmp(Warn_restart, 1) != 0)
 	return pg_eCatch;
     res = Data_Make_Struct(rb_cObject, Datum, 0, free, retval);
-    rb_obj_call_init(res, 0, 0);
 #ifdef NEW_STYLE_FUNCTION
     if (CALLED_AS_TRIGGER((FunctionCallInfo)args))
 	*retval = PointerGetDatum(plruby_trigger_handler((FunctionCallInfo)args));
@@ -301,7 +301,6 @@ plruby_func_handler(proinfo, proargs, isNull)
 	int status;
 
 	value_proc_desc = Data_Make_Struct(rb_cObject, plruby_proc_desc, 0, plruby_proc_free, prodesc);
-	rb_obj_call_init(value_proc_desc, 0, 0);
 #ifdef NEW_STYLE_FUNCTION
 	procTup = SearchSysCacheTuple(RUBY_PROOID,
 				      ObjectIdGetDatum(fcinfo->flinfo->fn_oid),
@@ -505,8 +504,10 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc,
 	typelem = (Oid) (fpgt->typelem);
 #if PG_PL_VERSION >= 71
 	if (array != Qnil) {
+	    Oid typeid;
 	    typname = fpgt->typname.data;
 	    alen = tupdesc->attrs[i]->attlen;
+	    typeid = tupdesc->attrs[i]->atttypid;
 	    if (strcmp(typname, "text") == 0) {
 		alen = -1;
 	    }
@@ -525,11 +526,13 @@ plruby_build_tuple_argument(HeapTuple tuple, TupleDesc tupdesc,
 		rb_ary_push(res, Qnil);
 		rb_ary_push(res, rb_tainted_str_new2(typname));
 		rb_ary_push(res, INT2FIX(alen));
+		rb_ary_push(res, INT2FIX(typeid));
 	    }
 	    else {
 		res = rb_hash_new();
 		rb_hash_aset(res, rb_tainted_str_new2("name"), rb_tainted_str_new2(attname));
 		rb_hash_aset(res, rb_tainted_str_new2("type"), rb_tainted_str_new2(typname));
+		rb_hash_aset(res, rb_tainted_str_new2("typeid"), INT2FIX(typeid));
 		rb_hash_aset(res, rb_tainted_str_new2("len"), INT2FIX(alen));
 	    }
 	}
@@ -729,7 +732,6 @@ plruby_trigger_handler(FmgrInfo *proinfo)
 	char	   *proc_source;
 	
 	value_proc_desc = Data_Make_Struct(rb_cObject, plruby_proc_desc, 0, plruby_proc_free, prodesc);
-	rb_obj_call_init(value_proc_desc, 0, 0);
 
 #ifdef NEW_STYLE_FUNCTION
 	procTup = SearchSysCacheTuple(RUBY_PROOID,
@@ -1119,60 +1121,62 @@ plruby_query_free(qdesc)
 	free(qdesc->argvalues);
     }
     if (qdesc->arglen) free(qdesc->arglen);
+    if (qdesc->nulls) free(qdesc->nulls);
     free(qdesc);
 }
 
 static VALUE
-plruby_SPI_prepare(obj, a, b)
-    VALUE obj, a, b;
+plruby_SPI_prepare(int argc, VALUE *argv, VALUE obj)
 {
     int	nargs;
     plruby_query_desc *qdesc;
     void *plan;
     int	i;
     HeapTuple	typeTup;
-    VALUE result;
-
+    VALUE a, b, result;
+    
+    nargs = 0;
+    if (rb_scan_args(argc, argv, "11", &a, &b) == 2) {
+	if (TYPE(b) != T_ARRAY) {
+	    rb_raise(pg_ePLruby, "second argument must be an ARRAY");
+	}
+	nargs = RARRAY(b)->len;
+    }
     if (TYPE(a) != T_STRING) {
 	rb_raise(pg_ePLruby, "first argument must be a STRING");
     }
-    if (TYPE(b) != T_ARRAY) {
-	rb_raise(pg_ePLruby, "second argument must be an ARRAY");
-    }
-
-    nargs = RARRAY(b)->len;
 
     result = Data_Make_Struct(pg_cPLrubyPlan, plruby_query_desc, 0, plruby_query_free, qdesc);
-    rb_obj_call_init(result, 0, 0);
     sprintf(qdesc->qname, "%lx", (long) qdesc);
     qdesc->nargs = nargs;
-    qdesc->argtypes = ALLOC_N(Oid, nargs);
-    qdesc->arginfuncs = ALLOC_N(FmgrInfo ,nargs);
-    qdesc->argtypelems = ALLOC_N(Oid ,nargs);
-    qdesc->argvalues = ALLOC_N(Datum, nargs);
-    qdesc->arglen = ALLOC_N(int, nargs);
-
-    for (i = 0; i < nargs; i++)	{
-	VALUE args = rb_funcall(RARRAY(b)->ptr[i], to_s_id, 0);
-	typeTup = SearchSysCacheTuple(RUBY_TYPNAME,
-				      PointerGetDatum(RSTRING(args)->ptr),
-				      0, 0, 0);
-	if (!HeapTupleIsValid(typeTup)) {
-	    rb_raise(pg_ePLruby, "Cache lookup of type '%s' failed", RSTRING(args)->ptr);
-	}
-	qdesc->argtypes[i] = typeTup->t_data->t_oid;
-	fmgr_info(((Form_pg_type) GETSTRUCT(typeTup))->typinput,
-		  &(qdesc->arginfuncs[i]));
-	qdesc->argtypelems[i] = ((Form_pg_type) GETSTRUCT(typeTup))->typelem;
-	qdesc->argvalues[i] = (Datum) NULL;
-	qdesc->arglen[i] = (int) (((Form_pg_type) GETSTRUCT(typeTup))->typlen);
+    qdesc->argtypes = NULL;
+    if (nargs) {
+	qdesc->argtypes = ALLOC_N(Oid, nargs);
+	qdesc->arginfuncs = ALLOC_N(FmgrInfo ,nargs);
+	qdesc->argtypelems = ALLOC_N(Oid ,nargs);
+	qdesc->argvalues = ALLOC_N(Datum, nargs);
+	qdesc->arglen = ALLOC_N(int, nargs);
+ 
+	for (i = 0; i < nargs; i++)	{
+	    VALUE args = rb_funcall(RARRAY(b)->ptr[i], to_s_id, 0);
+	    typeTup = SearchSysCacheTuple(RUBY_TYPNAME,
+					  PointerGetDatum(RSTRING(args)->ptr),
+					  0, 0, 0);
+	    if (!HeapTupleIsValid(typeTup)) {
+		rb_raise(pg_ePLruby, "Cache lookup of type '%s' failed", RSTRING(args)->ptr);
+	    }
+	    qdesc->argtypes[i] = typeTup->t_data->t_oid;
+	    fmgr_info(((Form_pg_type) GETSTRUCT(typeTup))->typinput,
+		      &(qdesc->arginfuncs[i]));
+	    qdesc->argtypelems[i] = ((Form_pg_type) GETSTRUCT(typeTup))->typelem;
+	    qdesc->argvalues[i] = (Datum) NULL;
+	    qdesc->arglen[i] = (int) (((Form_pg_type) GETSTRUCT(typeTup))->typlen);
 #if PG_PL_VERSION >= 71
-	ReleaseSysCache(typeTup);
+	    ReleaseSysCache(typeTup);
 #endif
+	}
     }
-
     plan = SPI_prepare(RSTRING(a)->ptr, nargs, qdesc->argtypes);
-
     if (plan == NULL) {
 	char		buf[128];
 	char	   *reason;
@@ -1226,50 +1230,17 @@ plruby_SPI_prepare(obj, a, b)
     return result;
 }
 
-static VALUE
-plruby_SPI_execp(argc, argv, obj)
-    int argc;
-    VALUE *argv;
-    VALUE obj;
-{
-    int	spi_rc;
-    int	i, j, comp;
-    VALUE result;
+static void
+process_args(qdesc, argsv)
     plruby_query_desc *qdesc;
-    char *nulls = NULL;
-    volatile int count;
-    volatile int callnargs;
-    volatile int array = Qnil;
-    int	ntuples;
-    HeapTuple *tuples = NULL;
-    TupleDesc tupdesc = NULL;
-    VALUE argsv, countv, c;
+    VALUE argsv;
+{
+    int callnargs, j;
 
-    count = 0;
-    comp = Qnil;
-    Data_Get_Struct(obj, plruby_query_desc, qdesc);
-
-    switch (rb_scan_args(argc, argv, "12", &argsv, &countv, &c)) {
-    case 3:
-	if (TYPE(c) != T_STRING) {
-	    rb_raise(pg_ePLruby, "string expected for optionnal output");
-	}
-	if (strcmp(RSTRING(c)->ptr, "array") == 0) {
-	    comp = Qtrue;
-	}
-	else if (strcmp(RSTRING(c)->ptr, "hash") == 0) {
-	    comp = Qfalse;
-	}
-	/* ... */
-    case 2:
-	if (!NIL_P(countv)) {
-	    count = NUM2INT(countv);
-	}
+    if (qdesc->nulls) {
+	free(qdesc->nulls);
+	qdesc->nulls = 0;
     }
-#if PG_PL_VERSION >= 71
-    array = comp;
-#endif
-    
     if (qdesc->nargs > 0) {
 	if (TYPE(argsv) != T_ARRAY) {
 	    rb_raise(pg_ePLruby, "array expected for arguments");
@@ -1278,7 +1249,7 @@ plruby_SPI_execp(argc, argv, obj)
 	    rb_raise(pg_ePLruby, "length of arguments doesn't match # of arguments");
 	}
 	callnargs = RARRAY(argsv)->len;
-	nulls = ALLOCA_N(char, callnargs + 1);
+	qdesc->nulls = ALLOC_N(char, callnargs + 1);
 	for (j = 0; j < callnargs; j++) {
 	    if (qdesc->arglen[j] < 0 &&	qdesc->argvalues[j] != (Datum) NULL) {
 		pfree((char *) (qdesc->argvalues[j]));
@@ -1288,12 +1259,12 @@ plruby_SPI_execp(argc, argv, obj)
 
 	for (j = 0; j < callnargs; j++)	{
 	    if (NIL_P(RARRAY(argsv)->ptr[j])) {
-		nulls[j] = 'n';
+		qdesc->nulls[j] = 'n';
 		qdesc->argvalues[j] = (Datum)NULL;
 	    }
 	    else {
 		VALUE args = rb_funcall(RARRAY(argsv)->ptr[j], to_s_id, 0);
-		nulls[j] = ' ';
+		qdesc->nulls[j] = ' ';
 #ifdef NEW_STYLE_FUNCTION
 		qdesc->argvalues[j] =
 		    FunctionCall3(&qdesc->arginfuncs[j],
@@ -1306,20 +1277,117 @@ plruby_SPI_execp(argc, argv, obj)
 #endif
 	    }
 	}
-	nulls[callnargs] = '\0';
+	qdesc->nulls[callnargs] = '\0';
     }
-    else {
-	callnargs = 0;
-    }
+    return;
+}
 
-    spi_rc = SPI_execp(qdesc->plan, qdesc->argvalues, nulls, count);
+static void
+free_args(plruby_query_desc *qdesc)
+{
+    int j;
 
-    for (j = 0; j < callnargs; j++) {
+    for (j = 0; j < qdesc->nargs; j++) {
 	if (qdesc->arglen[j] < 0 && qdesc->argvalues[j] != (Datum) NULL) {
 	    pfree((char *) (qdesc->argvalues[j]));
 	    qdesc->argvalues[j] = (Datum) NULL;
 	}
     }
+    if (qdesc->nulls) {
+	free(qdesc->nulls);
+	qdesc->nulls = 0;
+    }
+}
+
+struct PLportal {
+    Portal portal;
+    VALUE argsv;
+    VALUE array;
+    int count;
+};
+
+static VALUE
+plruby_i_each(obj, plportal)
+    VALUE obj;
+    struct PLportal *plportal;
+{
+    VALUE key, value;
+    char *options;
+
+    key = rb_ary_entry(obj, 0);
+    value = rb_ary_entry(obj, 1);
+    key = rb_obj_as_string(key);
+    options = RSTRING(key)->ptr;
+    if (strcmp(options, "values") == 0) {
+	plportal->argsv = value;
+    }
+    else if (strcmp(options, "count") == 0) {
+	plportal->count = NUM2INT(value);
+    }
+    else if (strcmp(options, "output") == 0) {
+	if (TYPE(value) != T_STRING) {
+	    rb_raise(pg_ePLruby, "string expected for optionnal output");
+	}
+	if (strcmp(RSTRING(value)->ptr, "array") == 0) {
+	    plportal->array = Qtrue;
+	}
+	else if (strcmp(RSTRING(value)->ptr, "hash") == 0) {
+	    plportal->array = Qfalse;
+	}
+    }
+    return Qnil;
+}
+
+static VALUE
+plruby_SPI_execp(argc, argv, obj)
+    int argc;
+    VALUE *argv;
+    VALUE obj;
+{
+    int	i, spi_rc;
+    VALUE result;
+    plruby_query_desc *qdesc;
+    int	ntuples;
+    HeapTuple *tuples = NULL;
+    TupleDesc tupdesc = NULL;
+    VALUE argsv, countv, c;
+    struct PLportal plportal;
+
+    Data_Get_Struct(obj, plruby_query_desc, qdesc);
+
+    plportal.argsv = plportal.array = Qnil;
+    plportal.count = 0;
+    if (argc && TYPE(argv[argc - 1]) == T_HASH) {
+	rb_iterate(rb_each, argv[argc - 1], plruby_i_each, (VALUE)&plportal);
+	argc--;
+    }
+    switch (rb_scan_args(argc, argv, "03", &argsv, &countv, &c)) {
+    case 3:
+	if (TYPE(c) != T_STRING) {
+	    rb_raise(pg_ePLruby, "string expected for optionnal output");
+	}
+	if (strcmp(RSTRING(c)->ptr, "array") == 0) {
+	    plportal.array = Qtrue;
+	}
+	else if (strcmp(RSTRING(c)->ptr, "hash") == 0) {
+	    plportal.array = Qfalse;
+	}
+	/* ... */
+    case 2:
+	if (!NIL_P(countv)) {
+	    plportal.count = NUM2INT(countv);
+	}
+	/* ... */
+    case 1:
+	plportal.argsv = argsv;
+    }
+#if PG_PL_VERSION < 71
+    plportal.array = Qnil;
+#endif
+    
+    process_args(qdesc, plportal.argsv);
+    spi_rc = SPI_execp(qdesc->plan, qdesc->argvalues, qdesc->nulls, plportal.count);
+    free_args(qdesc);
 
     switch (spi_rc) {
     case SPI_OK_UTILITY:
@@ -1350,7 +1418,7 @@ plruby_SPI_execp(argc, argv, obj)
     
     ntuples = SPI_processed;
     if (ntuples <= 0) {
-	if (rb_block_given_p() || count == 1) {
+	if (rb_block_given_p() || plportal.count == 1) {
 	    return Qfalse;
 	}
 	else {
@@ -1360,31 +1428,122 @@ plruby_SPI_execp(argc, argv, obj)
     tuples = SPI_tuptable->vals;
     tupdesc = SPI_tuptable->tupdesc;
     if (rb_block_given_p()) {
-	if (count == 1) {
-	    plruby_build_tuple_argument(tuples[0], tupdesc, 1, array);
+	if (plportal.count == 1) {
+	    plruby_build_tuple_argument(tuples[0], tupdesc, 1, plportal.array);
 	}
 	else {
 	    for (i = 0; i < ntuples; i++) {
 		rb_yield(plruby_build_tuple_argument(tuples[i], tupdesc, 0, 
-						     array));
+						     plportal.array));
 	    }
 	}
 	result = Qtrue;
     }
     else {
-	if (count == 1) {
+	if (plportal.count == 1) {
 	    result = plruby_build_tuple_argument(tuples[0], 
-						 tupdesc, 0, array);
+						 tupdesc, 0, plportal.array);
 	}
 	else {
 	    result = rb_ary_new2(ntuples);
 	    for (i = 0; i < ntuples; i++) {
 		rb_ary_push(result, 
 			    plruby_build_tuple_argument(tuples[i], 
-							tupdesc, 0, array));
+							tupdesc, 0, plportal.array));
 	    }
 	}
     }
+    return result;
+}
+
+static VALUE
+plruby_cursor_close(plportal)
+    struct PLportal *plportal;
+{
+    SPI_cursor_close(plportal->portal);
+    return Qnil;
+}
+
+static VALUE
+plruby_cursor_fetch(plportal)
+    struct PLportal *plportal;
+{
+    HeapTuple *tuples = NULL;
+    TupleDesc tupdesc = NULL;
+    VALUE result;
+    int count = 0;
+
+    do {
+	SPI_cursor_fetch(plportal->portal, true, 1);
+	if (SPI_processed <= 0) {
+	    return Qfalse;
+	}
+	tuples = SPI_tuptable->vals;
+	tupdesc = SPI_tuptable->tupdesc;
+	rb_yield(plruby_build_tuple_argument(tuples[0], tupdesc, 0, plportal->array));
+    } while (++count != plportal->count);
+    return Qtrue;
+}
+
+static VALUE
+plruby_SPI_each(argc, argv, obj)
+    int argc;
+    VALUE *argv;
+    VALUE obj;
+{
+    VALUE result;
+    plruby_query_desc *qdesc;
+    Portal portal;
+    struct PLportal plportal;
+    VALUE argsv, countv, c;
+
+    if (!rb_block_given_p()) {
+	rb_raise(pg_ePLruby, "a block must be given");
+    }
+    Data_Get_Struct(obj, plruby_query_desc, qdesc);
+
+    plportal.argsv = plportal.array = Qnil;
+    plportal.count = 0;
+    if (argc && TYPE(argv[argc - 1]) == T_HASH) {
+	rb_iterate(rb_each, argv[argc - 1], plruby_i_each, (VALUE)&plportal);
+	argc--;
+    }
+    switch (rb_scan_args(argc, argv, "03", &argsv, &countv, &c)) {
+    case 3:
+	if (!NIL_P(c)) {
+	    if (TYPE(c) != T_STRING) {
+		rb_raise(pg_ePLruby, "string expected for optionnal output");
+	    }
+	    if (strcmp(RSTRING(c)->ptr, "array") == 0) {
+		plportal.array = Qtrue;
+	    }
+	    else if (strcmp(RSTRING(c)->ptr, "hash") == 0) {
+		plportal.array = Qfalse;
+	    }
+	}
+	/* ... */
+    case 2:
+	if (!NIL_P(countv)) {
+	    plportal.count = NUM2INT(countv);
+	}
+	/* ... */
+    case 1:
+	plportal.argsv = argsv;
+    }
+#if PG_PL_VERSION < 71
+    plportal.array = Qnil;
+#endif
+    
+    portal = NULL;
+    process_args(qdesc, plportal.argsv);
+    portal = SPI_cursor_open(NULL, qdesc->plan, qdesc->argvalues, qdesc->nulls);
+    free_args(qdesc);
+    if (portal == NULL) {
+	rb_raise(pg_ePLruby,  "SPI_cursor_open() failed");
+    }
+    plportal.portal = portal;
+    return rb_ensure(plruby_cursor_fetch, (VALUE)&plportal,
+		     plruby_cursor_close, (VALUE)&plportal);
     return result;
 }
 
@@ -1521,11 +1680,14 @@ plruby_init_all(void)
     rb_define_const(pg_mPLruby, "UNKNOWN", INT2FIX(TG_UNKNOWN));
     pg_cPLrubyPlan = rb_define_class("PLrubyPlan", rb_cObject);
     rb_undef_method(CLASS_OF(pg_cPLrubyPlan), "new");
-    rb_define_module_function(pg_mPLruby, "spi_prepare", plruby_SPI_prepare, 2);
-    rb_define_module_function(pg_mPLruby, "prepare", plruby_SPI_prepare, 2);
+    rb_define_module_function(pg_mPLruby, "spi_prepare", plruby_SPI_prepare, -1);
+    rb_define_module_function(pg_mPLruby, "prepare", plruby_SPI_prepare, -1);
     rb_define_method(pg_cPLrubyPlan, "spi_execp", plruby_SPI_execp, -1);
     rb_define_method(pg_cPLrubyPlan, "execp", plruby_SPI_execp, -1);
     rb_define_method(pg_cPLrubyPlan, "exec", plruby_SPI_execp, -1);
+    rb_define_method(pg_cPLrubyPlan, "spi_fetch", plruby_SPI_each, -1);
+    rb_define_method(pg_cPLrubyPlan, "each", plruby_SPI_each, -1);
+    rb_define_method(pg_cPLrubyPlan, "fetch", plruby_SPI_each, -1);
     to_s_id = rb_intern("to_s");
     rb_set_safe_level(SAFE_LEVEL);
     plans = rb_hash_new();

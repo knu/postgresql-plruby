@@ -1,0 +1,15 @@
+-- 0.1.0 * 0.2.5
+
+ adaptation for new version of PostgreSQL
+
+-- 0.2.6
+
+ #exec can have an optional output of type "array", "hash"
+ (see the example in plruby.html)
+
+-- 0.2.7
+
+ PLrubyplan#each
+
+
+ 
