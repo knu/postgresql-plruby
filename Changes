@@ -24,3 +24,8 @@
 
  *experimental* timeout (--with-timeout)
  fixed SPI_execp()
+
+--- 0.3.1
+
+ corrected for_numvals() (Thanks  Brad Hilton <bhilton@vpop.net>)
+

@@ -917,9 +917,12 @@ for_numvals(obj, argobj)
 
     Data_Get_Struct(argobj, struct foreach_fmgr, arg);
     key = rb_funcall(rb_ary_entry(obj, 0), id_to_s, 0);
-    value = rb_funcall(rb_ary_entry(obj, 1), id_to_s, 0);
-
+    value = rb_ary_entry(obj, 1);
     if ((RSTRING(key)->ptr)[0]  == '.' || NIL_P(value)) {
+	return Qnil;
+    }
+    value = rb_funcall(value, id_to_s, 0);
+    if (RSTRING(value)->len == 0) {
 	return Qnil;
     }
 
