@@ -29,7 +29,8 @@ be 'newC' in this case
   --with-pgsql-srcinc-dir=<include file *from* the source of PostgreSQL>
      pgsql-srcinc-dir must contains, for example, the file catalog/pg_proc.h
 
-  --with-pgsql-version=<release number for PostgreSQL, actually 6 or 7>
+  --with-pgsql-version=<release number for PostgreSQL, actually 65, 70 or 71
+                        i.e. major and minor number>
 
  Example :
 

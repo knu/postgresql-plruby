@@ -1405,9 +1405,6 @@ plruby_init_all(void)
 {
     if (!plruby_firstcall)
 	return;
-#if SAFE_LEVEL >= 1
-    rb_set_safe_level(1);
-#endif
     ruby_init();
     rb_define_global_const("NOTICE", INT2FIX(NOTICE));
     rb_define_global_const("DEBUG", INT2FIX(DEBUG));
