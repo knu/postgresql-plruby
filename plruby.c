@@ -1431,6 +1431,12 @@ plruby_init_all(void)
 #ifdef NOIND
     rb_define_global_const("NOIND", INT2FIX(NOIND));
 #endif
+    if (rb_const_defined_at(rb_cObject, rb_intern("PLruby")) ||
+	rb_const_defined_at(rb_cObject, rb_intern("PLrubyError")) ||
+	rb_const_defined_at(rb_cObject, rb_intern("PLrubyCatch")) ||
+	rb_const_defined_at(rb_cObject, rb_intern("PLtemp"))) {
+	rb_raise(rb_eNameError, "class already defined");
+    }
     pg_mPLruby = rb_define_module("PLruby");
     pg_ePLruby = rb_define_class("PLrubyError", rb_eStandardError);
     pg_eCatch = rb_define_class("PLrubyCatch", rb_eStandardError);
