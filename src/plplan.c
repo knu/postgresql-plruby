@@ -329,7 +329,7 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
                         plruby_to_datum(args, &qdesc->arginfuncs[j],
                                         qdesc->argtypes[j], 
                                         qdesc->argtypelems[j],
-                                        qdesc->arglen[j]);
+                                        -1);
                 }
 
             }

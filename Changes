@@ -88,3 +88,16 @@
 
  IMPORTANT : work only with postgres >= 7.3
  transaction and named arguments for 8.0
+
+--- 0.4.4
+
+* patch written by Dennis Vshivkov <walrus@amur.ru>
+  - Time-conversion-fix
+  - typtypmod-fix
+  - Integer-conversion-fix
+  - extconf.rb-PG_TRY-test-fix
+  - redundant-ReleaseSysCache-fix
+  - BYTEA-conv
+  - MONEY-conv-fix
+  - Float-conv-back-fix
+

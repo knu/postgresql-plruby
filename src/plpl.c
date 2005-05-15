@@ -472,7 +472,7 @@ plruby_return_array(VALUE ary, pl_proc_desc *p)
         values[i] = plruby_to_datum(RARRAY(ary)->ptr[i], 
                                     &p->result_func,
                                     p->result_oid, p->result_elem,
-                                    p->result_len);
+                                    -1);
     }
     PLRUBY_BEGIN_PROTECT(1);
 #if PG_PL_VERSION >= 74
@@ -499,7 +499,7 @@ return_base_type(VALUE c, pl_proc_desc *prodesc)
         retval = plruby_to_datum(c, &prodesc->result_func,
                                  prodesc->result_oid, 
                                  prodesc->result_elem,
-                                 prodesc->result_len);
+                                 -1);
     }
     return retval;
 }

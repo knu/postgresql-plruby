@@ -161,7 +161,7 @@ if version.to_i >= 74
    end
 end
 
-if macro_defined?("PG_TRY", '#include "utils/elog.h"')
+if macro_defined?("PG_TRY", %Q{#include "c.h"\n#include "utils/elog.h"})
     $CFLAGS += " -DPG_PL_TRYCATCH"
 end
 

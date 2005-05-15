@@ -20,4 +20,6 @@
     rb_hash_aset(plruby_classes, INT2NUM(INTERVALOID), rb_cTime);
     rb_hash_aset(plruby_classes, INT2NUM(TIMETZOID), rb_cTime);
     rb_hash_aset(plruby_classes, INT2NUM(TIMEOID), rb_cTime);
+
+    rb_hash_aset(plruby_classes, ULONG2NUM(BYTEAOID), rb_cString);
 }

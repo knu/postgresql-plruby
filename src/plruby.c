@@ -889,13 +889,7 @@ pl_func_handler(struct pl_thread_st *plth)
                          format_type_be(arg_type[i]));
             }
             prodesc->arg_elem[i] = (Oid) (typeStruct->typelem);
-            if (typeStruct->typrelid != InvalidOid) {
-                prodesc->arg_is_rel[i] = 1;
-                ReleaseSysCache(typeTup);
-            }
-            else {
-                prodesc->arg_is_rel[i] = 0;
-            }
+            prodesc->arg_is_rel[i] = (typeStruct->typrelid != InvalidOid);
 
             PLRUBY_BEGIN(1);
             prodesc->arg_is_array[i] = 0;
@@ -924,7 +918,6 @@ pl_func_handler(struct pl_thread_st *plth)
                 fmgr_info(typeStruct->typoutput, &(prodesc->arg_func[i]));
                 prodesc->arg_len[i] = typeStruct->typlen;
             }
-            ReleaseSysCache(typeTup);
             PLRUBY_END;
         }
 

@@ -1,15 +1,14 @@
 #include "convcommon.h"
 
-#include <utils/cash.h>
 #include <utils/date.h>
 #include <utils/nabstime.h>
-#include <utils/pg_locale.h>
 #include <utils/timestamp.h>
-#include <math.h>
 
-static double cash_divisor;
 static Timestamp epoch;
-static ID id_at, id_to_f, id_to_i, id_usec;
+static ID	id_at,
+		id_to_f,
+		id_to_i,
+		id_usec;
 
 static VALUE
 pl_fixnum_s_datum(VALUE obj, VALUE a)
@@ -20,46 +19,45 @@ pl_fixnum_s_datum(VALUE obj, VALUE a)
     value = plruby_datum_get(a, &typoid);
     switch (typoid) {
     case OIDOID:
-	return UINT2NUM(DatumGetObjectId(value));
-
+	return INT2NUM(DatumGetObjectId(value));
+	break;
     case INT2OID:
 	return INT2NUM(DatumGetInt16(value));
-
+	break;
     case INT4OID:
 	return INT2NUM(DatumGetInt32(value));
-
+	break;
     case INT8OID:
-	return LL2NUM(DatumGetInt64(value));
-
+	return INT2NUM(DatumGetInt64(value));
+	break;
     default:
 	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
     }
+    return Qnil;
 }
 
 static VALUE
 pl_fixnum_to_datum(VALUE obj, VALUE a)
 {
+    int typoid, typlen;
+    int value;
     Datum d;
 
-    switch (plruby_datum_oid(a, NULL)) {
+    value = NUM2INT(obj);
+    typoid = plruby_datum_oid(a, &typlen);
+    switch (typoid) {
     case OIDOID:
-	d = ObjectIdGetDatum(NUM2UINT(obj));
-	break;
-
     case INT2OID:
-	d = Int16GetDatum(NUM2INT(obj));
-	break;
-
     case INT4OID:
-	d = Int32GetDatum(NUM2INT(obj));
 	break;
-
-    case INT8OID:
-	d = Int64GetDatum(NUM2LL(obj));
-	break;
-
     default:
 	return Qnil;
+    }
+    if (typlen == 2) {
+	d = Int16GetDatum(value);
+    }
+    else {
+	d = Int32GetDatum(value);
     }
     return plruby_datum_set(a, d);
 }
@@ -69,79 +67,51 @@ pl_float_s_datum(VALUE obj, VALUE a)
 {
     Oid typoid;
     Datum value;
-    double result;
 
     value = plruby_datum_get(a, &typoid);
     switch (typoid) {
     case FLOAT4OID:
-	result = DatumGetFloat4(value);
+	return rb_float_new(DatumGetFloat4(value));
 	break;
 
     case FLOAT8OID:
-	result = DatumGetFloat8(value);
+	return rb_float_new(DatumGetFloat8(value));
 	break;
 
     case CASHOID:
-        result = (double) *(Cash *) DatumGetPointer(value) / cash_divisor;
-        break;
-
     case NUMERICOID:
-	result = DatumGetFloat8(plruby_dfc1(numeric_float8, value));
+	return rb_float_new(DatumGetFloat8(plruby_dfc1(numeric_float8, value)));
 	break;
-
     default:
 	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
     }
-    return rb_float_new(result);
+    return Qnil;
 }
 
 static VALUE
 pl_float_to_datum(VALUE obj, VALUE a)
 {
+    int typoid, typlen;
     double value;
     Datum d;
 
-    value = RFLOAT(obj)->value;
-    switch (plruby_datum_oid(a, NULL)) {
+    typoid = plruby_datum_oid(a, &typlen);
+    switch (typoid) {
     case FLOAT4OID:
-        d = Float4GetDatum((float4)value);
-        break;
-
     case FLOAT8OID:
-        d = Float8GetDatum((float8)value);
-        break;
-
     case CASHOID:
-    {
-        Cash *cash = (Cash *) palloc(sizeof(Cash));
-        *cash = (Cash) round(value * cash_divisor);
-        d = PointerGetDatum(cash);
-        break;
-    }
-       
     case NUMERICOID:
-        d = plruby_dfc1(float8_numeric, Float8GetDatum((float8)value));
 	break;
-
     default:
 	return Qnil;
     }
-    return plruby_datum_set(a, d);
-}
-
-static VALUE
-pl_str_s_datum(VALUE klass, VALUE a)
-{
-    bytea *data;
-    Oid typoid;
-    Datum value;
-
-    value = plruby_datum_get(a, &typoid);
-    if (typoid != BYTEAOID) {
-        return Qnil;
+    if (typlen == 4) {
+	d = Float4GetDatum((float4)RFLOAT(obj)->value);
     }
-    data = DatumGetByteaP(value);
-    return rb_str_new(VARDATA(data), VARSIZE(data) - VARHDRSZ);
+    else {
+	d = Float8GetDatum((float8)RFLOAT(obj)->value);
+    }
+    return plruby_datum_set(a, d);
 }
 
 static VALUE
@@ -251,7 +221,10 @@ pl_time_to_datum(VALUE obj, VALUE a)
     Datum	d;
     int		typoid;
 
+    /* Conversion to only those Postgres types that end up as Time in
+     * pl_time_s_datum() above is performed. */
     typoid = plruby_datum_oid(a, NULL);
+
     switch (typoid) {
     case ABSTIMEOID:
     case DATEOID:
@@ -266,15 +239,18 @@ pl_time_to_datum(VALUE obj, VALUE a)
     }
 
     /* Convert Time to TimestampTz first. */
+    d = TimestampTzGetDatum(epoch +
 #ifndef HAVE_INT64_TIMESTAMP
-    d = TimestampTzGetDatum(epoch + NUM2DBL(rb_funcall(obj, id_to_f, 0)));
+	    NUM2DBL(rb_funcall(obj, id_to_f, 0))
 #else
-    d = TimestampTzGetDatum(epoch + (TimestampTz) 
-                            NUM2LONG(rb_funcall(obj, id_to_i, 0)) * 1000000 +
-                            NUM2ULONG(rb_funcall(obj, id_usec, 0)));
+	    (TimestampTz) NUM2LONG(rb_funcall(obj, id_to_i, 0)) * 1000000 +
+	    NUM2ULONG(rb_funcall(obj, id_usec, 0))
 #endif
+	    );
 
     conv = NULL;
+
+    /* Now select the conversion function. */
     switch (typoid) {
     case ABSTIMEOID:
 	conv = timestamptz_abstime;
@@ -298,25 +274,21 @@ pl_time_to_datum(VALUE obj, VALUE a)
     case TIMETZOID:
 	conv = timestamptz_timetz;
 	break;
+
+    default:
+	/* Should be dead code as falling back to Qnil is above. */
+	rb_raise(rb_eTypeError, "%s: incompatible type OID %u",
+		rb_obj_classname(obj), typoid);
     }
 
-    if (conv == NULL) {
-        return Qnil;
-    }
-    d = plruby_dfc1(conv, d);
+    if (conv != NULL)
+	d = plruby_dfc1(timestamptz_timestamp, d);
+
     return plruby_datum_set(a, d);
 }
 
 void Init_plruby_basic()
 {
-    int fpoint;
-    struct lconv *lconvert = PGLC_localeconv();
-
-    fpoint = lconvert->frac_digits;
-    if (fpoint < 0 || fpoint > 10) {
-        fpoint = 2;
-    }
-    cash_divisor = pow(10.0, fpoint);
     epoch = SetEpochTimestamp();
     id_at = rb_intern("at");
     id_to_f = rb_intern("to_f");
@@ -327,7 +299,6 @@ void Init_plruby_basic()
     rb_define_method(rb_cFixnum, "to_datum", pl_fixnum_to_datum, 1);
     rb_define_singleton_method(rb_cFloat, "from_datum", pl_float_s_datum, 1);
     rb_define_method(rb_cFloat, "to_datum", pl_float_to_datum, 1);
-    rb_define_singleton_method(rb_cString, "from_datum", pl_str_s_datum, 1);
     rb_define_singleton_method(rb_cTime, "from_datum", pl_time_s_datum, 1);
     rb_define_method(rb_cTime, "to_datum", pl_time_to_datum, 1);
 }
