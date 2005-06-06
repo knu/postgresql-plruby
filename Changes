@@ -101,3 +101,7 @@
   - MONEY-conv-fix
   - Float-conv-back-fix
 
+--- 0.4.5
+
+* corrected ReleaseSysCache() (Thanks to Peter Eisentraut <peter_e@gmx.net>)
+* conversion function String#to_datum (Thanks to Dennis Vshivkov <walrus@amur.ru>)

@@ -918,6 +918,7 @@ pl_func_handler(struct pl_thread_st *plth)
                 fmgr_info(typeStruct->typoutput, &(prodesc->arg_func[i]));
                 prodesc->arg_len[i] = typeStruct->typlen;
             }
+            ReleaseSysCache(typeTup);
             PLRUBY_END;
         }
 

@@ -145,6 +145,24 @@ pl_str_s_datum(VALUE klass, VALUE a)
 }
 
 static VALUE
+pl_str_to_datum(VALUE obj, VALUE a)
+{
+    bytea      *data;
+    size_t     len;
+
+    /* Converts BYTEA only. */
+    if (plruby_datum_oid(a, NULL) != BYTEAOID)
+       return Qnil;
+
+    len = RSTRING(obj)->len;
+    data = palloc(VARHDRSZ + len);
+    memcpy(VARDATA(data), RSTRING(obj)->ptr, len);
+    VARATT_SIZEP(data) = VARHDRSZ + len;
+
+    return plruby_datum_set(a, PointerGetDatum(data));
+}
+
+static VALUE
 pl_time_s_datum(VALUE klass, VALUE a)
 {
     Timestamp	ts;
@@ -328,6 +346,7 @@ void Init_plruby_basic()
     rb_define_singleton_method(rb_cFloat, "from_datum", pl_float_s_datum, 1);
     rb_define_method(rb_cFloat, "to_datum", pl_float_to_datum, 1);
     rb_define_singleton_method(rb_cString, "from_datum", pl_str_s_datum, 1);
+    rb_define_method(rb_cString, "to_datum", pl_str_to_datum, 1);
     rb_define_singleton_method(rb_cTime, "from_datum", pl_time_s_datum, 1);
     rb_define_method(rb_cTime, "to_datum", pl_time_to_datum, 1);
 }
