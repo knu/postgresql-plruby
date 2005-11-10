@@ -95,7 +95,6 @@ PL_MDUMP(pl_point_mdump, point_send);
 static VALUE
 pl_point_s_str(VALUE obj, VALUE a)
 {
-    char *str, *s;
     Point *p;
     VALUE res;
 
@@ -316,7 +315,7 @@ POINT_CALL_BOOL(pl_point_eq,point_eq);
 static VALUE
 pl_point_slope(VALUE obj, VALUE a)
 {
-    Point *p0, *p1, *pr;                                
+    Point *p0, *p1;                                
                                                         
     CHECK_CLASS(obj, a);
     Data_Get_Struct(obj, Point, p0);
@@ -375,8 +374,6 @@ PL_MDUMP(pl_lseg_mdump, lseg_send);
 static VALUE
 pl_lseg_s_str(VALUE obj, VALUE a)
 {
-    char *str, *s;
-    int isopen;
     LSEG *l;
     VALUE res;
 
@@ -677,8 +674,6 @@ PL_MDUMP(pl_box_mdump, box_send);
 static VALUE
 pl_box_s_str(VALUE obj, VALUE a)
 {
-    char *str, *s;
-    int isopen;
     BOX *l;
     VALUE res;
 
@@ -880,17 +875,17 @@ pl_box_cmp(VALUE obj, VALUE a)
     return INT2NUM(1);
 }
 
-#define BOX_BOOL(NAME_,FUNCTION_)               \
-static VALUE                                    \
-NAME_(VALUE obj, VALUE a)                       \
-{                                               \
-    BOX *p0, *p1, *pr;                          \
-                                                \
-    CHECK_CLASS(obj, a);                        \
-    Data_Get_Struct(obj, BOX, p0);              \
-    Data_Get_Struct(a, BOX, p1);                \
-    if (PLRUBY_DFC2(FUNCTION_, p0, p1)) return Qtrue;\
-    return Qfalse;                              \
+#define BOX_BOOL(NAME_,FUNCTION_)			\
+static VALUE						\
+NAME_(VALUE obj, VALUE a)				\
+{							\
+    BOX *p0, *p1;					\
+							\
+    CHECK_CLASS(obj, a);				\
+    Data_Get_Struct(obj, BOX, p0);			\
+    Data_Get_Struct(a, BOX, p1);			\
+    if (PLRUBY_DFC2(FUNCTION_, p0, p1)) return Qtrue;	\
+    return Qfalse;					\
 }
 
 BOX_BOOL(pl_box_same,box_same);
@@ -960,7 +955,7 @@ pl_box_center(VALUE obj)
 static VALUE
 pl_box_closest(VALUE obj, VALUE a)
 {
-    BOX *l0, *l1;
+    BOX *l0;
     Point *p0, *p1;
     VALUE res;
 
@@ -996,7 +991,7 @@ pl_box_closest(VALUE obj, VALUE a)
 static VALUE
 pl_box_intersect(VALUE obj, VALUE a)
 {
-    BOX *l0, *l1;
+    BOX *l0;
 
     Data_Get_Struct(obj, BOX, l0);
     if (TYPE(a) == T_DATA) {
@@ -1132,7 +1127,6 @@ PL_MDUMP(pl_path_mdump, path_send);
 static VALUE
 pl_path_s_str(VALUE obj, VALUE a)
 {
-    char *str, *s;
     PATH *p, *m;
     VALUE res;
 
@@ -1177,7 +1171,6 @@ pl_path_init(int argc, VALUE *argv, VALUE obj)
             p->p[i].y = po->y;
         }
         else {
-            double x;
             VALUE tmp;
 
             b = rb_Array(b);
@@ -1286,8 +1279,7 @@ PATH_CALL(pl_path_div, path_div_pt);
 static VALUE
 pl_path_concat(VALUE obj, VALUE a)
 {
-    PATH *p0, *p1, *p2;
-    VALUE res;
+    PATH *p0, *p1;
     Point *p;
 
     Data_Get_Struct(obj, PATH, p0);
@@ -1453,7 +1445,6 @@ PL_MDUMP(pl_poly_mdump, poly_send);
 static VALUE
 pl_poly_s_str(VALUE obj, VALUE a)
 {
-    char *str, *s;
     POLYGON *p, *m;
     VALUE res;
 
@@ -1498,7 +1489,6 @@ pl_poly_init(int argc, VALUE *argv, VALUE obj)
             p->p[i].y = po->y;
         }
         else {
-            double x;
             VALUE tmp;
 
             b = rb_Array(b);
@@ -1723,7 +1713,6 @@ PL_MDUMP(pl_circle_mdump, circle_send);
 static VALUE
 pl_circle_s_str(VALUE obj, VALUE a)
 {
-    char *str, *s;
     CIRCLE *p, *m;
     VALUE res;
 
@@ -1750,7 +1739,6 @@ pl_circle_init(VALUE obj, VALUE a, VALUE b)
         p->center.y = po->y;
     }
     else {
-        double x;
         VALUE tmp;
 
         a = rb_Array(a);

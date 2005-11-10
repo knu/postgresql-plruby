@@ -82,7 +82,8 @@ struct pl_throw {
     int commit;
 };
 
-static pl_throw_mark(struct pl_throw *plt)
+static void
+pl_throw_mark(struct pl_throw *plt)
 {
     rb_gc_mark(plt->txn);
 }
@@ -148,7 +149,6 @@ static VALUE
 pl_intern_error(VALUE obj)
 {
     struct pl_trans *trans;
-    int rc;
 
     pl_elog(NOTICE, "==> pl_intern_error");
     if (!IsSubTransaction()) {
@@ -222,7 +222,7 @@ pl_transaction(VALUE obj)
     struct pl_trans *trans;
     VALUE res;
     int state, rc, begin_sub;
-    MemoryContext orig_context;
+    MemoryContext orig_context = 0;
 
 
     pl_elog(NOTICE, "==> pl_transaction");

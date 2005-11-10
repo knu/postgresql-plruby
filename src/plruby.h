@@ -29,9 +29,14 @@
 #include "access/xact.h"
 #endif
 
+#if PG_PL_VERSION >= 81
+#include "utils/memutils.h"
+#endif
+
 #include "package.h"
 
 #include <ruby.h>
+#include <st.h>
 
 #ifndef StringValuePtr
 #define StringValuePtr(x) STR2CSTR(x)

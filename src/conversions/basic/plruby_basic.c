@@ -95,6 +95,8 @@ pl_float_s_datum(VALUE obj, VALUE a)
     return rb_float_new(result);
 }
 
+extern double round();
+
 static VALUE
 pl_float_to_datum(VALUE obj, VALUE a)
 {

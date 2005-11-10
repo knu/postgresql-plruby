@@ -62,7 +62,6 @@ static VALUE
 pl_inet_to_datum(VALUE obj, VALUE a)
 {
     inet *ip0, *ip1;
-    Datum d;
     Oid typoid;
 
     typoid = plruby_datum_oid(a, 0);
@@ -293,6 +292,7 @@ pl_inet_s_caddr(VALUE obj)
     CPY_FREE(ip1, ip0, VARSIZE(ip0));
     res = Data_Wrap_Struct(obj, pl_inet_mark, free, ip1);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
+    return res;
 }
 
 static VALUE
@@ -315,6 +315,7 @@ pl_inet_s_saddr(VALUE obj)
     CPY_FREE(ip1, ip0, VARSIZE(ip0));
     res = Data_Wrap_Struct(obj, pl_inet_mark, free, ip1);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
+    return res;
 }
 
 static VALUE

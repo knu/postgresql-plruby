@@ -1,6 +1,4 @@
 {
-    VALUE tmp;
-
 #if RUBY_CAN_USE_AUTOLOAD
     rb_funcall(rb_mKernel, rb_intern("autoload"), 2, rb_str_new2("Point"),
                rb_str_new2("plruby/plruby_geometry"));
@@ -21,6 +19,8 @@
     rb_hash_aset(plruby_conversions, INT2NUM(POLYGONOID), INT2NUM(rb_intern("Polygon")));
     rb_hash_aset(plruby_conversions, INT2NUM(CIRCLEOID), INT2NUM(rb_intern("Circle")));
 #else
+    VALUE tmp;
+
     tmp = plruby_define_void_class("Point", "plruby/plruby_geometry");
     rb_hash_aset(plruby_classes, INT2NUM(POINTOID), tmp);
     tmp = plruby_define_void_class("Segment", "plruby/plruby_geometry");

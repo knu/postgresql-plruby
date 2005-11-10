@@ -62,7 +62,6 @@ pl_bit_to_datum(VALUE obj, VALUE a)
 {
     VarBit *ip0, *ip1;
     int length;
-    Datum d;
     Oid typoid;
 
     typoid = plruby_datum_oid(a, &length);
@@ -87,7 +86,7 @@ pl_bit_init(int argc, VALUE *argv, VALUE obj)
 {
     VarBit *inst;
     VALUE a, b;
-    void *v = 0, *v1;
+    void *v = 0;
     int length = -1;
     int taint = 0;
 
@@ -103,6 +102,8 @@ pl_bit_init(int argc, VALUE *argv, VALUE obj)
 #else
         v = (void *)PLRUBY_DFC1(bitfromint4, Int32GetDatum(NUM2LONG(a)));
         if (length > 0) {
+	    void *v1;
+
             int ll = DatumGetInt32(PLRUBY_DFC1(bitlength, v));
             if (length != ll) {
                 if (length < ll) {
@@ -349,6 +350,8 @@ pl_bit_include(VALUE obj, VALUE a)
     return Qtrue;
 }
 
+extern long rb_reg_search();
+
 static VALUE
 pl_bit_subpat(VALUE obj, VALUE a, int nth)
 {
@@ -435,7 +438,7 @@ pl_bit_aref(VALUE obj, VALUE a)
         if (DatumGetInt32(PLRUBY_DFC2(bitposition, v, v0)) > 0) {
             v1 = (VarBit *)ALLOC_N(char, VARSIZE(v0));
             CPY_FREE(v1, v0, VARSIZE(v0));
-            res = Data_Wrap_Struct(rb_class_obj(obj), pl_bit_mark, free, v1);
+            res = Data_Wrap_Struct(CLASS_OF(obj), pl_bit_mark, free, v1);
             if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
             return res;
         }

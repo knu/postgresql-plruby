@@ -1,12 +1,12 @@
 #include "package.h"
 
-#include "package.h"
-#include <ruby.h>
-#include "package.h"
 #include <postgres.h>
 #include <catalog/pg_type.h>
 #include <utils/builtins.h>
 #include <lib/stringinfo.h>
+#include "package.h"
+#include <ruby.h>
+#include "package.h"
 
 #define CPY_FREE(p0_, p1_, size_) do {		\
     void *p2_ = (void *)p1_;			\

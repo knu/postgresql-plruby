@@ -432,7 +432,7 @@ extra_args_mark(struct extra_args *exa)
 static VALUE
 pl_real_handler(struct pl_thread_st *plth)
 {
-    VALUE result;
+    VALUE result = Qnil;
     int state;
 
 #ifdef PLRUBY_TIMEOUT
@@ -730,6 +730,15 @@ pl_func_handler(struct pl_thread_st *plth)
     nargs = procStruct->pronargs;
     for (i = 0; i < nargs; ++i) {
 #if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 81
+        if (procStruct->proargtypes.values[i] == ANYARRAYOID ||
+            procStruct->proargtypes.values[i] == ANYELEMENTOID) {
+            arg_type[i] = get_fn_expr_argtype(fcinfo->flinfo, i);
+            if (arg_type[i] == InvalidOid) {
+                arg_type[i] = procStruct->proargtypes.values[i];
+            }
+        }
+#else
         if (procStruct->proargtypes[i] == ANYARRAYOID ||
             procStruct->proargtypes[i] == ANYELEMENTOID) {
             arg_type[i] = get_fn_expr_argtype(fcinfo->flinfo, i);
@@ -737,10 +746,15 @@ pl_func_handler(struct pl_thread_st *plth)
                 arg_type[i] = procStruct->proargtypes[i];
             }
         }
+#endif
         else 
 #endif
         {
+#if PG_PL_VERSION >= 81
+            arg_type[i] = procStruct->proargtypes.values[i];
+#else
             arg_type[i] = procStruct->proargtypes[i];
+#endif
         }
     }
 
@@ -924,7 +938,6 @@ pl_func_handler(struct pl_thread_st *plth)
 
         {
             Datum prosrc;
-            char *argf;
             VALUE argname;
 #if PG_PL_VERSION >= 75
             bool isnull;
@@ -1203,24 +1216,32 @@ pl_trigger_handler(struct pl_thread_st *plth)
         rb_raise(pl_ePLruby, "unknown LEVEL event (%u)", trigdata->tg_event);
     }
 
+    tg_old = Qnil;
+    tg_new = Qnil;
+    rettup = NULL;
     if (TRIGGER_FIRED_BY_INSERT(trigdata->tg_event)) {
         rb_hash_aset(TG, rb_str_freeze_new2("op"), INT2FIX(TG_INSERT));
-        tg_new = plruby_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-        tg_old = rb_hash_new();
-        rettup = trigdata->tg_trigtuple;
+        if (TRIGGER_FIRED_FOR_ROW(trigdata->tg_event)) {
+            tg_new = plruby_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+            tg_old = rb_hash_new();
+            rettup = trigdata->tg_trigtuple;
+        }
     }
     else if (TRIGGER_FIRED_BY_DELETE(trigdata->tg_event)) {
         rb_hash_aset(TG, rb_str_freeze_new2("op"), INT2FIX(TG_DELETE));
-        tg_old = plruby_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-        tg_new = rb_hash_new();
-
-        rettup = trigdata->tg_trigtuple;
+        if (TRIGGER_FIRED_FOR_ROW(trigdata->tg_event)) {
+            tg_old = plruby_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+            tg_new = rb_hash_new();
+            rettup = trigdata->tg_trigtuple;
+        }
     }
     else if (TRIGGER_FIRED_BY_UPDATE(trigdata->tg_event)) {
         rb_hash_aset(TG, rb_str_freeze_new2("op"), INT2FIX(TG_UPDATE)); 
-        tg_new = plruby_build_tuple(trigdata->tg_newtuple, tupdesc, RET_HASH);
-        tg_old = plruby_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
-        rettup = trigdata->tg_newtuple;
+        if (TRIGGER_FIRED_FOR_ROW(trigdata->tg_event)) {
+            tg_new = plruby_build_tuple(trigdata->tg_newtuple, tupdesc, RET_HASH);
+            tg_old = plruby_build_tuple(trigdata->tg_trigtuple, tupdesc, RET_HASH);
+            rettup = trigdata->tg_newtuple;
+        }
     }
     else {
         rb_raise(pl_ePLruby, "unknown OP event (%u)", trigdata->tg_event);
@@ -1274,6 +1295,10 @@ pl_trigger_handler(struct pl_thread_st *plth)
     default:
         rb_raise(pl_ePLruby, "Invalid return value");
         break;
+    }
+
+    if (!TRIGGER_FIRED_FOR_ROW(trigdata->tg_event)) {
+        rb_raise(pl_ePLruby, "Invalid return value for per-statement trigger");
     }
 
     modattrs = ALLOCA_N(int, tupdesc->natts);
@@ -1441,6 +1466,7 @@ pl_load_singleton(argc, argv, obj)
 static VALUE plans;
 
 extern void Init_plruby_pl();
+extern void Init_plruby_trans();
 
 static void
 pl_init_all(void)
