@@ -161,7 +161,12 @@ NAME_(VALUE obj)						\
 }
 
 NETWORK_CALL(pl_inet_host, network_host);
+
+#if PG_PL_VERSION >= 82
+NETWORK_CALL(pl_inet_abbrev, inet_abbrev);
+#else
 NETWORK_CALL(pl_inet_abbrev, network_abbrev);
+#endif
 
 static VALUE
 pl_inet_to_s(VALUE obj)

@@ -179,6 +179,7 @@ enum { TG_BEFORE, TG_AFTER, TG_ROW, TG_STATEMENT, TG_INSERT,
 struct pl_thread_st {
     PG_FUNCTION_ARGS;
     int timeout;
+    Oid validator;
 };
 
 typedef struct pl_proc_desc

@@ -198,6 +198,7 @@ $CFLAGS += " -DPG_PL_VERSION=#{version}"
 
 suffix = with_config('suffix').to_s
 $CFLAGS += " -DPLRUBY_CALL_HANDLER=plruby#{suffix}_call_handler"
+$CFLAGS += " -DPLRUBY_VALIDATOR=plruby#{suffix}_validator"
 
 subdirs.each do |key|
    orig_argv << "with-cflags=\"#$CFLAGS -I.. -I ../..\""

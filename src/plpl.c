@@ -476,9 +476,15 @@ plruby_return_array(VALUE ary, pl_proc_desc *p)
     }
     PLRUBY_BEGIN_PROTECT(1);
 #if PG_PL_VERSION >= 74
+#if PG_PL_VERSION >= 82
+    array = construct_md_array(values, NULL, ndim, dim, lbs,
+                               p->result_elem, p->result_len,
+                               p->result_val, p->result_align);
+#else
     array = construct_md_array(values, ndim, dim, lbs,
                                p->result_elem, p->result_len,
                                p->result_val, p->result_align);
+#endif
 #else
     array = construct_array(values, dim[0], p->result_elem, p->result_len,
                             p->result_val, p->result_align);
@@ -504,26 +510,78 @@ return_base_type(VALUE c, pl_proc_desc *prodesc)
     return retval;
 }
 
+struct each_st {
+    VALUE res;
+    TupleDesc tup;
+};
+
+static VALUE
+pl_each(VALUE obj, struct each_st *st)
+{
+    VALUE key, value;
+    char *column;
+    int attn;
+
+    key = rb_ary_entry(obj, 0);
+    value = rb_ary_entry(obj, 1);
+    key = plruby_to_s(key);
+    column = RSTRING(key)->ptr;
+    attn = SPI_fnumber(st->tup, column);
+    if (attn <= 0 || st->tup->attrs[attn - 1]->attisdropped) {
+	rb_raise(pl_ePLruby, "Invalid column name '%s'", column);
+    }
+    attn -= 1;
+    if (TYPE(st->res) != T_ARRAY || !RARRAY(st->res)->ptr) {
+        rb_raise(pl_ePLruby, "expected an Array");
+    }
+    if (attn >= RARRAY(st->res)->len) {
+	rb_raise(pl_ePLruby, "Invalid column position '%d'", attn);
+    }
+    RARRAY(st->res)->ptr[attn] = value;
+    return Qnil;
+}
+
 static HeapTuple
 pl_tuple_heap(VALUE c, VALUE tuple)
 {
     HeapTuple retval;
     struct pl_tuple *tpl;
+    TupleDesc tupdesc = 0;
     Datum *dvalues;
     Oid typid;
     char *nulls;
     int i;
 
+    
     GetTuple(tuple, tpl);
-    if (tpl->pro->result_type == 'b' && TYPE(c) != T_ARRAY) {
-        c = rb_Array(c);
+    if (tpl->att) {
+	tupdesc = tpl->att->tupdesc;
+    }
+    if (!tupdesc) {
+	rb_raise(pl_ePLruby, "Invalid descriptor");
+    }
+    if (TYPE(c) != T_ARRAY) {
+	if (rb_respond_to(c, rb_intern("each"))) {
+	    struct each_st st;
+
+	    st.res = rb_ary_new();
+	    st.tup = tupdesc;
+	    for (i = 0; i < tupdesc->natts; ++i) {
+		rb_ary_push(st.res, Qnil);
+	    }
+	    rb_iterate(rb_each, c, pl_each, (VALUE)&st);
+	    c = st.res;
+	}
+	else {
+	    c = rb_Array(c);
+	}
     }
     if (TYPE(c) != T_ARRAY || !RARRAY(c)->ptr) {
         rb_raise(pl_ePLruby, "expected an Array");
     }
-    if (tpl->att->tupdesc->natts != RARRAY(c)->len) {
+    if (tupdesc->natts != RARRAY(c)->len) {
         rb_raise(pl_ePLruby, "Invalid number of rows (%d expected %d)",
-                 tpl->att->tupdesc->natts, RARRAY(c)->len);
+                 RARRAY(c)->len, tupdesc->natts);
     }
     dvalues = ALLOCA_N(Datum, RARRAY(c)->len);
     MEMZERO(dvalues, Datum, RARRAY(c)->len);
@@ -531,14 +589,15 @@ pl_tuple_heap(VALUE c, VALUE tuple)
     MEMZERO(nulls, char, RARRAY(c)->len);
     for (i = 0; i < RARRAY(c)->len; i++) {
         if (NIL_P(RARRAY(c)->ptr[i]) || 
-            tpl->att->tupdesc->attrs[i]->attisdropped) {
+            tupdesc->attrs[i]->attisdropped) {
             dvalues[i] = (Datum)0;
             nulls[i] = 'n';
         }
         else {
             nulls[i] = ' ';
-            typid =  tpl->att->tupdesc->attrs[i]->atttypid;
-            if (tpl->att->tupdesc->attrs[i]->attndims != 0) {
+            typid =  tupdesc->attrs[i]->atttypid;
+            if (tupdesc->attrs[i]->attndims != 0 ||
+		tpl->att->attinfuncs[i].fn_addr == (PGFunction)array_in) {
                 pl_proc_desc prodesc;
                 FmgrInfo func;
                 HeapTuple hp;
@@ -577,11 +636,11 @@ pl_tuple_heap(VALUE c, VALUE tuple)
             }
             else  {
 #if PG_PL_VERSION >= 75
-                dvalues[i] = plruby_to_datum(RARRAY(c)->ptr[i],
-                                             &tpl->att->attinfuncs[i],
-                                             typid,
-                                             tpl->att->attioparams[i],
-                                             tpl->att->atttypmods[i]);
+		dvalues[i] = plruby_to_datum(RARRAY(c)->ptr[i],
+					     &tpl->att->attinfuncs[i],
+					     typid,
+					     tpl->att->attioparams[i],
+					     tpl->att->atttypmods[i]);
 #else
                 dvalues[i] = plruby_to_datum(RARRAY(c)->ptr[i],
                                              &tpl->att->attinfuncs[i],
@@ -593,7 +652,7 @@ pl_tuple_heap(VALUE c, VALUE tuple)
         }
     }
     PLRUBY_BEGIN_PROTECT(1);
-    retval = heap_formtuple(tpl->att->tupdesc, dvalues, nulls);
+    retval = heap_formtuple(tupdesc, dvalues, nulls);
     PLRUBY_END_PROTECT;
     return retval;
 }
@@ -1412,6 +1471,24 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
         PLRUBY_END_PROTECT;
         return retval;
     }
+#if PG_PL_VERSION >= 81
+    if (prodesc->result_type == 'y') {
+	TupleDesc tupdesc;
+	
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) == TYPEFUNC_COMPOSITE) {
+	    VALUE tmp;
+	    struct pl_tuple *tpl;
+
+	    tmp = Data_Make_Struct(rb_cData, struct pl_tuple, pl_thr_mark, 
+				   free, tpl);
+	    GetTuple(tmp, tpl);
+	    tpl->pro = prodesc;
+	    tpl->dsc = tupdesc;
+	    tpl->att = TupleDescGetAttInMetadata(tupdesc);
+	    return pl_tuple_datum(c, tmp);
+	}
+    }
+#endif
     return return_base_type(c, prodesc);
 }
 

@@ -1,0 +1,83 @@
+have_header: checking for catalog/pg_proc.h... -------------------- yes
+
+"gcc -E -I. -I/home/ts/local/r184/lib/ruby/1.8/i686-linux -I/home/ts/local/pg82/include  -g -O2 -I/home/ts/local/pg82/include/postgresql/server  conftest.c -o conftest.i"
+checked program was:
+/* begin */
+#include <catalog/pg_proc.h>
+/* end */
+
+--------------------
+
+have_func: checking for rb_hash_delete()... -------------------- yes
+
+"gcc -o conftest -I. -I/home/ts/local/r184/lib/ruby/1.8/i686-linux -I/home/ts/local/pg82/include  -g -O2 -I/home/ts/local/pg82/include/postgresql/server conftest.c  -L'/home/ts/local/pg82/lib' -Wl,-R'/home/ts/local/pg82/lib' -L'/home/ts/local/r184/lib' -Wl,-R'/home/ts/local/r184/lib'      -lruby-static  -ldl -lcrypt -lm   -lc"
+conftest.c: In function 't':
+conftest.c:5: error: too few arguments to function 'rb_hash_delete'
+checked program was:
+/* begin */
+#include <ruby.h>
+
+/*top*/
+int main() { return 0; }
+int t() { rb_hash_delete(); return 0; }
+/* end */
+
+"gcc -o conftest -I. -I/home/ts/local/r184/lib/ruby/1.8/i686-linux -I/home/ts/local/pg82/include  -g -O2 -I/home/ts/local/pg82/include/postgresql/server conftest.c  -L'/home/ts/local/pg82/lib' -Wl,-R'/home/ts/local/pg82/lib' -L'/home/ts/local/r184/lib' -Wl,-R'/home/ts/local/r184/lib'      -lruby-static  -ldl -lcrypt -lm   -lc"
+checked program was:
+/* begin */
+
+#include <ruby.h>
+
+/*top*/
+int main() { return 0; }
+int t() { void ((*volatile p)()); p = (void ((*)()))rb_hash_delete; return 0; }
+/* end */
+
+--------------------
+
+have_header: checking for server/utils/array.h... -------------------- no
+
+"gcc -E -I. -I/home/ts/local/r184/lib/ruby/1.8/i686-linux -I/home/ts/local/pg82/include  -g -O2 -I/home/ts/local/pg82/include/postgresql/server -DHAVE_RB_HASH_DELETE -DHAVE_RB_INITIALIZE_COPY  conftest.c -o conftest.i"
+conftest.c:1:32: error: server/utils/array.h: No such file or directory
+checked program was:
+/* begin */
+#include <server/utils/array.h>
+/* end */
+
+--------------------
+
+have_header: checking for utils/array.h... -------------------- yes
+
+"gcc -E -I. -I/home/ts/local/r184/lib/ruby/1.8/i686-linux -I/home/ts/local/pg82/include  -g -O2 -I/home/ts/local/pg82/include/postgresql/server -DHAVE_RB_HASH_DELETE -DHAVE_RB_INITIALIZE_COPY  conftest.c -o conftest.i"
+checked program was:
+/* begin */
+#include <utils/array.h>
+/* end */
+
+--------------------
+
+"gcc -c -I. -I/home/ts/local/r184/lib/ruby/1.8/i686-linux -I/home/ts/local/pg82/include  -g -O2 -I/home/ts/local/pg82/include/postgresql/server -DHAVE_RB_HASH_DELETE -DHAVE_RB_INITIALIZE_COPY -DPG_UTILS_ARRAY   conftest.c"
+checked program was:
+/* begin */
+#include "c.h"
+#include "utils/elog.h"
+/*top*/
+#ifndef PG_TRY
+# error
+>>>>>> PG_TRY undefined <<<<<<
+#endif
+/* end */
+
+find_library: checking for ruby_init() in -lruby-static... -------------------- yes
+
+"gcc -o conftest -I. -I/home/ts/local/r184/lib/ruby/1.8/i686-linux -I/home/ts/local/pg82/include  -g -O2 -I/home/ts/local/pg82/include/postgresql/server -DHAVE_RB_HASH_DELETE -DHAVE_RB_INITIALIZE_COPY -DPG_UTILS_ARRAY -DPG_PL_TRYCATCH -DPLRUBY_ENABLE_CONVERSION -DRUBY_CAN_USE_AUTOLOAD -DRUBY_CAN_USE_MARSHAL_DUMP -DPG_PL_VERSION=82 -DPLRUBY_CALL_HANDLER=plruby_call_handler -DPLRUBY_VALIDATOR=plruby_validator conftest.c  -L'/home/ts/local/pg82/lib' -Wl,-R'/home/ts/local/pg82/lib' -L'/home/ts/local/r184/lib' -Wl,-R'/home/ts/local/r184/lib'      -lruby-static -lruby-static  -ldl -lcrypt -lm   -lc"
+checked program was:
+/* begin */
+
+/*top*/
+int main() { return 0; }
+int t() { ruby_init(); return 0; }
+/* end */
+
+--------------------
+

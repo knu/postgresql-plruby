@@ -144,7 +144,11 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             typename = makeNode(TypeName);
             foreach (lp, names)
                 typename->names = lappend(typename->names, makeString(lfirst(lp)));
+#if PG_PL_VERSION >= 82
+            typeTup = typenameType(NULL, typename);
+#else
             typeTup = typenameType(typename);
+#endif
             qdesc->argtypes[i] = HeapTupleGetOid(typeTup);
             fpgt = (Form_pg_type) GETSTRUCT(typeTup);
             arg_is_array = qdesc->arg_is_array[i] = NameStr(fpgt->typname)[0] == '_';
@@ -387,7 +391,7 @@ plruby_i_each(VALUE obj, struct portal_options *po)
 
     key = rb_ary_entry(obj, 0);
     value = rb_ary_entry(obj, 1);
-    key = rb_obj_as_string(key);
+    key = plruby_to_s(key);
     options = RSTRING(key)->ptr;
     if (strcmp(options, "values") == 0 ||
         strcmp(options, "types") == 0) {

@@ -284,6 +284,11 @@ pl_bit_to_i(VALUE obj)
 }
 
 /* This is varbit_out() from utils/adt/varbit.c */
+
+#ifndef IS_HIGHBIT_SET
+#define IS_HIGHBIT_SET(x) ((x) & BITHIGHT)
+#endif
+
 static VALUE
 pl_bit_each(VALUE obj)
 {
@@ -300,7 +305,7 @@ pl_bit_each(VALUE obj)
     for (i = 0; i < len - BITS_PER_BYTE; i += BITS_PER_BYTE, sp++) {
         x = *sp;
         for (k = 0; k < BITS_PER_BYTE; k++) {
-            if (x & BITHIGH) {
+            if (IS_HIGHBIT_SET(x)) {
                 rb_yield(i1);
             }
             else {
@@ -311,7 +316,7 @@ pl_bit_each(VALUE obj)
     }
     x = *sp;
     for (k = i; k < len; k++){
-        if (x & BITHIGH) {
+        if (IS_HIGHBIT_SET(x)) {
             rb_yield(i1);
         }
         else {
@@ -425,7 +430,7 @@ pl_bit_aref(VALUE obj, VALUE a)
         sp = VARBITS(v);
         sp += (idx / BITS_PER_BYTE);
         x = *sp <<= (idx % BITS_PER_BYTE);
-        if (x & BITHIGH) return INT2FIX(1);
+        if (IS_HIGHBIT_SET(x)) return INT2FIX(1);
         return INT2FIX(0);
 
     case T_REGEXP:

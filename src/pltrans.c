@@ -38,6 +38,16 @@ pl_trans_mark(void *trans)
 } while (0)
 
 static char *savename = "savepoint_name";
+
+static DefElem *
+make_defelem(char *name, VALUE arg)
+{
+    DefElem *f = makeNode(DefElem);
+    f->defname = name;
+    f->arg = (Node *)makeString(RSTRING(arg)->ptr);
+    return f;
+}
+
         
 static VALUE
 pl_intern_commit(VALUE obj)
@@ -59,16 +69,13 @@ pl_intern_commit(VALUE obj)
         }
     }
     else {
-        DefElem *elem;
-
+	List *list;
 
         pl_elog(NOTICE, "ReleaseSavepoint");
-        elem = makeNode(DefElem);
-        elem->defname = savename;
-        elem->arg = (Node *)makeString(RSTRING(trans->name)->ptr);
+	list = list_make1(make_defelem(savename, trans->name));
         trans->name = Qnil;
         trans->commit = Qtrue;
-        ReleaseSavepoint(list_make1(elem));
+        ReleaseSavepoint(list);
         CommitTransactionCommand();
         StartTransactionCommand();
     }
@@ -128,15 +135,13 @@ pl_intern_abort(VALUE obj)
         }
     }
     else {
-        DefElem *elem;
+	List *list;
 
         pl_elog(NOTICE, "RollbackToSavepoint");
-        elem = makeNode(DefElem);
-        elem->defname = savename;
-        elem->arg = (Node *)makeString(RSTRING(trans->name)->ptr);
+	list = list_make1(make_defelem(savename, trans->name));
         trans->name = Qnil;
         trans->commit = Qtrue;
-        RollbackToSavepoint(list_make1(elem));
+        RollbackToSavepoint(list);
         CommitTransactionCommand();
         RollbackAndReleaseCurrentSubTransaction();
     }
@@ -294,6 +299,61 @@ pl_transaction(VALUE obj)
         
 #endif
 
+#if PG_PL_VERSION >= 81
+
+static VALUE
+pl_savepoint(VALUE obj, VALUE a)
+{
+    if (!IsTransactionBlock() || !IsSubTransaction()) {
+	rb_raise(pl_ePLruby, "savepoint called outside a transaction");
+    }
+    a = plruby_to_s(a);
+    pl_elog(NOTICE, "====> definesavepoint");
+    PLRUBY_BEGIN_PROTECT(1);
+    DefineSavepoint(RSTRING(a)->ptr);
+    CommitTransactionCommand();
+    StartTransactionCommand();
+    PLRUBY_END_PROTECT;
+    pl_elog(NOTICE, "<==== definesavepoint");
+    return Qnil;
+}
+
+static VALUE
+pl_release(VALUE obj, VALUE a)
+{
+    if (!IsTransactionBlock() || !IsSubTransaction()) {
+	rb_raise(pl_ePLruby, "release called outside a transaction");
+    }
+    a = plruby_to_s(a);
+    pl_elog(NOTICE, "====> releasesavepoint");
+    PLRUBY_BEGIN_PROTECT(1);
+    ReleaseSavepoint(list_make1(make_defelem("savepoint_name", a)));
+    CommitTransactionCommand();
+    StartTransactionCommand();
+    PLRUBY_END_PROTECT;
+    pl_elog(NOTICE, "<==== releasesavepoint");
+    return Qnil;
+}
+
+static VALUE
+pl_rollback(VALUE obj, VALUE a)
+{
+    if (!IsTransactionBlock() || !IsSubTransaction()) {
+	rb_raise(pl_ePLruby, "rollback called outside a transaction");
+    }
+    a = plruby_to_s(a);
+    pl_elog(NOTICE, "====> rollbacksavepoint");
+    PLRUBY_BEGIN_PROTECT(1);
+    RollbackToSavepoint(list_make1(make_defelem("savepoint_name", a)));
+    CommitTransactionCommand();
+    RollbackAndReleaseCurrentSubTransaction();
+    PLRUBY_END_PROTECT;
+    pl_elog(NOTICE, "<==== rollbacksavepoint");
+    return Qnil;
+}
+
+#endif
+    
 void
 Init_plruby_trans()
 {
@@ -309,6 +369,11 @@ Init_plruby_trans()
     rb_define_global_const("REPETABLE_READ", INT2FIX(PG_PL_REPETABLE_READ));
     rb_define_global_const("SERIALIZABLE", INT2FIX(PG_PL_SERIALIZABLE));
     rb_define_global_function("transaction", pl_transaction, 0);
+#if PG_PL_VERSION >= 81
+    rb_define_global_function("savepoint", pl_savepoint, 1);
+    rb_define_global_function("release_savepoint", pl_release, 1);
+    rb_define_global_function("rollback_to_savepoint", pl_rollback, 1);
+#endif
     pl_cTrans = rb_define_class_under(pl_mPL, "Transaction", rb_cObject);
 #if HAVE_RB_DEFINE_ALLOC_FUNC
     rb_undef_alloc_func(pl_cTrans);
