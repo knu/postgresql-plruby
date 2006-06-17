@@ -286,7 +286,7 @@ pl_bit_to_i(VALUE obj)
 /* This is varbit_out() from utils/adt/varbit.c */
 
 #ifndef IS_HIGHBIT_SET
-#define IS_HIGHBIT_SET(x) ((x) & BITHIGHT)
+#define IS_HIGHBIT_SET(x) ((x) & BITHIGH)
 #endif
 
 static VALUE

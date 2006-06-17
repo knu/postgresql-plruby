@@ -704,7 +704,7 @@ PLRUBY_CALL_HANDLER(PG_FUNCTION_ARGS)
 
 static char *definition = "def PLtemp.%s(%s)\n%s\nend";
 
-#if PG_PL_VERSION >= 81
+#if PG_PL_VERSION >= 82
 
 static VALUE
 pl_arg_names(HeapTuple procTup, pl_proc_desc *prodesc) 
