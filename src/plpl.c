@@ -14,8 +14,10 @@ static ID id_delete;
 
 #endif
 
-static char *names = "SELECT a.attname FROM pg_class c, pg_attribute a"
+static char *names = 
+"SELECT a.attname FROM pg_class c, pg_attribute a, pg_namespace n"
 " WHERE c.relname = '%s' AND a.attnum > 0 AND a.attrelid = c.oid"
+" AND c.relnamespace = n.oid AND n.nspname = '%s'"
 " ORDER BY a.attnum";
 
 static VALUE
@@ -23,12 +25,24 @@ pl_column_name(VALUE obj, VALUE table)
 {
     VALUE *query, res;
     char *tmp;
+    char *nsp, *tbl, *c;
 
     if (TYPE(table) != T_STRING || !RSTRING(table)->ptr) {
         rb_raise(pl_ePLruby, "expected a String");
     }
     tmp = ALLOCA_N(char, strlen(names) + RSTRING(table)->len + 1);
-    sprintf(tmp, names, RSTRING(table)->ptr);
+    nsp = ALLOCA_N(char, RSTRING(table)->len + 1);
+    tbl = ALLOCA_N(char, RSTRING(table)->len + 1);
+    strcpy(nsp, RSTRING(table)->ptr);
+    if ((c = strchr(nsp, '.')) != NULL) {
+	*c = 0;
+	strcpy(tbl, c + 1);
+    }
+    else {
+	strcpy(tbl, nsp);
+	strcpy(nsp, "public");
+    }
+    sprintf(tmp, names, tbl, nsp);
     query = ALLOCA_N(VALUE, 3);
     MEMZERO(query, VALUE, 3);
     query[0] = rb_str_new2(tmp);
@@ -40,9 +54,10 @@ pl_column_name(VALUE obj, VALUE table)
 }
 
 static char *types = 
-"SELECT t.typname FROM pg_class c, pg_attribute a, pg_type t"
+"SELECT t.typname FROM pg_class c, pg_attribute a, pg_type t, pg_namespace n"
 " WHERE c.relname = '%s' and a.attnum > 0"
-" and a.attrelid = c.oid and a.atttypid = t.oid"
+" AND a.attrelid = c.oid and a.atttypid = t.oid"
+" AND c.relnamespace = n.oid AND n.nspname = '%s'"
 " ORDER BY a.attnum";
 
 static VALUE
@@ -50,12 +65,24 @@ pl_column_type(VALUE obj, VALUE table)
 {
     VALUE *query, res;
     char *tmp;
+    char *nsp, *tbl, *c;
 
     if (TYPE(table) != T_STRING || !RSTRING(table)->ptr) {
         rb_raise(pl_ePLruby, "expected a String");
     }
     tmp = ALLOCA_N(char, strlen(types) + RSTRING(table)->len + 1);
-    sprintf(tmp, types, RSTRING(table)->ptr);
+    nsp = ALLOCA_N(char, RSTRING(table)->len + 1);
+    tbl = ALLOCA_N(char, RSTRING(table)->len + 1);
+    strcpy(nsp, RSTRING(table)->ptr);
+    if ((c = strchr(nsp, '.')) != NULL) {
+	*c = 0;
+	strcpy(tbl, c + 1);
+    }
+    else {
+	strcpy(tbl, nsp);
+	strcpy(nsp, "public");
+    }
+    sprintf(tmp, types, tbl, nsp);
     query = ALLOCA_N(VALUE, 3);
     MEMZERO(query, VALUE, 3);
     query[0] = rb_str_new2(tmp);
@@ -397,7 +424,12 @@ plruby_to_datum(VALUE obj, FmgrInfo *finfo, Oid typoid,
                 Oid typelem, int typlen)
 {
     Datum d;
+    VALUE tmp;
 
+    tmp = rb_attr_get(obj, rb_intern("plruby_tuple"));
+    if (TYPE(tmp) == T_DATA) {
+	return (Datum)DATA_PTR(tmp);
+    }
     if (typoid == BOOLOID) {
         return BoolGD(RTEST(obj));
     }
@@ -1267,7 +1299,8 @@ plruby_create_args(struct pl_thread_st *plth, pl_proc_desc *prodesc)
             rb_ary_push(ary, Qnil);
         }
         else if (prodesc->arg_is_rel[i]) {
-            
+            VALUE tmp;
+
 #if PG_PL_VERSION >= 75
             HeapTupleHeader td;
             Oid tupType;
@@ -1281,13 +1314,14 @@ plruby_create_args(struct pl_thread_st *plth, pl_proc_desc *prodesc)
             tupdesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
             tmptup.t_len = HeapTupleHeaderGetDatumLength(td);
             tmptup.t_data = td;
-            rb_ary_push(ary, plruby_build_tuple(&tmptup, tupdesc, RET_HASH));
+	    tmp = plruby_build_tuple(&tmptup, tupdesc, RET_HASH);
 #else
             TupleTableSlot *slot = (TupleTableSlot *) fcinfo->arg[i];
-            rb_ary_push(ary, plruby_build_tuple(slot->val,
-                                                slot->ttc_tupleDescriptor, 
-                                                RET_HASH));
+            tmp = plruby_build_tuple(slot->val, slot->ttc_tupleDescriptor, RET_HASH);
 #endif
+	    rb_iv_set(tmp, "plruby_tuple", 
+		      Data_Wrap_Struct(rb_cData, 0, 0, (void *)fcinfo->arg[i]));
+	    rb_ary_push(ary, tmp);
         } 
         else if (prodesc->arg_is_array[i]) {
             ArrayType *array;
