@@ -42,6 +42,16 @@
 #define StringValuePtr(x) STR2CSTR(x)
 #endif
 
+#ifndef RSTRING_PTR
+# define RSTRING_PTR(x_) RSTRING(x_)->ptr
+# define RSTRING_LEN(x_) RSTRING(x_)->len
+#endif
+
+#ifndef RARRAY_PTR
+# define RARRAY_PTR(x_) RARRAY(x_)->ptr
+# define RARRAY_LEN(x_) RARRAY(x_)->len
+#endif
+
 extern VALUE rb_thread_list();
 
 #ifndef SAFE_LEVEL

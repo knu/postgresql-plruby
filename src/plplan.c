@@ -107,7 +107,7 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
         if (TYPE(qdesc->po.argsv) != T_ARRAY) {
             rb_raise(pl_ePLruby, "expected an Array");
         }
-        qdesc->nargs = RARRAY(qdesc->po.argsv)->len;
+        qdesc->nargs = RARRAY_LEN(qdesc->po.argsv);
     }
     qdesc->argtypes = NULL;
     if (qdesc->nargs) {
@@ -136,10 +136,10 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             TypeName *typename;
             Form_pg_type fpgt;
             int arg_is_array = 0;
-            VALUE args = plruby_to_s(RARRAY(qdesc->po.argsv)->ptr[i]);
+            VALUE args = plruby_to_s(RARRAY_PTR(qdesc->po.argsv)[i]);
 
             PLRUBY_BEGIN_PROTECT(1);
-            argcopy  = pstrdup(RSTRING(args)->ptr);
+            argcopy  = pstrdup(RSTRING_PTR(args));
             SplitIdentifierString(argcopy, '.', &names);
             typename = makeNode(TypeName);
             foreach (lp, names)
@@ -200,7 +200,7 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
 #ifdef PG_PL_TRYCATCH
         PG_TRY();
         {
-            plan = SPI_prepare(RSTRING(a)->ptr, qdesc->nargs, qdesc->argtypes);
+            plan = SPI_prepare(RSTRING_PTR(a), qdesc->nargs, qdesc->argtypes);
         }
         PG_CATCH();
         {
@@ -214,7 +214,7 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
         memcpy(&save_restart, &Warn_restart, sizeof(save_restart));
         if (sigsetjmp(Warn_restart, 1) == 0) {
             PLRUBY_BEGIN_PROTECT(1);
-            plan = SPI_prepare(RSTRING(a)->ptr, qdesc->nargs, qdesc->argtypes);
+            plan = SPI_prepare(RSTRING_PTR(a), qdesc->nargs, qdesc->argtypes);
             memcpy(&Warn_restart, &save_restart, sizeof(Warn_restart));
             PLRUBY_END_PROTECT;
         }
@@ -258,7 +258,7 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             break;
         }
         rb_raise(pl_ePLruby, "SPI_prepare() failed - %s\n%s",
-                 reason, RSTRING(a)->ptr);
+                 reason, RSTRING_PTR(a));
     }
     qdesc->plan = plan;
     if (qdesc->po.save) {
@@ -291,10 +291,10 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
         if (TYPE(argsv) != T_ARRAY) {
             rb_raise(pl_ePLruby, "array expected for arguments");
         }
-        if (RARRAY(argsv)->len != qdesc->nargs) {
+        if (RARRAY_LEN(argsv) != qdesc->nargs) {
             rb_raise(pl_ePLruby, "length of arguments doesn't match # of arguments");
         }
-        callnargs = RARRAY(argsv)->len;
+        callnargs = RARRAY_LEN(argsv);
         portal->nargs = callnargs;
         portal->nulls = ALLOC_N(char, callnargs + 1);
         MEMZERO(portal->nulls, char, callnargs + 1);
@@ -303,7 +303,7 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
         portal->arglen = ALLOC_N(int, callnargs);
         MEMZERO(portal->arglen, int, callnargs);
         for (j = 0; j < callnargs; j++) {
-            if (NIL_P(RARRAY(argsv)->ptr[j])) {
+            if (NIL_P(RARRAY_PTR(argsv)[j])) {
                 portal->nulls[j] = 'n';
                 portal->argvalues[j] = (Datum)NULL;
             }
@@ -323,10 +323,10 @@ process_args(pl_query_desc *qdesc, VALUE vortal)
                     portal->arglen[j] = qdesc->arglen[j];
 
                     portal->argvalues[j] =
-                        plruby_return_array(RARRAY(argsv)->ptr[j], &prodesc);
+                        plruby_return_array(RARRAY_PTR(argsv)[j], &prodesc);
                 } 
                 else {
-                    VALUE args = RARRAY(argsv)->ptr[j];
+                    VALUE args = RARRAY_PTR(argsv)[j];
                     portal->nulls[j] = ' ';
                     portal->arglen[j] = qdesc->arglen[j];
                     portal->argvalues[j] =
@@ -392,7 +392,7 @@ plruby_i_each(VALUE obj, struct portal_options *po)
     key = rb_ary_entry(obj, 0);
     value = rb_ary_entry(obj, 1);
     key = plruby_to_s(key);
-    options = RSTRING(key)->ptr;
+    options = RSTRING_PTR(key);
     if (strcmp(options, "values") == 0 ||
         strcmp(options, "types") == 0) {
         po->argsv = value;
@@ -665,7 +665,7 @@ pl_plan_cursor(int argc, VALUE *argv, VALUE obj)
             if (TYPE(argv[0]) != T_STRING) {
                 rb_raise(pl_ePLruby, "invalid cursor name");
             }
-            name = RSTRING(argv[0])->ptr;
+            name = RSTRING_PTR(argv[0]);
         }
         --argc; ++argv;
     }

@@ -122,7 +122,7 @@ pl_bit_init(int argc, VALUE *argv, VALUE obj)
     }
     if (!v) {
         a = plruby_to_s(a);
-        v = (void *)PLRUBY_DFC3(bit_in, RSTRING(a)->ptr, ObjectIdGetDatum(0),
+        v = (void *)PLRUBY_DFC3(bit_in, RSTRING_PTR(a), ObjectIdGetDatum(0),
                                 Int32GetDatum(length));
     }
     Data_Get_Struct(obj, VarBit, inst);
@@ -438,7 +438,7 @@ pl_bit_aref(VALUE obj, VALUE a)
 
     case T_STRING:
         a = plruby_to_s(a);
-        v0 = (void *)PLRUBY_DFC3(bit_in, RSTRING(a)->ptr, 
+        v0 = (void *)PLRUBY_DFC3(bit_in, RSTRING_PTR(a), 
                                  ObjectIdGetDatum(0), Int32GetDatum(-1));
         if (DatumGetInt32(PLRUBY_DFC2(bitposition, v, v0)) > 0) {
             v1 = (VarBit *)ALLOC_N(char, VARSIZE(v0));
@@ -511,7 +511,7 @@ pl_bit_aset(int argc, VALUE *argv, VALUE obj)
     res = rb_funcall2(pl_bit_to_s(obj), rb_intern("[]="), argc, argv);
     if (NIL_P(res)) return res;
     res = plruby_to_s(res);
-    v = (void *)PLRUBY_DFC3(bit_in, RSTRING(res)->ptr, ObjectIdGetDatum(0),
+    v = (void *)PLRUBY_DFC3(bit_in, RSTRING_PTR(res), ObjectIdGetDatum(0),
                             Int32GetDatum(-1));
     Data_Get_Struct(obj, VarBit, inst);
     free(inst);

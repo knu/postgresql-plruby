@@ -156,9 +156,9 @@ pl_str_to_datum(VALUE obj, VALUE a)
     if (plruby_datum_oid(a, NULL) != BYTEAOID)
        return Qnil;
 
-    len = RSTRING(obj)->len;
+    len = RSTRING_LEN(obj);
     data = palloc(VARHDRSZ + len);
-    memcpy(VARDATA(data), RSTRING(obj)->ptr, len);
+    memcpy(VARDATA(data), RSTRING_PTR(obj), len);
     VARATT_SIZEP(data) = VARHDRSZ + len;
 
     return plruby_datum_set(a, PointerGetDatum(data));

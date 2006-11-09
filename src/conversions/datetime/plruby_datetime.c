@@ -110,20 +110,20 @@ pl_tint_mload(VALUE obj, VALUE a)
 {
     struct pl_tint *tint;
 
-    if (TYPE(a) != T_STRING || !RSTRING(a)->len) {
+    if (TYPE(a) != T_STRING || !RSTRING_LEN(a)) {
         rb_raise(rb_eArgError, "expected a String object");
     }
     a = rb_funcall(pl_mMarshal, rb_intern("load"), 1, a);
-    if (TYPE(a) != T_ARRAY || RARRAY(a)->len != 2) {
+    if (TYPE(a) != T_ARRAY || RARRAY_LEN(a) != 2) {
         rb_raise(rb_eArgError, "expected an Array with 2 elements");
     }
-    if (!rb_obj_is_kind_of(RARRAY(a)->ptr[0], rb_cTime) ||
-        !rb_obj_is_kind_of(RARRAY(a)->ptr[1], rb_cTime)) {
+    if (!rb_obj_is_kind_of(RARRAY_PTR(a)[0], rb_cTime) ||
+        !rb_obj_is_kind_of(RARRAY_PTR(a)[1], rb_cTime)) {
 	rb_raise(rb_eArgError, "need 2 Times objects");
     }
     Data_Get_Struct(obj, struct pl_tint, tint);
-    tint->low = RARRAY(a)->ptr[0];
-    tint->high = RARRAY(a)->ptr[1];
+    tint->low = RARRAY_PTR(a)[0];
+    tint->high = RARRAY_PTR(a)[1];
     return obj;
 }
 

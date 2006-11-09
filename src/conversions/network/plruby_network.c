@@ -91,10 +91,10 @@ pl_inet_init(int argc, VALUE *argv, VALUE obj)
     a = plruby_to_s(a);
     Data_Get_Struct(obj, inet, inst);
     if (cidr) {
-	v = (void *)PLRUBY_DFC1(cidr_in, RSTRING(a)->ptr);
+	v = (void *)PLRUBY_DFC1(cidr_in, RSTRING_PTR(a));
     }
     else {
-	v = (void *)PLRUBY_DFC1(inet_in, RSTRING(a)->ptr);
+	v = (void *)PLRUBY_DFC1(inet_in, RSTRING_PTR(a));
     }
     free(inst);
     inst = (inet *)ALLOC_N(char, VARSIZE(v));
@@ -401,7 +401,7 @@ pl_mac_init(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     Data_Get_Struct(obj, struct macaddr, m0);
-    m1 = (macaddr *)PLRUBY_DFC1(macaddr_in, RSTRING(a)->ptr);
+    m1 = (macaddr *)PLRUBY_DFC1(macaddr_in, RSTRING_PTR(a));
     CPY_FREE(m0, m1, sizeof(macaddr));
     return obj;
 }

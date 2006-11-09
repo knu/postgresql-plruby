@@ -152,6 +152,8 @@ if "aa".respond_to?(:initialize_copy, true)
    $CFLAGS += " -DHAVE_RB_INITIALIZE_COPY"
 end
 
+have_func("rb_block_call")
+
 if version.to_i >= 74
    if !have_header("server/utils/array.h")
       if !have_header("utils/array.h")

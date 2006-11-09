@@ -44,7 +44,7 @@ make_defelem(char *name, VALUE arg)
 {
     DefElem *f = makeNode(DefElem);
     f->defname = name;
-    f->arg = (Node *)makeString(RSTRING(arg)->ptr);
+    f->arg = (Node *)makeString(RSTRING_PTR(arg));
     return f;
 }
 
@@ -310,7 +310,7 @@ pl_savepoint(VALUE obj, VALUE a)
     a = plruby_to_s(a);
     pl_elog(NOTICE, "====> definesavepoint");
     PLRUBY_BEGIN_PROTECT(1);
-    DefineSavepoint(RSTRING(a)->ptr);
+    DefineSavepoint(RSTRING_PTR(a));
     CommitTransactionCommand();
     StartTransactionCommand();
     PLRUBY_END_PROTECT;

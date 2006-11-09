@@ -55,6 +55,10 @@ static HeapTuple pl_trigger_handler(struct pl_thread_st *);
 static Datum pl_validator_handler(struct pl_thread_st *);
 #endif
 
+#if PG_PL_VERSION >= 82
+PG_MODULE_MAGIC;
+#endif
+
 #ifdef PLRUBY_TIMEOUT
 int plruby_in_progress = 0;
 int plruby_interrupted = 0;
@@ -100,7 +104,7 @@ plruby_to_s(VALUE obj)
     if (TYPE(obj) != T_STRING) {
         obj = rb_obj_as_string(obj);
     }
-    if (TYPE(obj) != T_STRING || !RSTRING(obj)->ptr) {
+    if (TYPE(obj) != T_STRING || !RSTRING_PTR(obj)) {
         rb_raise(pl_ePLruby, "Expected a String");
     }
     return obj;
@@ -169,10 +173,10 @@ pl_require_th(VALUE th)
         rb_thread_stop();
         if (RTEST(exec_th)) {
             if (TYPE(file_to_load) == T_STRING && 
-                RSTRING(file_to_load)->ptr) {
+                RSTRING_PTR(file_to_load)) {
                 rb_undef_method(CLASS_OF(class_to_load), "method_missing");
                 rb_protect((VALUE(*)(VALUE))rb_require, 
-                           (VALUE)RSTRING(file_to_load)->ptr, 0);
+                           (VALUE)RSTRING_PTR(file_to_load), 0);
                 file_to_load = Qnil;
             }
             rb_thread_wakeup(exec_th);
@@ -181,7 +185,9 @@ pl_require_th(VALUE th)
     return Qnil;
 }
 
+#ifndef HAVE_RB_BLOCK_CALL
 static VALUE pl_each(VALUE *);
+#endif
 
 static VALUE
 pl_conversions_missing(int argc, VALUE *argv, VALUE obj)
@@ -194,7 +200,7 @@ pl_conversions_missing(int argc, VALUE *argv, VALUE obj)
     }
     id = SYM2ID(argv[0]);
     file = rb_hash_aref(plruby_conversions, obj);
-    if (TYPE(file) != T_STRING || !RSTRING(file)->ptr || 
+    if (TYPE(file) != T_STRING || !RSTRING_PTR(file) || 
         !RTEST(pl_require_thread)) {
         rb_raise(pl_ePLruby, "undefined method %s", rb_id2name(id));
     }
@@ -209,6 +215,9 @@ pl_conversions_missing(int argc, VALUE *argv, VALUE obj)
     id = SYM2ID(argv[0]);
     argc--; argv++;
     if (rb_block_given_p()) {
+#ifdef HAVE_RB_BLOCK_CALL
+	return rb_block_call(obj, id, argc, argv, rb_yield, 0);
+#else
         VALUE tmp[4];
 
         tmp[0] = obj;
@@ -216,6 +225,7 @@ pl_conversions_missing(int argc, VALUE *argv, VALUE obj)
         tmp[2] = (VALUE)argc;
         tmp[3] = (VALUE)argv;
         return rb_iterate((VALUE(*)(VALUE))pl_each, (VALUE)tmp, rb_yield, 0);
+#endif
     }
     return rb_funcall2(obj, id, argc, argv);
 }
@@ -226,7 +236,7 @@ plruby_define_void_class(char *name, char *path)
     VALUE klass;
 
     klass = rb_define_class(name, rb_cObject);
-#if HAVE_RB_DEFINE_ALLOC_FUNC
+#ifdef HAVE_RB_DEFINE_ALLOC_FUNC
     rb_undef_alloc_func(klass);
 #else
     rb_undef_method(CLASS_OF(klass), "allocate");
@@ -591,9 +601,9 @@ pl_internal_call_handler(struct pl_thread_st *plth)
         plruby_in_progress = 1;
         while (1) {
             threads = rb_thread_list();
-            if (RARRAY(threads)->len <= ntpth) break;
-            for (i = 0; i < RARRAY(threads)->len; i++) {
-                thread = RARRAY(threads)->ptr[i];
+            if (RARRAY_LEN(threads) <= ntpth) break;
+            for (i = 0; i < RARRAY_LEN(threads); i++) {
+                thread = RARRAY_PTR(threads)[i];
                 if (thread != main_th && thread != pl_require_thread) {
                     rb_protect(pl_thread_kill, thread, 0);
                 }
@@ -618,14 +628,14 @@ pl_internal_call_handler(struct pl_thread_st *plth)
 #endif
         }
     }
-    if (TYPE(result) == T_STRING && RSTRING(result)->ptr) {
+    if (TYPE(result) == T_STRING && RSTRING_PTR(result)) {
         if (pl_call_level) {
             rb_raise(pl_ePLruby, "%.*s", 
-                     (int)RSTRING(result)->len, RSTRING(result)->ptr);
+                     (int)RSTRING_LEN(result), RSTRING_PTR(result));
         }
         else {
             elog(ERROR, "%.*s", 
-                 (int)RSTRING(result)->len, RSTRING(result)->ptr);
+                 (int)RSTRING_LEN(result), RSTRING_PTR(result));
         }
     }
     if (TYPE(result) == T_DATA && 
@@ -1096,10 +1106,10 @@ pl_compile(struct pl_thread_st *plth, int istrigger)
 	    }
 	    else {
 		proc_internal_def = ALLOCA_N(char, strlen(definition) + 
-					     proname_len + RSTRING(argname)->len +
+					     proname_len + RSTRING_LEN(argname) +
 					     strlen(proc_source) + 1);
 		sprintf(proc_internal_def, definition, internal_proname,
-			RSTRING(argname)->ptr, proc_source);
+			RSTRING_PTR(argname), proc_source);
 	    }
             pfree(proc_source);
             PLRUBY_END_PROTECT;
@@ -1110,7 +1120,7 @@ pl_compile(struct pl_thread_st *plth, int istrigger)
             VALUE s = plruby_to_s(rb_gv_get("$!"));
             rb_hash_delete(PLruby_hash, value_proname);
             rb_raise(pl_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
-		     RSTRING(s)->ptr, proc_internal_def);
+		     RSTRING_PTR(s), proc_internal_def);
         }
         prodesc->proname = ALLOC_N(char, strlen(internal_proname) + 1);
         strcpy(prodesc->proname, internal_proname);
@@ -1167,12 +1177,12 @@ for_numvals(obj, argobj)
     Data_Get_Struct(argobj, struct foreach_fmgr, arg);
     key = plruby_to_s(rb_ary_entry(obj, 0));
     value = rb_ary_entry(obj, 1);
-    if ((RSTRING(key)->ptr)[0]  == '.' || NIL_P(value)) {
+    if (RSTRING_PTR(key)[0]  == '.' || NIL_P(value)) {
         return Qnil;
     }
-    attnum = SPI_fnumber(arg->tupdesc, RSTRING(key)->ptr);
+    attnum = SPI_fnumber(arg->tupdesc, RSTRING_PTR(key));
     if (attnum == SPI_ERROR_NOATTRIBUTE) {
-        rb_raise(pl_ePLruby, "invalid attribute '%s'", RSTRING(key)->ptr);
+        rb_raise(pl_ePLruby, "invalid attribute '%s'", RSTRING_PTR(key));
     }
     attnum -= 1;
     if (arg->tupdesc->attrs[attnum]->attisdropped) {
@@ -1185,7 +1195,7 @@ for_numvals(obj, argobj)
                              0, 0, 0);
     if (!HeapTupleIsValid(typeTup)) {   
         rb_raise(pl_ePLruby, "Cache lookup for attribute '%s' type %ld failed",
-                 RSTRING(key)->ptr, OidGD(arg->tupdesc->attrs[attnum]->atttypid));
+                 RSTRING_PTR(key), OidGD(arg->tupdesc->attrs[attnum]->atttypid));
     }
     fpg = (Form_pg_type) GETSTRUCT(typeTup);
     ReleaseSysCache(typeTup);
@@ -1342,7 +1352,7 @@ pl_trigger_handler(struct pl_thread_st *plth)
     }
     rb_ary_freeze(args);
 
-    c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+    c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING_PTR(value_proname)),
                    4, tg_new, tg_old, args, TG);
 
     PLRUBY_BEGIN_PROTECT(1);
@@ -1370,13 +1380,13 @@ pl_trigger_handler(struct pl_thread_st *plth)
         break;
     case T_STRING:
         c = plruby_to_s(c);
-        if (strcmp(RSTRING(c)->ptr, "OK") == 0) {
+        if (strcmp(RSTRING_PTR(c), "OK") == 0) {
             return rettup;
         }
-        if (strcmp(RSTRING(c)->ptr, "SKIP") == 0) {
+        if (strcmp(RSTRING_PTR(c), "SKIP") == 0) {
             return (HeapTuple) NULL;
         }
-        rb_raise(pl_ePLruby, "unknown response %s", RSTRING(c)->ptr);
+        rb_raise(pl_ePLruby, "unknown response %s", RSTRING_PTR(c));
         break;
     case T_HASH:
         break;
@@ -1460,12 +1470,14 @@ static char *singleton = "select prosrc from pg_proc,pg_language,pg_type"
 
 static char *def_singleton = "def PLtemp.%s(*args)\n%s\nend";
 
+#ifndef HAVE_RB_BLOCK_CALL
 static VALUE
 pl_each(tmp)
     VALUE *tmp;
 {
     return rb_funcall2(tmp[0], (ID)tmp[1], (int)tmp[2], (VALUE *)tmp[3]);
 }
+#endif
 
 static VALUE
 pl_load_singleton(argc, argv, obj)
@@ -1537,9 +1549,12 @@ pl_load_singleton(argc, argv, obj)
     if (status) {
         VALUE s = plruby_to_s(rb_gv_get("$!"));
         rb_raise(pl_ePLruby, "cannot create internal procedure\n%s\n<<===%s\n===>>",
-                 RSTRING(s)->ptr, sinm);
+                 RSTRING_PTR(s), sinm);
     }
     if (rb_block_given_p()) {
+#ifdef HAVE_RB_BLOCK_CALL
+	return rb_block_call(obj, id, argc, argv, rb_yield, 0);
+#else
         VALUE tmp[4];
 
         tmp[0] = obj;
@@ -1547,6 +1562,7 @@ pl_load_singleton(argc, argv, obj)
         tmp[2] = (VALUE)argc;
         tmp[3] = (VALUE)argv;
         return rb_iterate((VALUE(*)(VALUE))pl_each, (VALUE)tmp, rb_yield, 0);
+#endif
     }
     return rb_funcall2(pl_mPLtemp, id, argc, argv);
 }

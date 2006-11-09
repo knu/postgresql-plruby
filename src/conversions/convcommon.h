@@ -38,11 +38,11 @@ name_(VALUE obj, VALUE a)                                               \
     StringInfoData si;                                                  \
     type_ *mac0, *mac1;                                                 \
                                                                         \
-    if (TYPE(a) != T_STRING || !RSTRING(a)->len) {                      \
+    if (TYPE(a) != T_STRING || !RSTRING_LEN(a)) {                      \
         rb_raise(rb_eArgError, "expected a String object");             \
     }                                                                   \
     initStringInfo(&si);                                                \
-    appendBinaryStringInfo(&si, RSTRING(a)->ptr, RSTRING(a)->len);      \
+    appendBinaryStringInfo(&si, RSTRING_PTR(a), RSTRING_LEN(a));      \
     mac1 = (type_ *)PLRUBY_DFC1(func_, &si);                            \
     pfree(si.data);                                                     \
     Data_Get_Struct(obj, type_, mac0);                                  \
@@ -58,11 +58,11 @@ name_(VALUE obj, VALUE a)                                               \
     type_ *mac0, *mac1;                                                 \
     int szl;                                                            \
                                                                         \
-    if (TYPE(a) != T_STRING || !RSTRING(a)->len) {                      \
+    if (TYPE(a) != T_STRING || !RSTRING_LEN(a)) {                      \
         rb_raise(rb_eArgError, "expected a String object");             \
     }                                                                   \
     initStringInfo(&si);                                                \
-    appendBinaryStringInfo(&si, RSTRING(a)->ptr, RSTRING(a)->len);      \
+    appendBinaryStringInfo(&si, RSTRING_PTR(a), RSTRING_LEN(a));      \
     mac1 = (type_ *)PLRUBY_DFC1(func_, &si);                            \
     pfree(si.data);                                                     \
     Data_Get_Struct(obj, type_, mac0);                                  \
@@ -99,6 +99,17 @@ extern VALUE plruby_datum_get _((VALUE, Oid *));
 #ifndef StringValuePtr
 #define StringValuePtr(x) STR2CSTR(x)
 #endif
+
+#ifndef RSTRING_PTR
+# define RSTRING_PTR(x_) RSTRING(x_)->ptr
+# define RSTRING_LEN(x_) RSTRING(x_)->len
+#endif
+
+#ifndef RARRAY_PTR
+# define RARRAY_PTR(x_) RARRAY(x_)->ptr
+# define RARRAY_LEN(x_) RARRAY(x_)->len
+#endif
+
 
 extern Datum plruby_dfc0 _((PGFunction));
 extern Datum plruby_dfc1 _((PGFunction, Datum));

@@ -100,7 +100,7 @@ pl_point_s_str(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     res = Data_Make_Struct(obj, Point, pl_point_mark, free, p);
-    CPY_FREE(p, PLRUBY_DFC1(point_in,  RSTRING(a)->ptr), sizeof(Point));
+    CPY_FREE(p, PLRUBY_DFC1(point_in,  RSTRING_PTR(a)), sizeof(Point));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
 }
@@ -379,7 +379,7 @@ pl_lseg_s_str(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     res = Data_Make_Struct(obj, LSEG, pl_lseg_mark, free, l);
-    CPY_FREE(l, PLRUBY_DFC1(lseg_in, RSTRING(a)->ptr), sizeof(LSEG));
+    CPY_FREE(l, PLRUBY_DFC1(lseg_in, RSTRING_PTR(a)), sizeof(LSEG));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
 }
@@ -679,7 +679,7 @@ pl_box_s_str(VALUE obj, VALUE a)
 
     a = plruby_to_s(a);
     res = Data_Make_Struct(obj, BOX, pl_box_mark, free, l);
-    CPY_FREE(l, PLRUBY_DFC1(box_in, RSTRING(a)->ptr), sizeof(BOX));
+    CPY_FREE(l, PLRUBY_DFC1(box_in, RSTRING_PTR(a)), sizeof(BOX));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
 }
@@ -1131,7 +1131,7 @@ pl_path_s_str(VALUE obj, VALUE a)
     VALUE res;
 
     a = plruby_to_s(a);
-    m = (PATH *)PLRUBY_DFC1(path_in, RSTRING(a)->ptr);
+    m = (PATH *)PLRUBY_DFC1(path_in, RSTRING_PTR(a));
     p = (PATH *)ALLOC_N(char, m->size);
     CPY_FREE(p, m, m->size);
     res = Data_Wrap_Struct(obj, pl_path_mark, free, p);
@@ -1155,13 +1155,13 @@ pl_path_init(int argc, VALUE *argv, VALUE obj)
     a = rb_Array(argv[0]);
     Data_Get_Struct(obj, PATH, p);
     free(p);
-    size = offsetof(PATH, p[0]) + sizeof(p->p[0]) * RARRAY(a)->len;
+    size = offsetof(PATH, p[0]) + sizeof(p->p[0]) * RARRAY_LEN(a);
     p = (PATH *)ALLOC_N(char, size);
     MEMZERO(p, char, size);
     p->closed = closed;
     DATA_PTR(obj) = p;
-    for (i = 0; i < RARRAY(a)->len; ++i) {
-        VALUE b = RARRAY(a)->ptr[i];
+    for (i = 0; i < RARRAY_LEN(a); ++i) {
+        VALUE b = RARRAY_PTR(a)[i];
         if (TYPE(b) == T_DATA &&
             RDATA(b)->dmark == (RUBY_DATA_FUNC)pl_point_mark) {
             Point *po;
@@ -1174,16 +1174,16 @@ pl_path_init(int argc, VALUE *argv, VALUE obj)
             VALUE tmp;
 
             b = rb_Array(b);
-            if (RARRAY(b)->len != 2) {
+            if (RARRAY_LEN(b) != 2) {
                 rb_raise(rb_eArgError, "initialize : expected Array [x, y]");
             }
-            tmp = rb_Float(RARRAY(b)->ptr[0]);
+            tmp = rb_Float(RARRAY_PTR(b)[0]);
             p->p[i].x = RFLOAT(tmp)->value;
-            tmp = rb_Float(RARRAY(b)->ptr[1]);
+            tmp = rb_Float(RARRAY_PTR(b)[1]);
             p->p[i].y = RFLOAT(tmp)->value;
         }
     }
-    p->npts = RARRAY(a)->len;
+    p->npts = RARRAY_LEN(a);
     return obj;
 }
 
@@ -1449,7 +1449,7 @@ pl_poly_s_str(VALUE obj, VALUE a)
     VALUE res;
 
     a = plruby_to_s(a);
-    m = (POLYGON *)PLRUBY_DFC1(poly_in, RSTRING(a)->ptr);
+    m = (POLYGON *)PLRUBY_DFC1(poly_in, RSTRING_PTR(a));
     p = (POLYGON *)ALLOC_N(char, m->size);
     CPY_FREE(p, m, m->size);
     res = Data_Wrap_Struct(obj, pl_poly_mark, free, p);
@@ -1473,13 +1473,13 @@ pl_poly_init(int argc, VALUE *argv, VALUE obj)
     a = rb_Array(argv[0]);
     Data_Get_Struct(obj, POLYGON, p);
     free(p);
-    size = offsetof(POLYGON, p[0]) + sizeof(p->p[0]) * RARRAY(a)->len;
+    size = offsetof(POLYGON, p[0]) + sizeof(p->p[0]) * RARRAY_LEN(a);
     p = (POLYGON *)ALLOC_N(char, size);
     MEMZERO(p, char, size);
     DATA_PTR(obj) = p;
-    p->npts = RARRAY(a)->len;
+    p->npts = RARRAY_LEN(a);
     for (i = 0; i < p->npts; ++i) {
-        VALUE b = RARRAY(a)->ptr[i];
+        VALUE b = RARRAY_PTR(a)[i];
         if (TYPE(b) == T_DATA &&
             RDATA(b)->dmark == (RUBY_DATA_FUNC)pl_point_mark) {
             Point *po;
@@ -1492,12 +1492,12 @@ pl_poly_init(int argc, VALUE *argv, VALUE obj)
             VALUE tmp;
 
             b = rb_Array(b);
-            if (RARRAY(b)->len != 2) {
+            if (RARRAY_LEN(b) != 2) {
                 rb_raise(rb_eArgError, "initialize : expected Array [x, y]");
             }
-            tmp = rb_Float(RARRAY(b)->ptr[0]);
+            tmp = rb_Float(RARRAY_PTR(b)[0]);
             p->p[i].x = RFLOAT(tmp)->value;
-            tmp = rb_Float(RARRAY(b)->ptr[1]);
+            tmp = rb_Float(RARRAY_PTR(b)[1]);
             p->p[i].y = RFLOAT(tmp)->value;
         }
     }
@@ -1717,7 +1717,7 @@ pl_circle_s_str(VALUE obj, VALUE a)
     VALUE res;
 
     a = plruby_to_s(a);
-    m = (CIRCLE *)PLRUBY_DFC1(circle_in, RSTRING(a)->ptr);
+    m = (CIRCLE *)PLRUBY_DFC1(circle_in, RSTRING_PTR(a));
     res = Data_Make_Struct(obj, CIRCLE, pl_circle_mark, free, p);
     CPY_FREE(p, m, sizeof(CIRCLE));
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
@@ -1742,12 +1742,12 @@ pl_circle_init(VALUE obj, VALUE a, VALUE b)
         VALUE tmp;
 
         a = rb_Array(a);
-        if (RARRAY(a)->len != 2) {
+        if (RARRAY_LEN(a) != 2) {
             rb_raise(rb_eArgError, "initialize : expected Array [x, y]");
         }
-        tmp = rb_Float(RARRAY(a)->ptr[0]);
+        tmp = rb_Float(RARRAY_PTR(a)[0]);
         p->center.x = RFLOAT(tmp)->value;
-        tmp = rb_Float(RARRAY(a)->ptr[1]);
+        tmp = rb_Float(RARRAY_PTR(a)[1]);
         p->center.y = RFLOAT(tmp)->value;
     }
     p->radius = RFLOAT(rb_Float(b))->value;

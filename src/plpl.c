@@ -16,7 +16,7 @@ static ID id_delete;
 
 static char *names = 
 "SELECT a.attname FROM pg_class c, pg_attribute a, pg_namespace n"
-" WHERE c.relname = '%s' AND a.attnum > 0 AND a.attrelid = c.oid"
+" WHERE c.relname = '%s' AND a.attnum > 0 AND NOT a.attisdropped AND a.attrelid = c.oid"
 " AND c.relnamespace = n.oid AND n.nspname = '%s'"
 " ORDER BY a.attnum";
 
@@ -27,13 +27,13 @@ pl_column_name(VALUE obj, VALUE table)
     char *tmp;
     char *nsp, *tbl, *c;
 
-    if (TYPE(table) != T_STRING || !RSTRING(table)->ptr) {
+    if (TYPE(table) != T_STRING || !RSTRING_PTR(table)) {
         rb_raise(pl_ePLruby, "expected a String");
     }
-    tmp = ALLOCA_N(char, strlen(names) + RSTRING(table)->len + 1);
-    nsp = ALLOCA_N(char, RSTRING(table)->len + 1);
-    tbl = ALLOCA_N(char, RSTRING(table)->len + 1);
-    strcpy(nsp, RSTRING(table)->ptr);
+    tmp = ALLOCA_N(char, strlen(names) + RSTRING_LEN(table) + 1);
+    nsp = ALLOCA_N(char, RSTRING_LEN(table) + 1);
+    tbl = ALLOCA_N(char, RSTRING_LEN(table) + 1);
+    strcpy(nsp, RSTRING_PTR(table));
     if ((c = strchr(nsp, '.')) != NULL) {
 	*c = 0;
 	strcpy(tbl, c + 1);
@@ -55,7 +55,7 @@ pl_column_name(VALUE obj, VALUE table)
 
 static char *types = 
 "SELECT t.typname FROM pg_class c, pg_attribute a, pg_type t, pg_namespace n"
-" WHERE c.relname = '%s' and a.attnum > 0"
+" WHERE c.relname = '%s' and a.attnum > 0 AND NOT a.attisdropped"
 " AND a.attrelid = c.oid and a.atttypid = t.oid"
 " AND c.relnamespace = n.oid AND n.nspname = '%s'"
 " ORDER BY a.attnum";
@@ -67,13 +67,13 @@ pl_column_type(VALUE obj, VALUE table)
     char *tmp;
     char *nsp, *tbl, *c;
 
-    if (TYPE(table) != T_STRING || !RSTRING(table)->ptr) {
+    if (TYPE(table) != T_STRING || !RSTRING_PTR(table)) {
         rb_raise(pl_ePLruby, "expected a String");
     }
-    tmp = ALLOCA_N(char, strlen(types) + RSTRING(table)->len + 1);
-    nsp = ALLOCA_N(char, RSTRING(table)->len + 1);
-    tbl = ALLOCA_N(char, RSTRING(table)->len + 1);
-    strcpy(nsp, RSTRING(table)->ptr);
+    tmp = ALLOCA_N(char, strlen(types) + RSTRING_LEN(table) + 1);
+    nsp = ALLOCA_N(char, RSTRING_LEN(table) + 1);
+    tbl = ALLOCA_N(char, RSTRING_LEN(table) + 1);
+    strcpy(nsp, RSTRING_PTR(table));
     if ((c = strchr(nsp, '.')) != NULL) {
 	*c = 0;
 	strcpy(tbl, c + 1);
@@ -211,15 +211,15 @@ pl_query_description(VALUE obj)
     }
     types = pl_query_type(obj);
     if (TYPE(name) != T_ARRAY || TYPE(types) != T_ARRAY ||
-        RARRAY(name)->len != RARRAY(types)->len) {
+        RARRAY_LEN(name) != RARRAY_LEN(types)) {
         rb_raise(pl_ePLruby, "unknown error");
     }
     res = rb_tainted_str_new2("");
-    for (i = 0; i < RARRAY(name)->len; ++i) {
-        rb_str_concat(res, RARRAY(name)->ptr[i]);
+    for (i = 0; i < RARRAY_LEN(name); ++i) {
+        rb_str_concat(res, RARRAY_PTR(name)[i]);
         rb_str_concat(res, tt_blc);
-        rb_str_concat(res, RARRAY(types)->ptr[i]);
-        if (i != (RARRAY(name)->len - 1)) {
+        rb_str_concat(res, RARRAY_PTR(types)[i]);
+        if (i != (RARRAY_LEN(name) - 1)) {
             rb_str_concat(res, tt_virg);
         }
     }
@@ -453,7 +453,7 @@ plruby_to_datum(VALUE obj, FmgrInfo *finfo, Oid typoid,
 #endif
     obj = plruby_to_s(obj);
     PLRUBY_BEGIN_PROTECT(1);
-    d = FunctionCall3(finfo, PointerGD(RSTRING(obj)->ptr),
+    d = FunctionCall3(finfo, PointerGD(RSTRING_PTR(obj)),
                       OidGD(typelem), IntGD(typlen));
     PLRUBY_END_PROTECT;
     return d;
@@ -476,14 +476,14 @@ plruby_return_array(VALUE ary, pl_proc_desc *p)
     i = 0;
     while (TYPE(tmp) == T_ARRAY) {
         lbs[i] = 1;
-        dim[i++] = RARRAY(tmp)->len;
+        dim[i++] = RARRAY_LEN(tmp);
         if (i == MAXDIM) {
             rb_raise(pl_ePLruby, "too many dimensions -- max %d", MAXDIM);
         }
-        if (RARRAY(tmp)->len) {
-            total *= RARRAY(tmp)->len;
+        if (RARRAY_LEN(tmp)) {
+            total *= RARRAY_LEN(tmp);
         }
-        tmp = RARRAY(tmp)->ptr[0];
+        tmp = RARRAY_PTR(tmp)[0];
     }
     ndim = i;
 #if PG_PL_VERSION < 74
@@ -492,16 +492,16 @@ plruby_return_array(VALUE ary, pl_proc_desc *p)
     }
 #endif
     ary = rb_funcall2(ary, rb_intern("flatten"), 0, 0);
-    if (RARRAY(ary)->len != total) {
+    if (RARRAY_LEN(ary) != total) {
 #ifdef WARNING
         elog(WARNING, "not a regular array");
 #else
         elog(NOTICE, "not a regular array");
 #endif
     }
-    values = (Datum *)palloc(RARRAY(ary)->len * sizeof(Datum));
-    for (i = 0; i < RARRAY(ary)->len; ++i) {
-        values[i] = plruby_to_datum(RARRAY(ary)->ptr[i], 
+    values = (Datum *)palloc(RARRAY_LEN(ary) * sizeof(Datum));
+    for (i = 0; i < RARRAY_LEN(ary); ++i) {
+        values[i] = plruby_to_datum(RARRAY_PTR(ary)[i], 
                                     &p->result_func,
                                     p->result_oid, p->result_elem,
                                     -1);
@@ -557,19 +557,19 @@ pl_each(VALUE obj, struct each_st *st)
     key = rb_ary_entry(obj, 0);
     value = rb_ary_entry(obj, 1);
     key = plruby_to_s(key);
-    column = RSTRING(key)->ptr;
+    column = RSTRING_PTR(key);
     attn = SPI_fnumber(st->tup, column);
     if (attn <= 0 || st->tup->attrs[attn - 1]->attisdropped) {
 	rb_raise(pl_ePLruby, "Invalid column name '%s'", column);
     }
     attn -= 1;
-    if (TYPE(st->res) != T_ARRAY || !RARRAY(st->res)->ptr) {
+    if (TYPE(st->res) != T_ARRAY || !RARRAY_PTR(st->res)) {
         rb_raise(pl_ePLruby, "expected an Array");
     }
-    if (attn >= RARRAY(st->res)->len) {
+    if (attn >= RARRAY_LEN(st->res)) {
 	rb_raise(pl_ePLruby, "Invalid column position '%d'", attn);
     }
-    RARRAY(st->res)->ptr[attn] = value;
+    RARRAY_PTR(st->res)[attn] = value;
     return Qnil;
 }
 
@@ -608,19 +608,19 @@ pl_tuple_heap(VALUE c, VALUE tuple)
 	    c = rb_Array(c);
 	}
     }
-    if (TYPE(c) != T_ARRAY || !RARRAY(c)->ptr) {
+    if (TYPE(c) != T_ARRAY || !RARRAY_PTR(c)) {
         rb_raise(pl_ePLruby, "expected an Array");
     }
-    if (tupdesc->natts != RARRAY(c)->len) {
+    if (tupdesc->natts != RARRAY_LEN(c)) {
         rb_raise(pl_ePLruby, "Invalid number of rows (%d expected %d)",
-                 RARRAY(c)->len, tupdesc->natts);
+                 RARRAY_LEN(c), tupdesc->natts);
     }
-    dvalues = ALLOCA_N(Datum, RARRAY(c)->len);
-    MEMZERO(dvalues, Datum, RARRAY(c)->len);
-    nulls = ALLOCA_N(char, RARRAY(c)->len);
-    MEMZERO(nulls, char, RARRAY(c)->len);
-    for (i = 0; i < RARRAY(c)->len; i++) {
-        if (NIL_P(RARRAY(c)->ptr[i]) || 
+    dvalues = ALLOCA_N(Datum, RARRAY_LEN(c));
+    MEMZERO(dvalues, Datum, RARRAY_LEN(c));
+    nulls = ALLOCA_N(char, RARRAY_LEN(c));
+    MEMZERO(nulls, char, RARRAY_LEN(c));
+    for (i = 0; i < RARRAY_LEN(c); i++) {
+        if (NIL_P(RARRAY_PTR(c)[i]) || 
             tupdesc->attrs[i]->attisdropped) {
             dvalues[i] = (Datum)0;
             nulls[i] = 'n';
@@ -664,17 +664,17 @@ pl_tuple_heap(VALUE c, VALUE tuple)
                 prodesc.result_len = fpg->typlen;
                 prodesc.result_align = fpg->typalign;
                 ReleaseSysCache(hp);
-                dvalues[i] = plruby_return_array(RARRAY(c)->ptr[i], &prodesc);
+                dvalues[i] = plruby_return_array(RARRAY_PTR(c)[i], &prodesc);
             }
             else  {
 #if PG_PL_VERSION >= 75
-		dvalues[i] = plruby_to_datum(RARRAY(c)->ptr[i],
+		dvalues[i] = plruby_to_datum(RARRAY_PTR(c)[i],
 					     &tpl->att->attinfuncs[i],
 					     typid,
 					     tpl->att->attioparams[i],
 					     tpl->att->atttypmods[i]);
 #else
-                dvalues[i] = plruby_to_datum(RARRAY(c)->ptr[i],
+                dvalues[i] = plruby_to_datum(RARRAY_PTR(c)[i],
                                              &tpl->att->attinfuncs[i],
                                              typid,
                                              tpl->att->attelems[i],
@@ -743,14 +743,18 @@ pl_arg_mark(struct pl_arg *args)
 static VALUE
 pl_func(VALUE arg)
 {
+#if HAVE_RB_BLOCK_CALL
+    return Qtrue;
+#else
     struct pl_arg *args;
 
     Data_Get_Struct(arg, struct pl_arg, args);
     if (args->named) {
-        return rb_funcall2(pl_mPLtemp, args->id, RARRAY(args->ary)->len,
-                          RARRAY(args->ary)->ptr);
+        return rb_funcall2(pl_mPLtemp, args->id, RARRAY_LEN(args->ary),
+                          RARRAY_PTR(args->ary));
     }
     return rb_funcall(pl_mPLtemp, args->id, 1, args->ary);
+#endif
 }
 
 static VALUE
@@ -765,8 +769,12 @@ pl_string(VALUE arg)
     rb_hash_aset(tmp[1], rb_str_new2("block"), INT2NUM(50));
     rb_hash_aset(tmp[1], rb_str_new2("output"), rb_str_new2("value"));
     plan = plruby_s_new(2, tmp, pl_cPLPlan);
+#if HAVE_RB_BLOCK_CALL
+    return plan;
+#else
     rb_funcall2(plan, rb_intern("each"), 0, 0);
     return Qnil;
+#endif
 }
  
 static VALUE
@@ -840,7 +848,7 @@ pl_warn(argc, argv, obj)
         rb_raise(pl_ePLruby, "invalid syntax");
     }
     PLRUBY_BEGIN_PROTECT(1);
-    elog(level, RSTRING(res)->ptr);
+    elog(level, RSTRING_PTR(res));
     PLRUBY_END_PROTECT;
     return Qnil;
 }
@@ -851,11 +859,11 @@ pl_quote(obj, mes)
 {    
     char *tmp, *cp1, *cp2;
 
-    if (TYPE(mes) != T_STRING || !RSTRING(mes)->ptr) {
+    if (TYPE(mes) != T_STRING || !RSTRING_PTR(mes)) {
         rb_raise(pl_ePLruby, "quote: string expected");
     }
-    tmp = ALLOCA_N(char, RSTRING(mes)->len * 2 + 1);
-    cp1 = RSTRING(mes)->ptr;
+    tmp = ALLOCA_N(char, RSTRING_LEN(mes) * 2 + 1);
+    cp1 = RSTRING_PTR(mes);
     cp2 = tmp;
     while (*cp1) {
         if (*cp1 == '\'')
@@ -873,16 +881,16 @@ pl_quote(obj, mes)
 void
 plruby_exec_output(VALUE option, int compose, int *result)
 {
-    if (TYPE(option) != T_STRING || RSTRING(option)->ptr == 0 || !result) {
+    if (TYPE(option) != T_STRING || RSTRING_PTR(option) == 0 || !result) {
         rb_raise(pl_ePLruby, "string expected for optional output");
     }
-    if (strcmp(RSTRING(option)->ptr, "array") == 0) {
+    if (strcmp(RSTRING_PTR(option), "array") == 0) {
         *result = compose|RET_DESC_ARR;
     }
-    else if (strcmp(RSTRING(option)->ptr, "hash") == 0) {
+    else if (strcmp(RSTRING_PTR(option), "hash") == 0) {
         *result = compose|RET_DESC;
     }
-    else if (strcmp(RSTRING(option)->ptr, "value") == 0) {
+    else if (strcmp(RSTRING_PTR(option), "value") == 0) {
         *result = RET_ARRAY;
     }
 }
@@ -923,7 +931,7 @@ pl_SPI_exec(argc, argv, obj)
     }
     array = comp;
     PLRUBY_BEGIN_PROTECT(1);
-    spi_rc = SPI_exec(RSTRING(a)->ptr, count);
+    spi_rc = SPI_exec(RSTRING_PTR(a), count);
     PLRUBY_END_PROTECT;
 
     switch (spi_rc) {
@@ -1209,7 +1217,7 @@ plruby_build_tuple(HeapTuple tuple, TupleDesc tupdesc, int type_ret)
 
             if (type_ret & RET_DESC) {
                 if (TYPE(res) == T_ARRAY) {
-                    RARRAY(res)->ptr[1] = s;
+                    RARRAY_PTR(res)[1] = s;
                 }
                 else {
                     rb_hash_aset(res, rb_tainted_str_new2("value"), s);
@@ -1382,14 +1390,33 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
 
             tuple = pl_tuple_s_new(fcinfo, prodesc);
             arg = Data_Make_Struct(rb_cObject, struct pl_arg, pl_arg_mark, free, args);
-            args->id = rb_intern(RSTRING(value_proname)->ptr);
+            args->id = rb_intern(RSTRING_PTR(value_proname));
             args->ary = ary;
 #if PG_PL_VERSION >= 75
             args->named = prodesc->named_args;
 #endif
             pl_call = pl_func;
             while (1) {
+#if HAVE_RB_BLOCK_CALL
+		if (pl_call == pl_func) {
+		    if (args->named) {
+			res = rb_block_call(pl_mPLtemp, args->id, 
+					    RARRAY_LEN(args->ary),
+					    RARRAY_PTR(args->ary),
+					    pl_tuple_put, tuple);
+		    }
+		    else {
+			res = rb_block_call(pl_mPLtemp, args->id, 1, args->ary,
+					    pl_tuple_put, tuple);
+		    }
+		}
+		else {
+		    res = rb_block_call(pl_string(arg), rb_intern("each"),
+					0, 0, pl_tuple_put, tuple);
+		}
+#else
                 res = rb_iterate(pl_call, arg, pl_tuple_put, tuple);
+#endif
                 Data_Get_Struct(tuple, struct pl_tuple, tpl);
                 if (NIL_P(res) && !tpl->out) {
                     MemoryContext oldcxt;
@@ -1419,7 +1446,7 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
                 if (NIL_P(res)) {
                     break;
                 }
-                if (TYPE(res) != T_STRING || RSTRING(res)->ptr == 0) {
+                if (TYPE(res) != T_STRING || RSTRING_PTR(res) == 0) {
                     rb_raise(pl_ePLruby, "invalid return type for a SET");
                 }
                 args->ary = res;
@@ -1431,15 +1458,15 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
             expr_multiple = 1;
 #if PG_PL_VERSION >= 75
             if (prodesc->named_args) {
-                c = rb_funcall2(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
-                                RARRAY(ary)->len, RARRAY(ary)->ptr);
+                c = rb_funcall2(pl_mPLtemp, rb_intern(RSTRING_PTR(value_proname)),
+                                RARRAY_LEN(ary), RARRAY_PTR(ary));
             }
             else {
-                c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+                c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING_PTR(value_proname)),
                                1, ary);
             }
 #else
-            c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+            c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING_PTR(value_proname)),
                            1, ary);
 #endif
         }
@@ -1450,15 +1477,15 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
     else {
 #if PG_PL_VERSION >= 75
         if (prodesc->named_args) {
-            c = rb_funcall2(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
-                            RARRAY(ary)->len, RARRAY(ary)->ptr);
+            c = rb_funcall2(pl_mPLtemp, rb_intern(RSTRING_PTR(value_proname)),
+                            RARRAY_LEN(ary), RARRAY_PTR(ary));
         }
         else {
-            c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+            c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING_PTR(value_proname)),
                            1, ary);
         }
 #else
-        c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING(value_proname)->ptr),
+        c = rb_funcall(pl_mPLtemp, rb_intern(RSTRING_PTR(value_proname)),
                        1, ary);
 #endif
     }
@@ -1501,7 +1528,7 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
         res = rb_funcall2(c, rb_intern("portal_name"), 0, 0);
         res = plruby_to_s(res);
         PLRUBY_BEGIN_PROTECT(1);
-        retval = DFC1(textin, CStringGD(RSTRING(res)->ptr));
+        retval = DFC1(textin, CStringGD(RSTRING_PTR(res)));
         PLRUBY_END_PROTECT;
         return retval;
     }
