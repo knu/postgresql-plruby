@@ -593,20 +593,7 @@ pl_tuple_heap(VALUE c, VALUE tuple)
 	rb_raise(pl_ePLruby, "Invalid descriptor");
     }
     if (TYPE(c) != T_ARRAY) {
-	if (rb_respond_to(c, rb_intern("each"))) {
-	    struct each_st st;
-
-	    st.res = rb_ary_new();
-	    st.tup = tupdesc;
-	    for (i = 0; i < tupdesc->natts; ++i) {
-		rb_ary_push(st.res, Qnil);
-	    }
-	    rb_iterate(rb_each, c, pl_each, (VALUE)&st);
-	    c = st.res;
-	}
-	else {
-	    c = rb_Array(c);
-	}
+	c = rb_Array(c);
     }
     if (TYPE(c) != T_ARRAY || !RARRAY_PTR(c)) {
         rb_raise(pl_ePLruby, "expected an Array");
@@ -936,8 +923,11 @@ pl_SPI_exec(argc, argv, obj)
 
     switch (spi_rc) {
     case SPI_OK_UTILITY:
-        SPI_freetuptable(SPI_tuptable);
-        return Qtrue;
+	if (SPI_tuptable == NULL) {
+	    SPI_freetuptable(SPI_tuptable);
+	    return Qtrue;
+	}
+	break;
     case SPI_OK_SELINTO:
     case SPI_OK_INSERT:
     case SPI_OK_DELETE:
@@ -945,6 +935,11 @@ pl_SPI_exec(argc, argv, obj)
         SPI_freetuptable(SPI_tuptable);
         return INT2NUM(SPI_processed);
     case SPI_OK_SELECT:
+#ifdef SPI_OK_INSERT_RETURNING
+    case SPI_OK_INSERT_RETURNING:
+    case SPI_OK_DELETE_RETURNING:
+    case SPI_OK_UPDATE_RETURNING:
+#endif
         break;
     case SPI_ERROR_ARGUMENT:
         rb_raise(pl_ePLruby, "SPI_exec() failed - SPI_ERROR_ARGUMENT");

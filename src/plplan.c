@@ -478,8 +478,12 @@ pl_plan_execp(argc, argv, obj)
 
     switch (spi_rc) {
     case SPI_OK_UTILITY:
-        SPI_freetuptable(SPI_tuptable);
-        return Qtrue;
+	if (SPI_tuptable == NULL) {
+	    SPI_freetuptable(SPI_tuptable);
+	    return Qtrue;
+	}
+	break;
+
     case SPI_OK_SELINTO:
     case SPI_OK_INSERT:
     case SPI_OK_DELETE:
@@ -487,6 +491,11 @@ pl_plan_execp(argc, argv, obj)
         SPI_freetuptable(SPI_tuptable);
         return INT2NUM(SPI_processed);
     case SPI_OK_SELECT:
+#ifdef SPI_OK_INSERT_RETURNING
+    case SPI_OK_INSERT_RETURNING:
+    case SPI_OK_DELETE_RETURNING:
+    case SPI_OK_UPDATE_RETURNING:
+#endif
         break;
 
     case SPI_ERROR_ARGUMENT:
