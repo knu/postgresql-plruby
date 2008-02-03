@@ -110,6 +110,13 @@ extern VALUE plruby_datum_get _((VALUE, Oid *));
 # define RARRAY_LEN(x_) RARRAY(x_)->len
 #endif
 
+#ifndef RHASH_TBL
+#define RHASH_TBL(x_) (RHASH(x_)->tbl)
+#endif
+
+#ifndef RFLOAT_VALUE
+#define RFLOAT_VALUE(x_) (RFLOAT(x_)->value)
+#endif
 
 extern Datum plruby_dfc0 _((PGFunction));
 extern Datum plruby_dfc1 _((PGFunction, Datum));

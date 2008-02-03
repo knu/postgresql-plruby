@@ -145,7 +145,11 @@ pl_plan_init(int argc, VALUE *argv, VALUE obj)
             foreach (lp, names)
                 typename->names = lappend(typename->names, makeString(lfirst(lp)));
 #if PG_PL_VERSION >= 82
+#if PG_PL_VERSION >= 83
+            typeTup = typenameType(NULL, typename, NULL);
+#else
             typeTup = typenameType(NULL, typename);
+#endif
 #else
             typeTup = typenameType(typename);
 #endif

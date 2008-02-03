@@ -9,7 +9,11 @@ pl_bit_s_alloc(VALUE obj)
     VarBit *inst;
 
     inst = (VarBit *)ALLOC_N(char, VARBITTOTALLEN(0));
+#ifdef SET_VARSIZE
+    SET_VARSIZE(inst, VARBITTOTALLEN(0));
+#else
     VARATT_SIZEP(inst) = VARBITTOTALLEN(0);
+#endif
     VARBITLEN(inst) = 0;
     return Data_Wrap_Struct(obj, pl_bit_mark, free, inst);
 }

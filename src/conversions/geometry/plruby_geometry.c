@@ -113,8 +113,8 @@ pl_point_init(VALUE obj, VALUE a, VALUE b)
     Data_Get_Struct(obj, Point, point);
     a = rb_Float(a);
     b = rb_Float(b);
-    point->x = RFLOAT(a)->value;
-    point->y = RFLOAT(b)->value;
+    point->x = RFLOAT_VALUE(a);
+    point->y = RFLOAT_VALUE(b);
     return obj;
 }
 
@@ -137,7 +137,7 @@ pl_point_setx(VALUE obj, VALUE a)
 
     Data_Get_Struct(obj, Point, point);
     a = rb_Float(a);
-    point->x = RFLOAT(a)->value;
+    point->x = RFLOAT_VALUE(a);
     return a;
 }
 
@@ -160,7 +160,7 @@ pl_point_sety(VALUE obj, VALUE a)
 
     Data_Get_Struct(obj, Point, point);
     a = rb_Float(a);
-    point->y = RFLOAT(a)->value;
+    point->y = RFLOAT_VALUE(a);
     return a;
 }
 
@@ -202,10 +202,10 @@ pl_point_aset(VALUE obj, VALUE a, VALUE b)
     if (i < 0) i = -i;
     switch (i) {
     case 0:
-        point->x = RFLOAT(b)->value;
+        point->x = RFLOAT_VALUE(b);
         break;
     case 1:
-        point->y = RFLOAT(b)->value;
+        point->y = RFLOAT_VALUE(b);
         break;
     default:
         rb_raise(rb_eArgError, "[]= invalid indice");
@@ -730,10 +730,10 @@ pl_box_init(int argc, VALUE *argv, VALUE obj)
         bx->high.y = p1->y;
     }
     else {
-        bx->low.x = RFLOAT(rb_Float(argv[0]))->value;
-        bx->low.y = RFLOAT(rb_Float(argv[1]))->value;
-        bx->high.x = RFLOAT(rb_Float(argv[2]))->value;
-        bx->high.y = RFLOAT(rb_Float(argv[3]))->value;
+        bx->low.x = RFLOAT_VALUE(rb_Float(argv[0]));
+        bx->low.y = RFLOAT_VALUE(rb_Float(argv[1]));
+        bx->high.x = RFLOAT_VALUE(rb_Float(argv[2]));
+        bx->high.y = RFLOAT_VALUE(rb_Float(argv[3]));
     }
     pl_box_adjust(bx);
     return obj;
@@ -1040,14 +1040,23 @@ pl_box_diagonal(VALUE obj)
 
 static void pl_path_mark(PATH *l) {}
 
+#ifndef SET_VARSIZE
+#define SET_VARSIZE(p__, s__) (p__)->size = s__
+#define GET_VARSIZE(t__, p__) (p__)->size
+#else
+#define GET_VARSIZE(t__, p__) (offsetof(t__, p[0]) + sizeof(p__->p[0]) * (p__)->npts)
+#endif
+
 static VALUE
 pl_path_s_alloc(VALUE obj)
 {
     PATH *path;
     VALUE res;
+    int sz;
 
     res = Data_Make_Struct(obj, PATH, pl_path_mark, free, path);
-    path->size = sizeof(PATH);
+    sz = GET_VARSIZE(PATH, path);
+    SET_VARSIZE(path, sz);
     return res;
 }
 
@@ -1055,6 +1064,7 @@ static VALUE
 pl_path_init_copy(VALUE copy, VALUE orig)
 {
     PATH *p0, *p1;
+    int sz0, sz1;
 
     if (copy == orig) return copy;
     if (TYPE(orig) != T_DATA ||
@@ -1063,14 +1073,16 @@ pl_path_init_copy(VALUE copy, VALUE orig)
     }
     Data_Get_Struct(orig, PATH, p0);
     Data_Get_Struct(copy, PATH, p1);
-    if (p0->size != p1->size) {
+    sz0 = GET_VARSIZE(PATH, p0);
+    sz1 = GET_VARSIZE(PATH, p1);
+    if (sz0 != sz1) {
         free(p1);
         RDATA(copy)->data = 0;
-        p1 = (PATH *)ALLOC_N(char, p0->size);
-        p1->size = p0->size;
+        p1 = (PATH *)ALLOC_N(char, sz0);
+        SET_VARSIZE(p1, sz0);
         RDATA(copy)->data = p1;
     }
-    memcpy(p1, p0, p0->size);
+    memcpy(p1, p0, sz0);
     return copy;
 }
 
@@ -1080,13 +1092,15 @@ pl_path_s_datum(VALUE obj, VALUE a)
     PATH *p0, *p1;
     Oid typoid;
     VALUE res;
+    int sz0;
 
     p0 = (PATH *)plruby_datum_get(a, &typoid);
     if (typoid != PATHOID) {
 	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
     }
-    p1 = (PATH *)ALLOC_N(char, p0->size);
-    memcpy(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(PATH, p0);
+    p1 = (PATH *)ALLOC_N(char, sz0);
+    memcpy(p1, p0, sz0);
     res = Data_Wrap_Struct(obj, pl_path_mark, free, p1);
     OBJ_TAINT(res);
     return res;
@@ -1097,6 +1111,7 @@ pl_path_to_datum(VALUE obj, VALUE a)
 {
     PATH *p0, *p1;
     int typoid;
+    int sz0;
 
     typoid = plruby_datum_oid(a, 0);
     switch (typoid) {
@@ -1115,12 +1130,13 @@ pl_path_to_datum(VALUE obj, VALUE a)
         return Qnil;
     }
     Data_Get_Struct(obj, PATH, p0);
-    p1 = (PATH *)palloc(p0->size);
-    memcpy(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(PATH, p0);
+    p1 = (PATH *)palloc(sz0);
+    memcpy(p1, p0, sz0);
     return plruby_datum_set(a, (Datum)p1);
 }
 
-#define PATHSIZE(p_) (p_->size)
+#define PATHSIZE(p_) GET_VARSIZE(PATH, p_)
 PL_MLOADVAR(pl_path_mload, path_recv, PATH, PATHSIZE);
 PL_MDUMP(pl_path_mdump, path_send);
 
@@ -1129,11 +1145,13 @@ pl_path_s_str(VALUE obj, VALUE a)
 {
     PATH *p, *m;
     VALUE res;
+    int sz0;
 
     a = plruby_to_s(a);
     m = (PATH *)PLRUBY_DFC1(path_in, RSTRING_PTR(a));
-    p = (PATH *)ALLOC_N(char, m->size);
-    CPY_FREE(p, m, m->size);
+    sz0 = GET_VARSIZE(PATH, m);
+    p = (PATH *)ALLOC_N(char, sz0);
+    CPY_FREE(p, m, sz0);
     res = Data_Wrap_Struct(obj, pl_path_mark, free, p);
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
@@ -1178,9 +1196,9 @@ pl_path_init(int argc, VALUE *argv, VALUE obj)
                 rb_raise(rb_eArgError, "initialize : expected Array [x, y]");
             }
             tmp = rb_Float(RARRAY_PTR(b)[0]);
-            p->p[i].x = RFLOAT(tmp)->value;
+            p->p[i].x = RFLOAT_VALUE(tmp);
             tmp = rb_Float(RARRAY_PTR(b)[1]);
-            p->p[i].y = RFLOAT(tmp)->value;
+            p->p[i].y = RFLOAT_VALUE(tmp);
         }
     }
     p->npts = RARRAY_LEN(a);
@@ -1263,7 +1281,7 @@ NAME_(VALUE obj, VALUE a)                                               \
     }                                                                   \
     Data_Get_Struct(a, Point, p);                                       \
     p1 = (PATH *)PLRUBY_DFC2(FUNCTION_, p0, p);                         \
-    size = p1->size;                                                    \
+    size = GET_VARSIZE(PATH, p1);					\
     p2 = (PATH *)ALLOC_N(char, size);                                   \
     CPY_FREE(p2, p1, size);                                             \
     res = Data_Wrap_Struct(rb_obj_class(obj), pl_path_mark, free, p2);  \
@@ -1281,14 +1299,16 @@ pl_path_concat(VALUE obj, VALUE a)
 {
     PATH *p0, *p1;
     Point *p;
+    int sz1;
 
     Data_Get_Struct(obj, PATH, p0);
     a = pl_convert(a, rb_intern("to_path"), pl_path_mark);
     Data_Get_Struct(a, Point, p);
     p1 = (PATH *)PLRUBY_DFC2(path_add_pt, p0, p);
     free(p0);
-    p0 = (PATH *)ALLOC_N(char, p1->size);
-    CPY_FREE(p0, p1, p1->size);
+    sz1 = GET_VARSIZE(PATH, p1);
+    p0 = (PATH *)ALLOC_N(char, sz1);
+    CPY_FREE(p0, p1, sz1);
     RDATA(obj)->data = p0;
     return obj;
 }
@@ -1355,9 +1375,11 @@ pl_poly_s_alloc(VALUE obj)
 {
     POLYGON *poly;
     VALUE res;
+    int sz;
 
     res = Data_Make_Struct(obj, POLYGON, pl_poly_mark, free, poly);
-    poly->size = sizeof(POLYGON);
+    sz = GET_VARSIZE(POLYGON, poly);
+    SET_VARSIZE(poly, sz);
     return res;
 }
 
@@ -1365,6 +1387,7 @@ static VALUE
 pl_poly_init_copy(VALUE copy, VALUE orig)
 {
     POLYGON *p0, *p1;
+    int sz0, sz1;
 
     if (copy == orig) return copy;
     if (TYPE(orig) != T_DATA ||
@@ -1373,14 +1396,16 @@ pl_poly_init_copy(VALUE copy, VALUE orig)
     }
     Data_Get_Struct(orig, POLYGON, p0);
     Data_Get_Struct(copy, POLYGON, p1);
-    if (p0->size != p1->size) {
+    sz0 = GET_VARSIZE(POLYGON, p0);
+    sz1 = GET_VARSIZE(POLYGON, p1);
+    if (sz0 != sz1) {
         free(p1);
         RDATA(copy)->data = 0;
-        p1 = (POLYGON *)ALLOC_N(char, p0->size);
-        p1->size = p0->size;
+        p1 = (POLYGON *)ALLOC_N(char, sz0);
+	SET_VARSIZE(p1, sz0);
         RDATA(copy)->data = p1;
     }
-    memcpy(p1, p0, p0->size);
+    memcpy(p1, p0, sz0);
     return copy;
 }
 
@@ -1390,13 +1415,15 @@ pl_poly_s_datum(VALUE obj, VALUE a)
     POLYGON *p0, *p1;
     Oid typoid;
     VALUE res;
+    int sz0;
 
     p0 = (POLYGON *)plruby_datum_get(a, &typoid);
     if (typoid != POLYGONOID) {
 	rb_raise(rb_eArgError, "unknown OID type %d", typoid);
     }
-    p1 = (POLYGON *)ALLOC_N(char, p0->size);
-    memcpy(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(POLYGON, p0);
+    p1 = (POLYGON *)ALLOC_N(char, sz0);
+    memcpy(p1, p0, sz0);
     res = Data_Wrap_Struct(obj, pl_poly_mark, free, p1);
     OBJ_TAINT(res);
     return res;
@@ -1407,6 +1434,7 @@ pl_poly_to_datum(VALUE obj, VALUE a)
 {
     POLYGON *p0, *p1;
     int typoid;
+    int sz0;
 
     typoid = plruby_datum_oid(a, 0);
     switch (typoid) {
@@ -1433,12 +1461,13 @@ pl_poly_to_datum(VALUE obj, VALUE a)
         return Qnil;
     }
     Data_Get_Struct(obj, POLYGON, p0);
-    p1 = (POLYGON *)palloc(p0->size);
-    memcpy(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(POLYGON, p0);
+    p1 = (POLYGON *)palloc(sz0);
+    memcpy(p1, p0, sz0);
     return plruby_datum_set(a, (Datum)p1);
 }
 
-#define POLYSIZE(p_) (p_->size)
+#define POLYSIZE(p_) GET_VARSIZE(POLYGON, p_)
 PL_MLOADVAR(pl_poly_mload, poly_recv, POLYGON, POLYSIZE);
 PL_MDUMP(pl_poly_mdump, poly_send);
 
@@ -1447,11 +1476,13 @@ pl_poly_s_str(VALUE obj, VALUE a)
 {
     POLYGON *p, *m;
     VALUE res;
+    int sz0;
 
     a = plruby_to_s(a);
     m = (POLYGON *)PLRUBY_DFC1(poly_in, RSTRING_PTR(a));
-    p = (POLYGON *)ALLOC_N(char, m->size);
-    CPY_FREE(p, m, m->size);
+    sz0 = GET_VARSIZE(POLYGON, m);
+    p = (POLYGON *)ALLOC_N(char, sz0);
+    CPY_FREE(p, m, sz0);
     res = Data_Wrap_Struct(obj, pl_poly_mark, free, p);
     if (OBJ_TAINTED(obj) || OBJ_TAINTED(a)) OBJ_TAINT(res);
     return res;
@@ -1496,9 +1527,9 @@ pl_poly_init(int argc, VALUE *argv, VALUE obj)
                 rb_raise(rb_eArgError, "initialize : expected Array [x, y]");
             }
             tmp = rb_Float(RARRAY_PTR(b)[0]);
-            p->p[i].x = RFLOAT(tmp)->value;
+            p->p[i].x = RFLOAT_VALUE(tmp);
             tmp = rb_Float(RARRAY_PTR(b)[1]);
-            p->p[i].y = RFLOAT(tmp)->value;
+            p->p[i].y = RFLOAT_VALUE(tmp);
         }
     }
     make_bound_box(p);
@@ -1587,12 +1618,14 @@ pl_box_to_poly(VALUE obj)
     BOX *b;
     POLYGON *p0, *p1;
     VALUE res;
+    int sz0;
 
     Data_Get_Struct(obj, BOX, b);
     p0 = (POLYGON *)PLRUBY_DFC1(box_poly, b);
     if (!p0) return Qnil;
-    p1 = (POLYGON *)ALLOC_N(char, p0->size);
-    CPY_FREE(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(POLYGON, p0);
+    p1 = (POLYGON *)ALLOC_N(char, sz0);
+    CPY_FREE(p1, p0, sz0);
     res = Data_Wrap_Struct(pl_cPoly, pl_poly_mark, free, p1);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
     return res;
@@ -1604,12 +1637,14 @@ pl_path_to_poly(VALUE obj)
     PATH *b;
     POLYGON *p0, *p1;
     VALUE res;
+    int sz0;
 
     Data_Get_Struct(obj, PATH, b);
     p0 = (POLYGON *)PLRUBY_DFC1(path_poly, b);
     if (!p0) return Qnil;
-    p1 = (POLYGON *)ALLOC_N(char, p0->size);
-    CPY_FREE(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(POLYGON, p0);
+    p1 = (POLYGON *)ALLOC_N(char, sz0);
+    CPY_FREE(p1, p0, sz0);
     res = Data_Wrap_Struct(pl_cPoly, pl_poly_mark, free, p1);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
     return res;
@@ -1621,12 +1656,14 @@ pl_poly_to_path(VALUE obj)
     POLYGON *b;
     PATH *p0, *p1;
     VALUE res;
+    int sz0;
 
     Data_Get_Struct(obj, POLYGON, b);
     p0 = (PATH *)PLRUBY_DFC1(poly_path, b);
     if (!p0) return Qnil;
-    p1 = (PATH *)ALLOC_N(char, p0->size);
-    CPY_FREE(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(PATH, p0);
+    p1 = (PATH *)ALLOC_N(char, sz0);
+    CPY_FREE(p1, p0, sz0);
     res = Data_Wrap_Struct(pl_cPath, pl_path_mark, free, p1);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
     return res;
@@ -1638,7 +1675,7 @@ pl_poly_to_box(VALUE obj)
     POLYGON *b;
     BOX *p0, *p1;
     VALUE res;
-
+    
     Data_Get_Struct(obj, POLYGON, b);
     p0 = (BOX *)PLRUBY_DFC1(poly_box, b);
     if (!p0) return Qnil;
@@ -1746,11 +1783,11 @@ pl_circle_init(VALUE obj, VALUE a, VALUE b)
             rb_raise(rb_eArgError, "initialize : expected Array [x, y]");
         }
         tmp = rb_Float(RARRAY_PTR(a)[0]);
-        p->center.x = RFLOAT(tmp)->value;
+        p->center.x = RFLOAT_VALUE(tmp);
         tmp = rb_Float(RARRAY_PTR(a)[1]);
-        p->center.y = RFLOAT(tmp)->value;
+        p->center.y = RFLOAT_VALUE(tmp);
     }
-    p->radius = RFLOAT(rb_Float(b))->value;
+    p->radius = RFLOAT_VALUE(rb_Float(b));
     return obj;
 }
 
@@ -1917,12 +1954,14 @@ pl_circle_to_poly(VALUE obj, VALUE a)
     CIRCLE *b;
     POLYGON *p0, *p1;
     VALUE res;
+    int sz0;
 
     Data_Get_Struct(obj, CIRCLE, b);
     p0 = (POLYGON *)PLRUBY_DFC2(circle_poly, Int32GetDatum(NUM2INT(a)), b);
     if (!p0) return Qnil;
-    p1 = (POLYGON *)ALLOC_N(char, p0->size);
-    CPY_FREE(p1, p0, p0->size);
+    sz0 = GET_VARSIZE(POLYGON, p0);
+    p1 = (POLYGON *)ALLOC_N(char, sz0);
+    CPY_FREE(p1, p0, sz0);
     res = Data_Wrap_Struct(pl_cPoly, pl_poly_mark, free, p1);
     if (OBJ_TAINTED(obj)) OBJ_TAINT(res);
     return res;

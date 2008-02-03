@@ -518,7 +518,7 @@ pl_internal_call_handler(struct pl_thread_st *plth)
 #ifndef PG_PL_TRYCATCH
     sigjmp_buf save_restart;
 #endif
-    volatile void *tmp;
+    volatile VALUE *tmp;
     MemoryContext orig_context;
     volatile VALUE orig_id;
 
@@ -527,7 +527,7 @@ pl_internal_call_handler(struct pl_thread_st *plth)
     }
     if (!pl_call_level) {
         extern void Init_stack();
-        Init_stack(&tmp);
+        Init_stack((VALUE *)&tmp);
     }
 
     orig_context = CurrentMemoryContext;
@@ -1498,7 +1498,7 @@ pl_load_singleton(argc, argv, obj)
     }
     id = SYM2ID(argv[0]);
     argc--; argv++;
-    nom = rb_id2name(id);
+    nom = (char *)rb_id2name(id);
     buff = ALLOCA_N(char, 1 + strlen(recherche) + strlen(nom));
     sprintf(buff, recherche, nom);
 

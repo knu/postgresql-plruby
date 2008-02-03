@@ -153,6 +153,7 @@ if "aa".respond_to?(:initialize_copy, true)
 end
 
 have_func("rb_block_call")
+have_header("st.h")
 
 if version.to_i >= 74
    if !have_header("server/utils/array.h")
@@ -203,8 +204,8 @@ $CFLAGS += " -DPLRUBY_CALL_HANDLER=plruby#{suffix}_call_handler"
 $CFLAGS += " -DPLRUBY_VALIDATOR=plruby#{suffix}_validator"
 
 subdirs.each do |key|
-   orig_argv << "with-cflags=\"#$CFLAGS -I.. -I ../..\""
-   orig_argv << "with-ldflags=\"#$LDFLAGS\""
+   orig_argv << "with-cflags='#$CFLAGS -I.. -I ../..'"
+   orig_argv << "with-ldflags='#$LDFLAGS'"
    cmd = "#{CONFIG['RUBY_INSTALL_NAME']} extconf.rb #{orig_argv.join(' ')}"
    system("cd #{key}; #{cmd}")
 end

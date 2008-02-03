@@ -103,7 +103,7 @@ pl_float_to_datum(VALUE obj, VALUE a)
     double value;
     Datum d;
 
-    value = RFLOAT(obj)->value;
+    value = RFLOAT_VALUE(obj);
     switch (plruby_datum_oid(a, NULL)) {
     case FLOAT4OID:
         d = Float4GetDatum((float4)value);
@@ -159,8 +159,11 @@ pl_str_to_datum(VALUE obj, VALUE a)
     len = RSTRING_LEN(obj);
     data = palloc(VARHDRSZ + len);
     memcpy(VARDATA(data), RSTRING_PTR(obj), len);
+#ifdef SET_VARSIZE
+    SET_VARSIZE(data, VARHDRSZ + len);
+#else
     VARATT_SIZEP(data) = VARHDRSZ + len;
-
+#endif
     return plruby_datum_set(a, PointerGetDatum(data));
 }
 

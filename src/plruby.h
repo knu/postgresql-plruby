@@ -36,7 +36,9 @@
 #include "package.h"
 
 #include <ruby.h>
+#if HAVE_ST_H
 #include <st.h>
+#endif
 
 #ifndef StringValuePtr
 #define StringValuePtr(x) STR2CSTR(x)
@@ -50,6 +52,14 @@
 #ifndef RARRAY_PTR
 # define RARRAY_PTR(x_) RARRAY(x_)->ptr
 # define RARRAY_LEN(x_) RARRAY(x_)->len
+#endif
+
+#ifndef RHASH_TBL
+#define RHASH_TBL(x_) (RHASH(x_)->tbl)
+#endif
+
+#ifndef RFLOAT_VALUE
+#define RFLOAT_VALUE(x_) (RFLOAT(x_)->value)
 #endif
 
 extern VALUE rb_thread_list();

@@ -1015,11 +1015,11 @@ pl_convert_arg(Datum value, Oid typoid, FmgrInfo *finfo, Oid typelem,
         if (NIL_P(klass)) {
             klass = rb_hash_aref(plruby_conversions, vid);
             if (NIL_P(klass)) {
-                st_insert(RHASH(plruby_classes)->tbl, vid, Qfalse);
+                st_insert(RHASH_TBL(plruby_classes), vid, Qfalse);
             }
             else {
                 klass = rb_const_get(rb_cObject, NUM2INT(klass));
-                st_insert(RHASH(plruby_classes)->tbl, vid, klass);
+                st_insert(RHASH_TBL(plruby_classes), vid, klass);
             }
         }
         if (RTEST(klass)) {
@@ -1064,8 +1064,13 @@ create_array(index, ndim, dim, p, prodesc, curr, typoid)
                                   prodesc->arg_len[curr]);
             tmp = pl_convert_arg(itemvalue, typoid,
                                  &prodesc->arg_func[curr], (Datum)0, -1);
+#ifdef att_addlength_pointer
+	    *p = att_addlength_pointer(*p, prodesc->arg_len[curr], PointerGD(*p));
+	    *p = (char *) att_align_nominal(*p, prodesc->arg_align[curr]);
+#else
             *p = att_addlength(*p, prodesc->arg_len[curr], PointerGD(*p));
             *p = (char *) att_align(*p, prodesc->arg_align[curr]);
+#endif
             rb_ary_push(res, tmp); 
         }
         else {
@@ -1401,7 +1406,7 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
 					    pl_tuple_put, tuple);
 		    }
 		    else {
-			res = rb_block_call(pl_mPLtemp, args->id, 1, args->ary,
+			res = rb_block_call(pl_mPLtemp, args->id, 1, RARRAY_PTR(args->ary),
 					    pl_tuple_put, tuple);
 		    }
 		}
