@@ -204,8 +204,9 @@ $CFLAGS += " -DPLRUBY_CALL_HANDLER=plruby#{suffix}_call_handler"
 $CFLAGS += " -DPLRUBY_VALIDATOR=plruby#{suffix}_validator"
 
 subdirs.each do |key|
-   orig_argv << "with-cflags='#$CFLAGS -I.. -I ../..'"
-   orig_argv << "with-ldflags='#$LDFLAGS'"
+   orig_argv << "--with-cflags='#$CFLAGS -I.. -I ../..'"
+   orig_argv << "--with-ldflags='#$LDFLAGS'"
+   orig_argv << "--with-cppflags='#$CPPFLAGS'"
    cmd = "#{CONFIG['RUBY_INSTALL_NAME']} extconf.rb #{orig_argv.join(' ')}"
    system("cd #{key}; #{cmd}")
 end

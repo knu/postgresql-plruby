@@ -593,7 +593,13 @@ pl_tuple_heap(VALUE c, VALUE tuple)
 	rb_raise(pl_ePLruby, "Invalid descriptor");
     }
     if (TYPE(c) != T_ARRAY) {
-	c = rb_Array(c);
+	if (NIL_P(c) || (TYPE(c) == T_STRING && !RSTRING_LEN(c))) {
+	    c = rb_ary_new2(1);
+	    rb_ary_push(c, rb_str_new2(""));
+	}
+	else {
+	    c = rb_Array(c);
+	}
     }
     if (TYPE(c) != T_ARRAY || !RARRAY_PTR(c)) {
         rb_raise(pl_ePLruby, "expected an Array");
