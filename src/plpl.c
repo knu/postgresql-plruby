@@ -1412,7 +1412,8 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
 					    pl_tuple_put, tuple);
 		    }
 		    else {
-			res = rb_block_call(pl_mPLtemp, args->id, 1, RARRAY_PTR(args->ary),
+			res = rb_block_call(pl_mPLtemp, args->id,
+					    1, &args->ary,
 					    pl_tuple_put, tuple);
 		    }
 		}
