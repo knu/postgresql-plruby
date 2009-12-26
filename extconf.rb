@@ -79,6 +79,11 @@ def rule(target, clean = nil)
 end
 
 
+include_dir, = dir_config("pgsql")
+if include_dir
+   raise "--with-pgsql-include/--with-pgsql-dir is obsolete.  Use --with-pg-config instead only if necessary."
+end
+
 pg_config = with_config('pg-config', 'pg_config')
 include_dir = `pg_config --includedir`.strip
 $CFLAGS << " -I" << include_dir
