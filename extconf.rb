@@ -79,15 +79,9 @@ def rule(target, clean = nil)
 end
 
 
-include_dir, = dir_config("pgsql", "/usr/local/pgsql/include", "/usr/local/pgsql/lib")
-
-$CFLAGS += if File.exist?("#{include_dir}/server")
-	      " -I#{include_dir}/server"
-	   elsif File.exist?("#{include_dir}/postgresql/server")
-              " -I#{include_dir}/postgresql/server"
-           else
-              ""
-	   end
+include_dir = `pg_config --includedir`.strip
+$CFLAGS << " -I" << include_dir
+$CFLAGS << " -I" << `pg_config --includedir-server`.strip
 
 if safe = with_config("safe-level")
    safe = Integer(safe)
