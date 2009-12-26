@@ -37,13 +37,15 @@ begin
    f = File.new("test_mklang.sql", "w")
    f.print <<EOF
  
+   begin;
    create function plruby#{suffix}_call_handler() returns #{opaque}
     as '#{pwd}src/plruby#{suffix}.#{CONFIG["DLEXT"]}'
    language '#{language}';
  
-create trusted procedural language 'plruby#{suffix}'
+   create trusted procedural language 'plruby#{suffix}'
         handler plruby#{suffix}_call_handler
         lancompiler 'PL/Ruby';
+   commit;
 EOF
    f.close
 rescue
