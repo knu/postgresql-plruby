@@ -1,15 +1,15 @@
 SELECT * FROM pg_settings WHERE name LIKE 'enable%';
-       name        | setting | unit |                  category                   |                       short_desc                       | extra_desc | context | vartype | source  | min_val | max_val 
--------------------+---------+------+---------------------------------------------+--------------------------------------------------------+------------+---------+---------+---------+---------+---------
- enable_bitmapscan | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of bitmap-scan plans.        |            | user    | bool    | default |         | 
- enable_hashagg    | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of hashed aggregation plans. |            | user    | bool    | default |         | 
- enable_hashjoin   | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of hash join plans.          |            | user    | bool    | default |         | 
- enable_indexscan  | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of index-scan plans.         |            | user    | bool    | default |         | 
- enable_mergejoin  | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of merge join plans.         |            | user    | bool    | default |         | 
- enable_nestloop   | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of nested-loop join plans.   |            | user    | bool    | default |         | 
- enable_seqscan    | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of sequential-scan plans.    |            | user    | bool    | default |         | 
- enable_sort       | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of explicit sort steps.      |            | user    | bool    | default |         | 
- enable_tidscan    | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of TID scan plans.           |            | user    | bool    | default |         | 
+       name        | setting | unit |                  category                   |                       short_desc                       | extra_desc | context | vartype | source  | min_val | max_val | enumvals | boot_val | reset_val | sourcefile | sourceline 
+-------------------+---------+------+---------------------------------------------+--------------------------------------------------------+------------+---------+---------+---------+---------+---------+----------+----------+-----------+------------+------------
+ enable_bitmapscan | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of bitmap-scan plans.        |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_hashagg    | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of hashed aggregation plans. |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_hashjoin   | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of hash join plans.          |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_indexscan  | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of index-scan plans.         |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_mergejoin  | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of merge join plans.         |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_nestloop   | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of nested-loop join plans.   |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_seqscan    | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of sequential-scan plans.    |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_sort       | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of explicit sort steps.      |            | user    | bool    | default |         |         |          | on       | on        |            |           
+ enable_tidscan    | on      |      | Query Tuning / Planner Method Configuration | Enables the planner's use of TID scan plans.           |            | user    | bool    | default |         |         |          | on       | on        |            |           
 (9 rows)
 
 CREATE TABLE foo2(fooid int, f2 int);
@@ -21,6 +21,8 @@ CREATE FUNCTION foot(int) returns setof foo2 as '
 language 'plruby';
 select * from foo2, foot(foo2.fooid) z where foo2.f2 = z.f2;
 ERROR:  function expression in FROM cannot refer to other relations of same query level
+LINE 1: select * from foo2, foot(foo2.fooid) z where foo2.f2 = z.f2;
+                                 ^
 select * from foo2 where f2 in (
 	select f2 from foot(foo2.fooid) z where z.fooid = foo2.fooid
 ) ORDER BY 1,2;

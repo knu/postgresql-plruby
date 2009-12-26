@@ -7,18 +7,19 @@ pwd.sub!(%r{[^/]+/[^/]+$}, "")
 language, extension = 'C', '_new_trigger'
 opaque = 'language_handler'
 
+version = ARGV[0].to_i
 suffix = ARGV[1].to_s
 
 begin
    f = File.new("test_queries.sql", "w")
-   IO.foreach("test_queries.orig") do |x| 
+   IO.foreach("test_queries.sql.in") do |x| 
       x.gsub!(/language\s+'plruby'/i, "language 'plruby#{suffix}'")
       f.print x
    end
    f.close
    
-   Dir["test.expected.*.orig"].each do |name|
-      result = name.sub(/\.orig\z/, '')
+   Dir["test.expected.*.in"].each do |name|
+      result = name.sub(/\.in\z/, '')
       f = File.new(result, "w")
       IO.foreach(name) do |x|
 	 x.gsub!(/'plruby'/i, "'plruby#{suffix}'")
@@ -34,7 +35,7 @@ begin
     as '#{pwd}src/plruby#{suffix}.#{CONFIG["DLEXT"]}'
    language '#{language}';
  
-create trusted procedural language 'plruby#{suffix}'
+   create trusted procedural language 'plruby#{suffix}'
         handler plruby#{suffix}_call_handler
         lancompiler 'PL/Ruby';
 EOF

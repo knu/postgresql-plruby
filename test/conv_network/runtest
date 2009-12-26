@@ -12,15 +12,15 @@ createdb $DBNAME
 
 echo "**** Create procedural language plruby$2 ****"
 ruby b.rb $*
-psql -q -n $DBNAME <test_mklang.sql
+psql -q -n -X $DBNAME < test_mklang.sql
 
 echo "**** Running test queries ****"
-psql -q -n -e $DBNAME <test_queries.sql > test.out 2>&1
+psql -q -n -X -e $DBNAME < test_queries.sql > test.out 2>&1
 
-if diff test.expected.$1 test.out >/dev/null 2>&1 ; then
+if cmp -s test.expected.$1 test.out; then
     echo "    Tests passed O.K."
 else
-    echo "    Tests faild - look at diffs between"
+    echo "    Tests failed - look at diffs between"
     echo "    test.expected.$1 and test.out"
 fi
 

@@ -158,7 +158,11 @@ select 100 @< 4;
 
 select * from T_pkey1 order by key1 using @<;
 ERROR:  operator @< is not a valid ordering operator
+LINE 1: select * from T_pkey1 order by key1 using @<;
+                                                  ^
 HINT:  Ordering operators must be "<" or ">" members of btree operator families.
 select * from T_pkey2 order by key1 using @<;
 ERROR:  operator @< is not a valid ordering operator
+LINE 1: select * from T_pkey2 order by key1 using @<;
+                                                  ^
 HINT:  Ordering operators must be "<" or ">" members of btree operator families.
