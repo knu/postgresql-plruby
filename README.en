@@ -23,14 +23,7 @@ procedures
 
  You may need to specify :
 
-  --with-pgsql-dir=<prefix for include and lib directories for PostgreSQL>
-
-  --with-pgsql-include=<include file directory for PostgreSQL>
-
-  --with-pgsql-lib=<library dir for PostgreSQL>
-
-  --with-pgsql-version=<release number for PostgreSQL, actually 73,
-                        or 74 i.e. major and minor number>
+  --with-pg-config=<location of the pg_config command of PostgreSQL>
 
   --disable-conversion
     by default plruby try to convert a postgres type to a ruby class
@@ -47,8 +40,7 @@ procedures
 
  Example :
 
-  ruby extconf.rb --with-pgsql-include=/usr/include/postgresql \
-                  --with-pgsql-lib=/usr/lib
+  ruby extconf.rb --with-pg-config=/usr/local/bin/pg_config
 
 
 * Test (and examples)
