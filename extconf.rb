@@ -38,7 +38,6 @@ end
 
 def create_lang(version = 74, suffix = '', safe = 0)
    language, opaque = 'C', 'language_handler'
-   version = version.to_i
    opaque = "opaque" if version == 72
    safe = safe.to_i
    trusted = if safe >= 4
@@ -118,32 +117,17 @@ if have_func("rb_hash_delete", "ruby.h")
    $CFLAGS += " -DHAVE_RB_HASH_DELETE"
 end
 
-version = with_config("pgsql-version")
-if !version && File.exist?("#{include_dir}/pg_config.h")
-   version_regexp = /\A#\s*define\s+PG_VERSION\s+"(\d(\.\d)?)/
-   IO.foreach("#{include_dir}/pg_config.h") do |line|
-      if version_regexp =~ line
-         version = $1
-         version += "0" if ! version.sub!(/\./, '')
-         break
-      end
-   end
+case version_str = `#{pg_config} --version`
+when /^PostgreSQL ([7-9])\.([0-9])(\.[0-9])?$/
+   version = 10 * $1.to_i + $2.to_i
+else
+   version = 0
 end
-unless version
-   version = "74"
-   print <<-EOT
- ************************************************************************
- I can't find the version of PostgreSQL, the test will be make against
- the output of 7.4. If the test fail, verify the result in the directories
- test/plt and test/plp
- ************************************************************************
-   EOT
-end
-if version.to_i < 73
+if version < 73
    raise <<-EOT
 
 ============================================================
-   Unsupported version #{version}, try to use plruby-0.4.2
+#{version_str} is unsupported.  Try plruby-0.4.2.
 ============================================================
    EOT
 end
@@ -155,7 +139,7 @@ end
 have_func("rb_block_call")
 have_header("st.h")
 
-if version.to_i >= 74
+if version >= 74
    if !have_header("server/utils/array.h")
       if !have_header("utils/array.h")
          raise "I cant't find server/utils/array.h"
@@ -225,7 +209,6 @@ begin
    end
    $objs = ["plruby.o", "plplan.o", "plpl.o", "pltrans.o"] unless $objs
    create_makefile("plruby#{suffix}")
-   version.sub!(/\.\d/, '')
 ensure
    Dir.chdir("..")
 end
