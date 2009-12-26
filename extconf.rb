@@ -173,7 +173,7 @@ if enable_conversion
    end
    if !conversions.empty?
       File.open("src/conversions.h", "w") do |conv|
-	 conversions.each do |key, val|
+	 conversions.sort.each do |key, val|
             conv.puts "#include \"conversions/#{key}/conversions.h\""
             subdirs << "src/conversions/#{key}"
          end
