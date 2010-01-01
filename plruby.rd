@@ -23,11 +23,12 @@
   * ((<class Polygon>))
   * ((<class Segment>))
 
-PL/Ruby is a loadable procedural language for the Postgres database
-system  that enable the Ruby language to create functions and trigger
-procedures
+PL/Ruby is a loadable procedural language for the PostgreSQL database
+system that enables the Ruby language to create functions and trigger
+procedures.
 
-Functions and triggers are singleton methods of the module PLtemp.
+Functions and triggers are defined as singleton methods of the module
+PLtemp.
 
 = WARNING
 ((*if PL/Ruby was compiled with ((%--disable-conversion%)),
@@ -1568,4 +1569,3 @@ The module Comparable is included
      convert ((|self|)) to a Polygon with ((|npts|)) Points
 
 =end
-

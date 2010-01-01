@@ -5,9 +5,9 @@
 # 
 # = PLRuby
 #
-# PLRuby is a loadable procedural language for the Postgres database
-# system  that enable the Ruby language to create functions and trigger
-# procedures
+# PLRuby is a loadable procedural language for the PostgreSQL database
+# system that enables the Ruby language to create functions and
+# trigger procedures.
 # 
 # Functions and triggers are singleton methods of the module PLtemp.
 # 
