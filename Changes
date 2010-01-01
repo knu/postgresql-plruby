@@ -113,3 +113,9 @@
 The original author Guy Decoux passed away in the beginning of the
 month of July 2008 at the age of 53.  The development is inherited by
 Akinori MUSHA.
+
+--- 0.5.4 (2010-01-02)
+
+* adapted for 8.4
+* bug-fix
+* extconf.rb changed to make use of pg_config(1)
