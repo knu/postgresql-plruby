@@ -11,7 +11,7 @@ echo "**** Create test database $DBNAME ****"
 createdb $DBNAME
 
 echo "**** Create procedural language plruby$2 ****"
-ruby b.rb $*
+"${RUBY-ruby}" b.rb $*
 psql -q -n -X $DBNAME < test_mklang.sql
 
 echo "**** Create tables, functions and triggers ****"
