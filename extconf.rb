@@ -1,6 +1,5 @@
 #!/usr/bin/ruby
 ARGV.collect! {|x| 
-   x = x.sub(/\A--with-pgsql-prefix=/, "--with-pgsql-dir=") 
    x = x.sub(/\A--((?:en|dis)able)-shared\z/) { "--#$1-plruby-shared" }
 }
 
