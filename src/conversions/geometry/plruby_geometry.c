@@ -284,6 +284,26 @@ POINT_CALL_BOOL(pl_point_vert,point_vert);
 POINT_CALL_BOOL(pl_point_horiz,point_horiz);
 POINT_CALL_BOOL(pl_point_eq,point_eq);
 
+#ifdef USE_FLOAT8_BYVAL
+#define RETURN_FLOAT(obj_, function_) do {      \
+    float8 f_;                                  \
+    VALUE res_;                                 \
+    f_ = DatumGetFloat8(function_);             \
+    res_ = rb_float_new(f_);                    \
+    if (OBJ_TAINTED(obj_)) OBJ_TAINT(res_);     \
+    return res_;                                \
+} while (0)
+
+#define RETURN_FLOAT2(obj_, a_, function_) do { \
+    float8 f_;                                  \
+    VALUE res_;                                 \
+    f_ = DatumGetFloat8(function_);             \
+    res_ = rb_float_new(f_);                    \
+    if (OBJ_TAINTED(obj_) ||                    \
+        OBJ_TAINTED(a_)) OBJ_TAINT(res_);       \
+    return res_;                                \
+} while (0)
+#else
 #define RETURN_FLOAT(obj_, function_) do {      \
     float8 *f_;                                 \
     VALUE res_;                                 \
@@ -310,6 +330,7 @@ POINT_CALL_BOOL(pl_point_eq,point_eq);
         OBJ_TAINTED(a_)) OBJ_TAINT(res_);       \
     return res_;                                \
 } while (0)
+#endif
 
 
 static VALUE
