@@ -1,4 +1,4 @@
--- 0.1.0 * 0.2.5
+-- 0.1.0 - 0.2.5
 
  adaptation for new version of PostgreSQL
 
@@ -105,3 +105,11 @@
 
 * corrected ReleaseSysCache() (Thanks to Peter Eisentraut <peter_e@gmx.net>)
 * conversion function String#to_datum (Thanks to Dennis Vshivkov <walrus@amur.ru>)
+
+--- 0.4.5 - 0.5.3 (2008-03-03)
+
+* adapted for 8.1, 8.2, and 8.3
+
+The original author Guy Decoux passed away in the beginning of the
+month of July 2008 at the age of 53.  The development is inherited by
+Akinori MUSHA.
