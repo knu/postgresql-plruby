@@ -117,7 +117,7 @@ if have_func("rb_hash_delete", "ruby.h")
 end
 
 case version_str = `#{pg_config} --version`
-when /^PostgreSQL ([7-9])\.([0-9])(\.[0-9])?$/
+when /^PostgreSQL ([7-9])\.([0-9])(\.[0-9]+)?$/
    version = 10 * $1.to_i + $2.to_i
 else
    version = 0
