@@ -303,7 +303,7 @@ extern Datum plruby_dfc3 _((PGFunction, Datum, Datum, Datum));
 extern VALUE plruby_classes, plruby_conversions;
 extern Oid plruby_datum_oid _((VALUE, int *));
 extern VALUE plruby_datum_set _((VALUE, Datum));
-extern VALUE plruby_datum_get _((VALUE, Oid *));
+extern Datum plruby_datum_get _((VALUE, Oid *));
 extern VALUE plruby_define_void_class _((char *, char *));
 #endif
 

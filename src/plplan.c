@@ -563,6 +563,8 @@ pl_plan_execp(argc, argv, obj)
 
 #if PG_PL_VERSION == 74
 #define PORTAL_ACTIVE(port) ((port)->portalActive)
+#elif WITH_GREENPLUM == 1
+#define  PORTAL_ACTIVE(port) ((port)->portal_status == PORTAL_ACTIVE)
 #elif PG_PL_VERSION > 74
 #define  PORTAL_ACTIVE(port) ((port)->status == PORTAL_ACTIVE)
 #else

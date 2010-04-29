@@ -97,6 +97,11 @@ else
    safe = 12
 end
 
+if with_config("greenplum")
+  $CFLAGS += " -I" << File.join( include_dir, "postgresql", "internal" )
+  $CFLAGS += " -DWITH_GREENPLUM=1"
+end
+
 if timeout = with_config("timeout")
    timeout = Integer(timeout)
    if timeout < 2
