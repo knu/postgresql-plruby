@@ -15,7 +15,7 @@ Prerequisite
   All PostgreSQL headers need to be installed. Command (see `INSTALL` in the
   directory postgresql-7.x.y)
 
-        make install-all-headers 
+        make install-all-headers
 
 Installation
 ------------
@@ -24,52 +24,66 @@ Installation
         make
         make install
 
-  You may need to specify :
+  You may need to specify some of the following extconf.rb options:
 
         --with-pg-config=<location of the pg_config command of PostgreSQL>
 
+  Specifies the location of pg_config.
+  e.g. --with-pg-config=/usr/local/bin/pg_config
+
+        --with-greenplum
+
+  Builds plruby for Greenplum instead of PostgreSQL.
+
         --disable-conversion
-  by default plruby try to convert a postgres type to a ruby class
-  This option give the possibility to disable all conversions
+
+  By default plruby tries to convert a postgres type to a ruby class.
+  This option gives the possibility to disable all conversions.
 
        --with-suffix=<suffix to add>
 
-  For example
+  Specifies a suffix to add to the extension module file.
+  e.g. `ruby extconf.rb --with-suffix=_geo` will create
+  `plruby_geo.so`.
 
-        ruby extconf.rb --with-suffix=_geo
+        --with-safe-level
 
-  will create `plruby_geo.so`
+  Lowers the safe level which the plruby functions are run under.
+  (default: 12; meaning the maximum)
 
-        --with-greenplum
-  To build plruby for Greenplum istead of PostgreSQL 
+        --with-timeout=<seconds>
 
+  Sets the timeout for each function call. (default: none)
 
-  *Example usage*
+        --with-main-safe-level
 
-        ruby extconf.rb --with-pg-config=/usr/local/bin/pg_config
+  Lowers the safe level which the main thread waiting for timeouts is
+  run under. (default: 3) This option is read only when --with-timeout
+  is given.
+
 
 Test (and examples)
 -------------------
 
-  WARNING : if plruby was compiled without --disable-conversion
-  you must **FIRST** run `make install` before `make test`
+  WARNING: if plruby was compiled without --disable-conversion you
+  must **FIRST** run `make install` before `make test`.
 
         make test
 
-  this will run the 2 commands :
+  This will run the following two commands:
 
         ( cd test/plt; ./runtest )
         ( cd test/plp; ./runtest )
 
-  The database `plruby_test` is created and then destroyed. Don't use it if 
-  such a database exist on your system.
+  The database `plruby_test` is created and then destroyed.  Don't use
+  it if you have such a database.
 
-  Now create the PL/Ruby language in PostgreSQL
+  Now you are ready to create the PL/Ruby language in PostgreSQL.
 
   Since the `pg_language` system catalog is private to each database,
-  the new language can be created only for individual databases,
-  or in the template1 database. In the latter case, it is
-  automatically available in all newly created databases.
+  the new language can be created only for individual databases, or in
+  the template1 database.  In the latter case, it is automatically
+  available in all newly created databases.
 
   The commands to create the new language are:
 
@@ -107,5 +121,5 @@ Copying
 
 * * *
 
-Guy Decoux <ts@moulon.inra.fr> (original author, deceased in July 2008)   
+Guy Decoux <ts@moulon.inra.fr> (original author, deceased in July 2008)
 Akinori MUSHA <knu@idaemons.org> (current maintainer)
