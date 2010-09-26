@@ -958,7 +958,8 @@ pl_compile(struct pl_thread_st *plth, int istrigger)
 		    break;
 		}
 	    }
-
+	    
+	    prodesc->result_is_setof = procStruct->proretset;
 	    if (procStruct->proretset) {
 		Oid funcid, functypeid;
 		char functyptype;

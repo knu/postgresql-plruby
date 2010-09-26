@@ -141,6 +141,7 @@ if "aa".respond_to?(:initialize_copy, true)
 end
 
 have_func("rb_block_call")
+have_header("ruby/st.h")
 have_header("st.h")
 
 if version >= 74
