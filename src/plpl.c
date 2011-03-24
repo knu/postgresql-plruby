@@ -547,32 +547,6 @@ struct each_st {
     TupleDesc tup;
 };
 
-static VALUE
-pl_each(VALUE obj, struct each_st *st)
-{
-    VALUE key, value;
-    char *column;
-    int attn;
-
-    key = rb_ary_entry(obj, 0);
-    value = rb_ary_entry(obj, 1);
-    key = plruby_to_s(key);
-    column = RSTRING_PTR(key);
-    attn = SPI_fnumber(st->tup, column);
-    if (attn <= 0 || st->tup->attrs[attn - 1]->attisdropped) {
-	rb_raise(pl_ePLruby, "Invalid column name '%s'", column);
-    }
-    attn -= 1;
-    if (TYPE(st->res) != T_ARRAY || !RARRAY_PTR(st->res)) {
-        rb_raise(pl_ePLruby, "expected an Array");
-    }
-    if (attn >= RARRAY_LEN(st->res)) {
-	rb_raise(pl_ePLruby, "Invalid column position '%d'", attn);
-    }
-    RARRAY_PTR(st->res)[attn] = value;
-    return Qnil;
-}
-
 static HeapTuple
 pl_tuple_heap(VALUE c, VALUE tuple)
 {
@@ -850,7 +824,7 @@ pl_warn(argc, argv, obj)
         rb_raise(pl_ePLruby, "invalid syntax");
     }
     PLRUBY_BEGIN_PROTECT(1);
-    elog(level, RSTRING_PTR(res));
+    elog(level, "%s", RSTRING_PTR(res));
     PLRUBY_END_PROTECT;
     return Qnil;
 }

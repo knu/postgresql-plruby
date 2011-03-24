@@ -703,7 +703,6 @@ pl_validator_handler(struct pl_thread_st *plth)
 Datum
 PLRUBY_CALL_HANDLER(PG_FUNCTION_ARGS)
 {
-    VALUE result;
     struct pl_thread_st plth;
     
     plth.fcinfo = fcinfo;
