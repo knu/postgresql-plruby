@@ -1,4 +1,5 @@
 require 'rubygems'
+require 'rbconfig'
 
 Gem::Specification.new do |spec|
   spec.name       = 'postgresql-plruby'
@@ -23,5 +24,33 @@ Gem::Specification.new do |spec|
     PL/Ruby is a loadable procedural language for the PostgreSQL database
     system that enables the Ruby language to create functions and trigger
     procedures.
+  EOF
+
+  plruby_bin = 'plruby.' + Config::CONFIG['DLEXT']
+  plruby_dir = File.join('postgresql-plruby-' + spec.version.to_s, 'src') 
+  path_to_binary = File.join(Gem.dir, 'gems', plruby_dir, plruby_bin)
+  
+  possible_paths = Gem.path.map{ |path|
+    File.join(path, 'gems', plruby_dir, plruby_bin)
+  }
+
+  spec.post_install_message = <<-EOF
+
+    Now run the following commands from within a postgresql shell in order
+    to create the plruby language on in database server:
+
+    create function plruby_call_handler() returns language_handler
+    as '#{path_to_binary}'
+    language 'C';
+
+    create trusted language 'plruby'
+    handler plruby_call_handler
+    lancompiler 'PL/Ruby';
+
+    NOTE: Your actual path to #{plruby_bin} may be different. Possible
+    paths to the plruby binary are:
+
+    #{possible_paths.join("\n    ")}
+
   EOF
 end
