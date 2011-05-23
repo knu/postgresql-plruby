@@ -9,16 +9,24 @@ PL/ruby
 Prerequisite
 ------------
 
-> * ruby 1.8.7 or later (maybe 1.8.6 too)
+> * ruby 1.8.7 or later
 > * postgresql >= 7.3
 
-  All PostgreSQL headers need to be installed. Command (see `INSTALL` in the
-  directory postgresql-7.x.y)
+  All PostgreSQL development headers need to be installed. If you installed
+  using a package manager of some sort, be sure to install the "dev" package.
+
+  If you built from source you can run the following command:
 
         make install-all-headers
 
 Installation
 ------------
+
+  If you're installing the gem:
+
+        gem install postgresql-plruby
+
+  If you're doing things the old fashioned way:
 
         ruby extconf.rb
         make
@@ -101,6 +109,18 @@ Test (and examples)
   permitted to create functions with `LANGUAGE 'plruby'`. This is
   absolutely safe, because there is nothing a normal user can do
   with PL/Ruby, to get around access restrictions he/she has.
+
+Sample Function
+---------------
+    CREATE FUNCTION ruby_max(int4, int4) RETURNS int4 AS '
+       if args[0] > args[1]
+           return args[0]
+       else
+           return args[1]
+       end
+    ' LANGUAGE 'plruby';
+
+    select ruby_max(1,2);
 
 Documentation
 -------------
