@@ -27,7 +27,7 @@ Gem::Specification.new do |spec|
   EOF
 
   plruby_bin = 'plruby.' + Config::CONFIG['DLEXT']
-  plruby_dir = File.join('postgresql-plruby-' + spec.version.to_s, 'src') 
+  plruby_dir = File.join(spec.name + '-' + spec.version.to_s, 'src') 
   path_to_binary = File.join(Gem.dir, 'gems', plruby_dir, plruby_bin)
   
   possible_paths = Gem.path.map{ |path|
