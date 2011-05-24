@@ -2,7 +2,7 @@ require 'rubygems'
 require 'rbconfig'
 
 Gem::Specification.new do |spec|
-  spec.name       = 'postgresql-plruby'
+  spec.name       = 'globegit-postgresql-plruby'
   spec.version    = '0.5.4'
   spec.authors    = ['Akinori MUSHA', 'Guy Decoux']
   spec.license    = 'Ruby'
