@@ -26,6 +26,10 @@ Installation
 
         gem install postgresql-plruby
 
+  If you want to allow the ability to require external libraries:
+
+        gem install postgresql-plruby -- --with-safe-level=0
+
   If you're doing things the old fashioned way:
 
         ruby extconf.rb
@@ -110,8 +114,8 @@ Test (and examples)
   absolutely safe, because there is nothing a normal user can do
   with PL/Ruby, to get around access restrictions he/she has.
 
-Sample Function
----------------
+Sample Functions
+----------------
     CREATE FUNCTION ruby_max(int4, int4) RETURNS int4 AS '
        if args[0] > args[1]
            return args[0]
@@ -121,6 +125,12 @@ Sample Function
     ' LANGUAGE 'plruby';
 
     select ruby_max(1,2);
+
+    CREATE FUNCTION ruby_max2(x int4, y int4) RETURNS int4 AS '
+       return x > y ? x : y
+    ' LANGUAGE 'plruby';
+
+    select ruby_max2(7,8);
 
 Documentation
 -------------
