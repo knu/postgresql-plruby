@@ -44,8 +44,7 @@ Gem::Specification.new do |spec|
     language 'C';
 
     create trusted language 'plruby'
-    handler plruby_call_handler
-    lancompiler 'PL/Ruby';
+    handler plruby_call_handler;
 
     NOTE: Your actual path to #{plruby_bin} may be different. Possible
     paths to the plruby binary are:

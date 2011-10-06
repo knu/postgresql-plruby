@@ -104,8 +104,7 @@ Test (and examples)
         language 'C';
 
         create trusted language 'plruby'
-        handler plruby_call_handler
-        lancompiler 'PL/Ruby';
+        handler plruby_call_handler;
 
 
   The `trusted` keyword on `create language` tells PostgreSQL,

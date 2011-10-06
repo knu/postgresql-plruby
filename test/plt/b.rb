@@ -25,8 +25,7 @@ begin
    language '#{language}';
  
    create trusted procedural language 'plruby#{suffix}'
-        handler plruby#{suffix}_call_handler
-        lancompiler 'PL/Ruby';
+        handler plruby#{suffix}_call_handler;
 EOF
    f.close
 rescue

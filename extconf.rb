@@ -56,8 +56,7 @@ def create_lang(version = 74, suffix = '', safe = 0)
    language '#{language}';
 
    create #{trusted} language 'plruby#{suffix}'
-   handler plruby#{suffix}_call_handler
-   lancompiler 'PL/Ruby#{suffix}';
+   handler plruby#{suffix}_call_handler;
 
  ========================================================================
 EOT
