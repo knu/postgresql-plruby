@@ -85,8 +85,6 @@ pg_config = with_config('pg-config', 'pg_config')
 include_dir = `#{pg_config} --includedir`.strip
 $CFLAGS << " -I" << include_dir
 $CFLAGS << " -I" << `#{pg_config} --includedir-server`.strip
-# das addition below
-$CFLAGS << " --shared"
 
 
 if safe = with_config("safe-level")
