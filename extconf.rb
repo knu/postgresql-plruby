@@ -56,8 +56,7 @@ def create_lang(version = 74, suffix = '', safe = 0)
    language '#{language}';
 
    create #{trusted} language 'plruby#{suffix}'
-   handler plruby#{suffix}_call_handler
-   lancompiler 'PL/Ruby#{suffix}';
+   handler plruby#{suffix}_call_handler;
 
  ========================================================================
 EOT
@@ -86,6 +85,7 @@ pg_config = with_config('pg-config', 'pg_config')
 include_dir = `#{pg_config} --includedir`.strip
 $CFLAGS << " -I" << include_dir
 $CFLAGS << " -I" << `#{pg_config} --includedir-server`.strip
+
 
 if safe = with_config("safe-level")
    safe = Integer(safe)
@@ -141,6 +141,7 @@ if "aa".respond_to?(:initialize_copy, true)
 end
 
 have_func("rb_block_call")
+have_header("ruby/st.h")
 have_header("st.h")
 
 if version >= 74
@@ -155,6 +156,8 @@ end
 if macro_defined?("PG_TRY", %Q{#include "c.h"\n#include "utils/elog.h"})
     $CFLAGS += " -DPG_PL_TRYCATCH"
 end
+
+have_library('pq', 'PQconnectdb')
 
 enable_conversion = false
 if enable_conversion = enable_config("conversion", true)

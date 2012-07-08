@@ -195,8 +195,14 @@ name_(VALUE obj, VALUE a)                                               \
 }
 
 BIT_OPERATOR(pl_bit_add, bitcat);
+#if PG_PL_VERSION >= 91
+/* avoid the names bitand and bitor, since they are C++ keywords */
+BIT_OPERATOR(pl_bit_and, bit_and);
+BIT_OPERATOR(pl_bit_or, bit_or);
+#else
 BIT_OPERATOR(pl_bit_and, bitand);
 BIT_OPERATOR(pl_bit_or, bitor);
+#endif
 BIT_OPERATOR(pl_bit_xor, bitxor);
 
 static VALUE

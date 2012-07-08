@@ -4,6 +4,7 @@
 
 #include "postgres.h"
 #include "executor/spi.h"
+#include "executor/executor.h"
 #include "commands/trigger.h"
 #include "utils/elog.h"
 #include "utils/builtins.h"
@@ -37,7 +38,9 @@
 #include "package.h"
 
 #include <ruby.h>
-#if HAVE_ST_H
+#if HAVE_RUBY_ST_H
+#include <ruby/st.h>
+#elif HAVE_ST_H
 #include <st.h>
 #endif
 
@@ -214,6 +217,7 @@ typedef struct pl_proc_desc
     int		result_len;
     bool	result_is_array;
     bool	result_val;
+    bool 	result_is_setof;
     char	result_align;
     int		nargs;
 #if PG_PL_VERSION >= 75
