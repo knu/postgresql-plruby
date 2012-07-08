@@ -359,7 +359,7 @@ pl_tuple_s_new(PG_FUNCTION_ARGS, pl_proc_desc *prodesc)
     GetTuple(res, tpl);
     tpl->cxt = rsi->econtext->ecxt_per_query_memory;
     tpl->dsc = rsi->expectedDesc;
-    tpl->att = TupleDescGetAttInMetadata(rsi->expectedDesc);
+    tpl->att = TupleDescGetAttInMetadata(tpl->dsc);
     tpl->pro = prodesc;
     rb_thread_local_aset(rb_thread_current(), id_thr, res);
     return res;
@@ -547,32 +547,6 @@ struct each_st {
     TupleDesc tup;
 };
 
-static VALUE
-pl_each(VALUE obj, struct each_st *st)
-{
-    VALUE key, value;
-    char *column;
-    int attn;
-
-    key = rb_ary_entry(obj, 0);
-    value = rb_ary_entry(obj, 1);
-    key = plruby_to_s(key);
-    column = RSTRING_PTR(key);
-    attn = SPI_fnumber(st->tup, column);
-    if (attn <= 0 || st->tup->attrs[attn - 1]->attisdropped) {
-	rb_raise(pl_ePLruby, "Invalid column name '%s'", column);
-    }
-    attn -= 1;
-    if (TYPE(st->res) != T_ARRAY || !RARRAY_PTR(st->res)) {
-        rb_raise(pl_ePLruby, "expected an Array");
-    }
-    if (attn >= RARRAY_LEN(st->res)) {
-	rb_raise(pl_ePLruby, "Invalid column position '%d'", attn);
-    }
-    RARRAY_PTR(st->res)[attn] = value;
-    return Qnil;
-}
-
 static HeapTuple
 pl_tuple_heap(VALUE c, VALUE tuple)
 {
@@ -702,6 +676,15 @@ pl_tuple_put(VALUE c, VALUE tuple)
     }
     tuplestore_puttuple(tpl->out, retval);
     MemoryContextSwitchTo(oldcxt);
+    PLRUBY_END_PROTECT;
+    return Qnil;
+}
+
+static VALUE
+pl_ary_collect(VALUE c, VALUE ary)
+{
+    PLRUBY_BEGIN_PROTECT(1);
+    rb_ary_push(ary,c);
     PLRUBY_END_PROTECT;
     return Qnil;
 }
@@ -841,7 +824,7 @@ pl_warn(argc, argv, obj)
         rb_raise(pl_ePLruby, "invalid syntax");
     }
     PLRUBY_BEGIN_PROTECT(1);
-    elog(level, RSTRING_PTR(res));
+    elog(level, "%s", RSTRING_PTR(res));
     PLRUBY_END_PROTECT;
     return Qnil;
 }
@@ -1388,7 +1371,117 @@ plruby_return_value(struct pl_thread_st *plth, pl_proc_desc *prodesc,
             rb_raise(pl_ePLruby, "no description given");
         }
         rsi = (ReturnSetInfo *)fcinfo->resultinfo;
-        if ((rsi->allowedModes & SFRM_Materialize) && rsi->expectedDesc) {
+        if (prodesc->result_is_setof && !rsi->expectedDesc) {
+            VALUE  res, retary, arg;
+            struct pl_arg *args;
+            TupleDesc tupdesc;
+            FuncCallContext *funcctx;
+            Datum result;
+
+            arg = Data_Make_Struct(rb_cObject, struct pl_arg, pl_arg_mark, free, args);
+            args->id = rb_intern(RSTRING_PTR(value_proname));
+            args->ary = ary;
+#if PG_PL_VERSION >= 75
+            args->named = prodesc->named_args;
+#endif
+
+            if (SRF_IS_FIRSTCALL())
+            {
+                MemoryContext oldcontext;
+
+                funcctx = SRF_FIRSTCALL_INIT();
+
+                oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+                /* Build a tuple descriptor for our result type */
+                if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+                    ereport(ERROR,
+                            (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                             errmsg("function returning record called in context "
+                                 "that cannot accept type record")));
+                /*
+                 * generate attribute metadata needed later to produce tuples from raw
+                 * C strings
+                 */
+                funcctx->attinmeta = TupleDescGetAttInMetadata(tupdesc);
+
+                MemoryContextSwitchTo(oldcontext);
+
+                retary = rb_ary_new();
+#if HAVE_RB_BLOCK_CALL
+                if (args->named) {
+                    res = rb_block_call(pl_mPLtemp, args->id,
+                            RARRAY_LEN(args->ary),
+                            RARRAY_PTR(args->ary),
+                            pl_ary_collect, retary);
+                }
+                else {
+                    res = rb_block_call(pl_mPLtemp, args->id,
+                            1, &args->ary,
+                            pl_ary_collect, retary);
+                }
+#else
+                res = rb_iterate(pl_func, arg, pl_ary_collect, retary);
+#endif
+                elog(NOTICE, "returned array len is: %ld", RARRAY_LEN(retary) );
+
+                funcctx->max_calls = RARRAY_LEN(retary) ;
+                funcctx->user_fctx = (void *)retary;
+
+            }
+            funcctx = SRF_PERCALL_SETUP();
+
+            retary = (VALUE)funcctx->user_fctx;
+
+            if (funcctx->call_cntr < funcctx->max_calls)    /* do when there is more left to send */
+            {
+                char         ** values;
+                HeapTuple    tuple;
+                size_t       idx;
+                VALUE        resary;
+
+                resary = RARRAY_PTR(retary)[funcctx->call_cntr];
+                values = (char **)palloc(RARRAY_LEN(resary) * sizeof(char *));
+
+                for ( idx = 0; idx < RARRAY_LEN(resary); idx++ )
+                {
+                    VALUE str = rb_ary_entry( resary, idx );
+                    if (TYPE(str) != T_STRING) {
+                        str = rb_obj_as_string(str);
+                    }
+                    values[idx] = pstrdup( StringValueCStr( str ) );
+                }
+
+                /* build a tuple */
+                tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
+
+                /* make the tuple into a datum */
+                result = HeapTupleGetDatum(tuple);
+            }
+
+            PLRUBY_BEGIN_PROTECT(1);
+            {
+                MemoryContext oldcxt;
+                int rc;
+
+                oldcxt = MemoryContextSwitchTo(plruby_spi_context);
+                if ((rc = SPI_finish()) != SPI_OK_FINISH) {
+                    elog(ERROR, "SPI_finish() failed : %d", rc);
+                }
+                MemoryContextSwitchTo(oldcxt);
+            }
+            PLRUBY_END_PROTECT;
+
+            if ( funcctx->call_cntr < funcctx->max_calls )
+            {
+                SRF_RETURN_NEXT(funcctx, result);
+            }
+            else
+            {
+                SRF_RETURN_DONE(funcctx);
+            }
+
+        } else if ((rsi->allowedModes & SFRM_Materialize) && rsi->expectedDesc) {
             VALUE tuple, res, arg;
             struct pl_arg *args;
             struct pl_tuple *tpl;

@@ -703,7 +703,6 @@ pl_validator_handler(struct pl_thread_st *plth)
 Datum
 PLRUBY_CALL_HANDLER(PG_FUNCTION_ARGS)
 {
-    VALUE result;
     struct pl_thread_st plth;
     
     plth.fcinfo = fcinfo;
@@ -958,7 +957,8 @@ pl_compile(struct pl_thread_st *plth, int istrigger)
 		    break;
 		}
 	    }
-
+	    
+	    prodesc->result_is_setof = procStruct->proretset;
 	    if (procStruct->proretset) {
 		Oid funcid, functypeid;
 		char functyptype;

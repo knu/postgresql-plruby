@@ -141,6 +141,7 @@ if "aa".respond_to?(:initialize_copy, true)
 end
 
 have_func("rb_block_call")
+have_header("ruby/st.h")
 have_header("st.h")
 
 if version >= 74
@@ -155,6 +156,8 @@ end
 if macro_defined?("PG_TRY", %Q{#include "c.h"\n#include "utils/elog.h"})
     $CFLAGS += " -DPG_PL_TRYCATCH"
 end
+
+have_library('pq', 'PQconnectdb')
 
 enable_conversion = false
 if enable_conversion = enable_config("conversion", true)
