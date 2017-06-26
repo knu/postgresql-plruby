@@ -4,6 +4,8 @@ mkmf.log
 *.o
 *.bundle
 
+docs/doc
+
 test/*/test.out
 test/*/test_mklang.sql
 test/*/test_queries.sql
