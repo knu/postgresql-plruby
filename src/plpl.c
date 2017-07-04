@@ -841,7 +841,7 @@ pl_warn(argc, argv, obj)
         rb_raise(pl_ePLruby, "invalid syntax");
     }
     PLRUBY_BEGIN_PROTECT(1);
-    elog(level, RSTRING_PTR(res));
+    elog(level, "%s", RSTRING_PTR(res));
     PLRUBY_END_PROTECT;
     return Qnil;
 }
